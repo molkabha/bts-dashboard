@@ -2,6 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# system deps
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
@@ -11,7 +12,14 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY ui/ ui/
+COPY services/ services/
+COPY models/ models/
+COPY repositories/ repositories/
+COPY utils/ utils/
+COPY security/ security/
+COPY config/ config/
+COPY app.py .
 
 EXPOSE 8501
 
