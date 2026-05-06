@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bts_dashboard
+    expose:
+      - "8501"
+    environment:
+      - ENVIRONMENT=production
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - REDIS_ENABLED=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DB_PATH=/app/data/dashboard_ops.sqlite3
+      # SMTP (pour l'envoi email aux ingénieurs)
+      - BTS_SMTP_HOST=${BTS_SMTP_HOST:-}
+      - BTS_SMTP_PORT=${BTS_SMTP_PORT:-587}
+      - BTS_SMTP_USER=${BTS_SMTP_USER:-}
+      - BTS_SMTP_PASSWORD=${BTS_SMTP_PASSWORD:-}
+      - BTS_SMTP_FROM=${BTS_SMTP_FROM:-${BTS_SMTP_USER:-}}
+      - BTS_SMTP_STARTTLS=${BTS_SMTP_STARTTLS:-1}
+      - BTS_SMTP_VERIFY_SSL=${BTS_SMTP_VERIFY_SSL:-1}
+    volumes:
+      - dashboard_data:/app/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: bts_redis
+    expose:
+      - "6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    container_name: bts_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - dashboard
+    restart: unless-stopped
+
+volumes:
+  dashboard_data:
+  redis_data:
