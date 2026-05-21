@@ -27,7 +27,7 @@ except ImportError:
 # Module-level storage for rate limiting (fallback when Redis is disabled).
 # WARNING: This storage is local to the current process and does not persist across restarts.
 # In multi-process deployments, rate limits will not be synchronized between instances.
-# Redis is MANDATORY for production (REDIS_ENABLED=True) to ensure reliable security.
+# Redis stays optional for the local dashboard; in-memory limits are enough here.
 _GLOBAL_RATE_LIMITS: Dict[str, list] = {}
 
 
@@ -75,8 +75,8 @@ class SecurityMiddleware:
         """
         Add security-related meta tags to the Streamlit UI.
 
-        NOTE: Real HTTP security headers (CSP, HSTS, etc.) MUST be set at the
-        reverse proxy level (Nginx). See nginx.conf for details.
+        NOTE: Streamlit does not expose low-level HTTP headers here, so this
+        method only hides default UI chrome.
         """
         st.markdown(
             """

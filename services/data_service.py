@@ -22,7 +22,10 @@ try:
 except ImportError:
     pq = None
 
-from huggingface_hub import hf_hub_download
+try:
+    from huggingface_hub import hf_hub_download
+except ImportError:
+    hf_hub_download = None
 
 _HF_DISABLED_UNTIL = 0.0
 
@@ -298,7 +301,7 @@ def artifact_path(filename: str) -> Path:
 
     # Prefer Hub artefacts when enabled, so deployments do not silently depend
     # on stale bundled files. Local files remain a fallback for offline work.
-    if settings.USE_HF_HUB and time.time() >= _HF_DISABLED_UNTIL:
+    if settings.USE_HF_HUB and hf_hub_download is not None and time.time() >= _HF_DISABLED_UNTIL:
         possible_filenames = [filename]
         if not filename.startswith("streamlit_"):
             possible_filenames.append(f"streamlit_{filename}")
