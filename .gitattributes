@@ -1,0 +1,10 @@
+* text=auto
+*.py text eol=lf
+*.ipynb text eol=lf
+*.md text eol=lf
+*.parquet binary
+*.joblib binary
+*.keras binary
+*.pkl binary
+*.png binary
+*.sqlite3 binary

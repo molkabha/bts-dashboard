@@ -1,0 +1,158 @@
+"""Page 6 - Upload Dataset (Admin uniquement)."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+import pandas as pd
+import streamlit as st
+
+from security.middleware import security_middleware
+from services.data_service import (
+    active_dataset_info, db_execute, log_event,
+    load_simulation_base,
+)
+from services.pipeline_service import simulate_nb_pipeline
+from config.settings import ROOT, settings
+from ui.components import header, kpi_card, section
+from ui.utils import download_df_button
+
+OUTPUTS = settings.OUTPUTS_DIR
+ACTIVE_UPLOAD_DATASET = settings.ACTIVE_UPLOAD_DATASET
+
+REQUIRED_COLUMNS = [
+    "timestamp", "station_id", "consommation_kwh", "heure", "mois",
+    "technologie", "gouvernorat", "type_zone", "latitude", "longitude",
+    "charge_cpu_pct", "score_qos", "taux_charge_voix", "taux_charge_data",
+]
+
+
+def _read_uploaded(uploaded) -> pd.DataFrame:
+    name = str(getattr(uploaded, "name", "")).lower()
+    size = getattr(uploaded, "size", 0) or 0
+    if size > 250 * 1024 * 1024:
+        raise ValueError("Fichier trop volumineux (max 250 Mo).")
+    if name.endswith(".csv"):
+        return pd.read_csv(uploaded)
+    elif name.endswith(".parquet"):
+        return pd.read_parquet(uploaded)
+    raise ValueError("Format non supporte. Utilisez CSV ou Parquet.")
+
+
+def _validate_schema(df: pd.DataFrame) -> list[dict]:
+    """Validate columns and return list of {col, status, message}."""
+    results = []
+    for col in REQUIRED_COLUMNS:
+        if col in df.columns:
+            results.append({"Colonne": col, "Statut": "Presente", "Note": ""})
+        else:
+            results.append({"Colonne": col, "Statut": "ABSENTE",
+                            "Note": f"Le modele utilisera une valeur de substitution (impact estime : -1 a 3% de precision)"})
+    return results
+
+
+def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
+    if df.empty:
+        return False, "Dataset vide."
+    if "station_id" not in df.columns:
+        return False, "Colonne station_id manquante."
+    OUTPUTS.mkdir(exist_ok=True, parents=True)
+    processed = simulate_nb_pipeline(df, source="import_admin_publie")
+    target = OUTPUTS / ACTIVE_UPLOAD_DATASET
+    processed.to_parquet(target, index=False)
+    rel = str(target.relative_to(ROOT))
+    now = datetime.now().isoformat(timespec="seconds")
+    db_execute("upsert_setting", ("active_dataset_path", rel))
+    db_execute("upsert_setting", ("active_dataset_name", source_name))
+    db_execute("upsert_setting", ("active_dataset_published_at", now))
+    st.cache_data.clear()
+    st.session_state.pop("data", None)
+    log_event("admin_dataset_published", {"file": source_name, "rows": len(processed)})
+    return True, f"Dataset publie : {len(processed):,} lignes."
+
+
+def page_upload_admin():
+    security_middleware.enforce()
+    role = st.session_state.get("role")
+    if role != "admin":
+        st.error("Acces refuse. Cette page est reservee aux administrateurs.")
+        return
+
+    header("Upload Dataset", "Importer, valider et publier un nouveau dataset")
+    info = active_dataset_info()
+    if info:
+        st.info(f"Dataset actif : {info.get('name', 'Standard')} ({info.get('published_at', '')})")
+
+    # Section 1 - Upload
+    with section("Importer un Dataset"):
+        uploaded = st.file_uploader("Glisser-deposer un fichier CSV ou Parquet", type=["csv", "parquet"],
+                                    key="upload_dataset")
+        if uploaded is not None:
+            try:
+                df_source = _read_uploaded(uploaded)
+            except Exception as e:
+                st.error(str(e))
+                return
+
+            # Schema validation
+            validation = _validate_schema(df_source)
+            val_df = pd.DataFrame(validation)
+            st.dataframe(val_df, width="stretch", hide_index=True)
+
+            missing_critical = [v["Colonne"] for v in validation
+                                if v["Statut"] == "ABSENTE" and v["Colonne"] in ("station_id", "consommation_kwh")]
+            if missing_critical:
+                st.error(f"Colonnes critiques absentes : {', '.join(missing_critical)}. Import impossible.")
+                return
+
+            # Preview
+            st.markdown("**Apercu (10 premieres lignes)**")
+            st.dataframe(df_source.head(10), width="stretch", hide_index=True)
+
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                kpi_card("Lignes", f"{len(df_source):,}", "dataset")
+            with c2:
+                stations_n = df_source["station_id"].nunique() if "station_id" in df_source.columns else 0
+                kpi_card("Stations", str(stations_n), "uniques")
+            with c3:
+                missing_pct = df_source.isna().mean().mean() * 100
+                kpi_card("Valeurs manquantes", f"{missing_pct:.1f}%", "moyenne")
+
+            if st.button("Valider et publier", type="primary", width="stretch"):
+                with st.spinner("Publication en cours..."):
+                    ok, msg = _publish_dataset(df_source, uploaded.name)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+
+    # Section 2 - Pipeline rerun
+    with section("Relance Pipeline"):
+        st.warning("Cette operation va retraiter le dataset actif avec le pipeline NB1/NB2/NB3.")
+        if st.button("Relancer le pipeline complet", type="primary"):
+            progress = st.progress(0)
+            status = st.empty()
+
+            status.markdown("Chargement des donnees...")
+            progress.progress(20)
+            base = load_simulation_base(50000)
+
+            status.markdown("Traitement NB1/NB2/NB3...")
+            progress.progress(60)
+            result = simulate_nb_pipeline(base, source="notebook_outputs")
+
+            status.markdown("Finalisation...")
+            progress.progress(90)
+            st.session_state["pipeline_result"] = result
+
+            progress.progress(100)
+            status.markdown("Pipeline termine.")
+            st.success(f"Pipeline termine : {len(result):,} lignes traitees.")
+
+    # Section 3 - Pipeline result
+    result = st.session_state.get("pipeline_result")
+    if isinstance(result, pd.DataFrame) and not result.empty:
+        with section("Resultat du Pipeline"):
+            st.dataframe(result.head(500), width="stretch", hide_index=True)
+            download_df_button(result, "pipeline_result.csv", "Exporter resultat")

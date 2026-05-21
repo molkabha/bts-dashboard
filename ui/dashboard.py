@@ -1,0 +1,88 @@
+"""Main dashboard router — 8-page architecture."""
+
+import streamlit as st
+from pathlib import Path
+from services.data_service import init_db, load_outputs
+from ui.layout import configure_page
+from ui.auth import login_page, force_password_change_page
+from ui.components import sidebar_global
+
+from views.p0_accueil import page_accueil
+from views.p1_vue_reseau import page_vue_reseau
+from views.p2_prediction import page_prediction
+from views.p3_anomalies import page_anomalies
+from views.p4_optimisation_rl import page_optimisation_rl
+from views.p5_simulation import page_simulation
+from views.p6_upload_admin import page_upload_admin
+from views.p7_configuration import page_configuration
+from views.p8_utilisateurs import page_utilisateurs
+
+from services.data_service import engineer_assigned_stations, available_stations, db_execute
+from security.middleware import security_middleware
+
+
+PAGE_FUNCTIONS = {
+    0: page_accueil,
+    1: page_vue_reseau,
+    2: page_prediction,
+    3: page_anomalies,
+    4: page_optimisation_rl,
+    5: page_simulation,
+    6: page_upload_admin,
+    7: page_configuration,
+    8: page_utilisateurs,
+}
+
+
+def main():
+    configure_page()
+    init_db()
+    LOGO_PATH = Path("static/logo.png")
+
+    security_middleware.enforce()
+
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+
+    if not st.session_state["authenticated"]:
+        login_page(LOGO_PATH)
+        return
+
+    if st.session_state.get("must_change_password"):
+        force_password_change_page()
+        return
+
+    if "data" not in st.session_state:
+        with st.spinner("Chargement des artefacts NB1/NB2/NB3..."):
+            st.session_state["data"] = load_outputs()
+
+    role = st.session_state.get("role")
+    user_display = st.session_state.get("display", "")
+    username = st.session_state.get("user", "")
+
+    if st.session_state.get("session_id"):
+        from datetime import datetime
+        db_execute("touch_user_session", (datetime.now().isoformat(timespec="seconds"), st.session_state["session_id"]))
+
+    if role == "admin":
+        stations = available_stations()
+    else:
+        stations = engineer_assigned_stations(username)
+        st.session_state["engineer_visible_stations"] = stations
+
+    # Check for nav override from page 0 cards
+    nav_override = st.session_state.pop("_nav_override", None)
+
+    page_index, filters = sidebar_global(role, user_display, username, LOGO_PATH, stations)
+
+    if nav_override is not None:
+        page_index = nav_override
+
+    st.session_state["global_filters"] = filters
+
+    page_fn = PAGE_FUNCTIONS.get(page_index, page_accueil)
+    page_fn()
+
+
+if __name__ == "__main__":
+    main()
