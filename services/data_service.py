@@ -1,14 +1,14 @@
 """Data access and caching service."""
 
 from __future__ import annotations
-import threading
 
+import hashlib
 import json
 import sqlite3
-import hashlib
+import threading
 import time
-from functools import lru_cache
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Optional
 
@@ -316,17 +316,6 @@ def artifact_path(filename: str) -> Path:
                     etag_timeout=5,
                 )
                 hf_path = Path(downloaded)
-
-                # If hf_hub_download gives us a 0-byte file (cache corruption/LFS bug), try direct HTTP
-                if hf_path.exists() and hf_path.stat().st_size == 0 and hf_filename.endswith('.json'):
-                    import requests
-                    url = f"https://huggingface.co/{settings.HF_REPO_ID}/resolve/main/{hf_filename}"
-                    try:
-                        resp = requests.get(url, timeout=5)
-                        if resp.status_code == 200 and len(resp.content) > 0:
-                            hf_path.write_bytes(resp.content)
-                    except Exception:
-                        pass
 
                 local_best = best_local_candidate(candidates)
                 if local_best and artifact_quality(local_best) > artifact_quality(hf_path):

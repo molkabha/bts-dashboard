@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import streamlit as st
 
@@ -35,11 +37,17 @@ def _render_folium_map(scores: pd.DataFrame):
             mode_col = candidate
             break
 
-    color_map = {"ECO": "#059669", "NORMAL": "#2563eb", "ATTENTION": "#d97706", "CRITIQUE": "#c8102e",
-                 "Faible": "#059669", "Moyenne": "#d97706", "Critique": "#c8102e"}
+    color_map = {
+        "ECO": "#059669",
+        "NORMAL": "#2563eb",
+        "ATTENTION": "#d97706",
+        "CRITIQUE": "#c8102e",
+        "Faible": "#059669",
+        "Moyenne": "#d97706",
+        "Critique": "#c8102e",
+    }
 
     conso_col = "conso_moy" if "conso_moy" in scores.columns else "consommation_kwh" if "consommation_kwh" in scores.columns else None
-    float(scores[conso_col].max()) if conso_col and not scores[conso_col].dropna().empty else 10
 
     for _, row in scores.iterrows():
         lat = row.get("latitude")
@@ -53,9 +61,11 @@ def _render_folium_map(scores: pd.DataFrame):
         conso = float(row.get(conso_col, 3)) if conso_col else 3
         radius = 8
 
-        gov = str(row.get("gouvernorat", ""))
-        tech = str(row.get("technologie", ""))
-        zone = str(row.get("type_zone", ""))
+        safe_station = html.escape(station)
+        safe_mode = html.escape(mode)
+        gov = html.escape(str(row.get("gouvernorat", "")))
+        tech = html.escape(str(row.get("technologie", "")))
+        zone = html.escape(str(row.get("type_zone", "")))
         qos = row.get("score_qos_moy", row.get("score_qos", None))
         qos_str = f"{float(qos):.2f}" if qos is not None and not pd.isna(qos) else "0.00"
         anom = row.get("score_anom_moy", row.get("anomalie_score_ensemble", None))
@@ -63,7 +73,7 @@ def _render_folium_map(scores: pd.DataFrame):
 
         popup_html = f"""
         <div style="font-family:Inter,sans-serif;min-width:220px;">
-            <div style="font-weight:800;font-size:14px;margin-bottom:6px;">{station}</div>
+            <div style="font-weight:800;font-size:14px;margin-bottom:6px;">{safe_station}</div>
             <div style="font-size:12px;color:#64748b;margin-bottom:8px;">{gov} | {tech} | {zone}</div>
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
                 <span style="font-size:12px;">Consommation</span>
@@ -71,7 +81,7 @@ def _render_folium_map(scores: pd.DataFrame):
             </div>
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
                 <span style="font-size:12px;">Mode</span>
-                <span style="font-weight:700;font-size:12px;color:{color};">{mode}</span>
+                <span style="font-weight:700;font-size:12px;color:{color};">{safe_mode}</span>
             </div>
             <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
                 <span style="font-size:12px;">Score QoS</span>

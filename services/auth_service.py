@@ -34,7 +34,7 @@ def clear_login_attempts(username: str) -> None:
 
 def get_user_record(username: str) -> Optional[dict]:
     """Get user record from SQLite DB."""
-    username = username.strip().lower()
+    username = str(username or "").strip().lower()
     if not username:
         return None
     df = db_read("get_user_by_username_or_email", (username, username))
@@ -47,9 +47,14 @@ def authenticate_user(
     username: str, password: str, expected_role: Optional[str] = None
 ) -> tuple[bool, Optional[dict], str]:
     """Authenticate a user with username and password."""
+    username = str(username or "").strip()
+    password = str(password or "")
+    if not username or not password:
+        return False, None, "Identifiant ou mot de passe incorrect."
+
     limited, remaining = is_rate_limited(username)
     if limited:
-        return False, None, f"Trop de tentatives échouées. Réessayez dans {remaining} secondes."
+        return False, None, f"Trop de tentatives echouees. Reessayez dans {remaining} secondes."
 
     rec = get_user_record(username)
     if not rec:
@@ -57,17 +62,17 @@ def authenticate_user(
         return False, None, "Identifiant ou mot de passe incorrect."
 
     if expected_role and rec["role"] != expected_role:
-        return False, None, "Accès non autorisé pour ce rôle."
+        return False, None, "Acces non autorise pour ce role."
 
     if not rec.get("is_active"):
-        return False, None, "Compte désactivé."
+        return False, None, "Compte desactive."
 
     if not password_matches(password, rec["password_hash"]):
         record_failed_attempt(username)
         return False, None, "Identifiant ou mot de passe incorrect."
 
     clear_login_attempts(username)
-    return True, rec, "Authentification réussie."
+    return True, rec, "Authentification reussie."
 
 
 def create_user_session(user_record: dict) -> dict:

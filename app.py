@@ -1,11 +1,11 @@
 """Streamlit entry point for the dashboard package."""
 
 from __future__ import annotations
-from ui.dashboard import main
-import streamlit as st
 
 import sys
 from pathlib import Path
+
+import streamlit as st
 
 # Ensure imports like `from ui...` and `from services...` work when this file
 # is executed from outside the project root.
@@ -34,6 +34,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+
+from ui.dashboard import main  # noqa: E402  # imported after path/env/page setup
 
 
 if __name__ == "__main__":

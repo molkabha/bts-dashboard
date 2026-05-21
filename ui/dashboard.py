@@ -1,8 +1,20 @@
-"""Main dashboard router — 8-page architecture."""
+"""Main dashboard router for the 8-page architecture."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from pathlib import Path
 
 import streamlit as st
-from pathlib import Path
-from services.data_service import init_db, load_outputs
+
+from security.middleware import security_middleware
+from services.data_service import (
+    available_stations,
+    db_execute,
+    engineer_assigned_stations,
+    init_db,
+    load_outputs,
+)
 from ui.layout import configure_page
 from ui.auth import login_page, force_password_change_page
 from ui.components import sidebar_global
@@ -16,10 +28,6 @@ from views.p5_simulation import page_simulation
 from views.p6_upload_admin import page_upload_admin
 from views.p7_configuration import page_configuration
 from views.p8_utilisateurs import page_utilisateurs
-
-from services.data_service import engineer_assigned_stations, available_stations, db_execute
-from security.middleware import security_middleware
-
 
 PAGE_FUNCTIONS = {
     0: page_accueil,
@@ -37,7 +45,7 @@ PAGE_FUNCTIONS = {
 def main():
     configure_page()
     init_db()
-    LOGO_PATH = Path("static/logo.png")
+    logo_path = Path("static/logo.png")
 
     security_middleware.enforce()
 
@@ -45,7 +53,7 @@ def main():
         st.session_state["authenticated"] = False
 
     if not st.session_state["authenticated"]:
-        login_page(LOGO_PATH)
+        login_page(logo_path)
         return
 
     if st.session_state.get("must_change_password"):
@@ -61,8 +69,10 @@ def main():
     username = st.session_state.get("user", "")
 
     if st.session_state.get("session_id"):
-        from datetime import datetime
-        db_execute("touch_user_session", (datetime.now().isoformat(timespec="seconds"), st.session_state["session_id"]))
+        db_execute(
+            "touch_user_session",
+            (datetime.now().isoformat(timespec="seconds"), st.session_state["session_id"]),
+        )
 
     if role == "admin":
         stations = available_stations()
@@ -73,7 +83,7 @@ def main():
     # Check for nav override from page 0 cards
     nav_override = st.session_state.pop("_nav_override", None)
 
-    page_index, filters = sidebar_global(role, user_display, username, LOGO_PATH, stations)
+    page_index, filters = sidebar_global(role, user_display, username, logo_path, stations)
 
     if nav_override is not None:
         page_index = nav_override

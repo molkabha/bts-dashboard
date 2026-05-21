@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import time
 from datetime import datetime, timedelta
 
@@ -50,23 +51,16 @@ def _mode_color(mode: str) -> str:
     return {"ECO": "#059669", "NORMAL": "#2563eb", "ATTENTION": "#d97706", "CRITIQUE": "#c8102e"}.get(mode, "#64748b")
 
 
+def _numeric_series(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.Series:
+    value = df[column] if column in df.columns else pd.Series(default, index=df.index)
+    return pd.to_numeric(value, errors="coerce").fillna(default)
+
+
 def _session_summary(sim_data: pd.DataFrame, selected_stations: list[str]):
     """Render session summary KPIs from accumulated simulation data."""
-    conso = pd.to_numeric(sim_data["consommation_kwh"], errors="coerce").fillna(0)
-    eco_rl = pd.to_numeric(
-        sim_data.get(
-            "economie_rl_kwh",
-            pd.Series(
-                0,
-                index=sim_data.index)),
-        errors="coerce").fillna(0)
-    eco_expert = pd.to_numeric(
-        sim_data.get(
-            "economie_estimee_kwh",
-            pd.Series(
-                0,
-                index=sim_data.index)),
-        errors="coerce").fillna(0)
+    conso = _numeric_series(sim_data, "consommation_kwh", 0)
+    eco_rl = _numeric_series(sim_data, "economie_rl_kwh", 0)
+    eco_expert = _numeric_series(sim_data, "economie_estimee_kwh", 0)
     eco_best = eco_rl.where(eco_rl > eco_expert, eco_expert)
 
     total_conso = conso.sum()
@@ -74,13 +68,8 @@ def _session_summary(sim_data: pd.DataFrame, selected_stations: list[str]):
     total_dt = total_eco * settings.PRIX_KWH_TN
     co2_evite_kg = total_eco * settings.FACTEUR_CO2_TN  # kg
     nb_heures = sim_data["timestamp"].nunique() if "timestamp" in sim_data.columns else len(sim_data)
-    nb_anomalies = int(
-        (pd.to_numeric(
-            sim_data.get(
-                "anomalie_score_ensemble",
-                0),
-            errors="coerce").fillna(0) > 0.25).sum())
-    qos_moy = pd.to_numeric(sim_data.get("score_qos", 0.82), errors="coerce").fillna(0.82).mean()
+    nb_anomalies = int((_numeric_series(sim_data, "anomalie_score_ensemble", 0) > 0.25).sum())
+    qos_moy = _numeric_series(sim_data, "score_qos", 0.82).mean()
 
     with section("Bilan de la Session"):
         k1, k2, k3, k4 = st.columns(4)
@@ -234,7 +223,7 @@ def page_simulation():
             latest_all = sim_data[sim_data["timestamp"] == sim_data["timestamp"].max()]
 
             # Clock + live indicator
-            ts_display = str(latest_all.iloc[0].get("timestamp", ""))[:19]
+            ts_display = html.escape(str(latest_all.iloc[0].get("timestamp", ""))[:19])
             st.markdown(f'<div class="cockpit-clock">{ts_display}</div>', unsafe_allow_html=True)
             live_indicator()
 
@@ -273,15 +262,19 @@ def page_simulation():
                 anom_score = float(row.get("anomalie_score_ensemble", 0) or 0)
                 color = _mode_color(mode)
 
-                station_label = f" - {sid}" if len(selected_stations) > 1 else ""
                 anomaly_info = f" | Anomalie : {anom_score:.2f} ({nb_votes}/7 detecteurs)" if nb_votes > 0 else ""
+                safe_sid = html.escape(sid)
+                safe_mode = html.escape(mode)
+                safe_action = html.escape(action)
+                safe_agent = html.escape(best_agent)
+                station_label = f" - {safe_sid}" if len(selected_stations) > 1 else ""
 
                 st.markdown(f"""
 <div class="decision-card" style="border-left-color:{color};">
-  <div class="dc-mode" style="color:{color};">Mode : {mode}{station_label}</div>
-  <div class="dc-action">Action : {action}</div>
+  <div class="dc-mode" style="color:{color};">Mode : {safe_mode}{station_label}</div>
+  <div class="dc-action">Action : {safe_action}</div>
   <div class="dc-reason">QoS : {qos:.2f} | CPU : {float(row.get('charge_cpu_pct', 0)):.0f}%{anomaly_info}</div>
-  <div class="dc-saving">Economie RL ({best_agent}) : +{eco:.3f} kWh</div>
+  <div class="dc-saving">Economie RL ({safe_agent}) : +{eco:.3f} kWh</div>
 </div>""", unsafe_allow_html=True)
 
             # --- Consumption chart ---

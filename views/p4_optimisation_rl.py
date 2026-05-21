@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -10,8 +12,7 @@ import streamlit as st
 from config.settings import settings
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import compute_filtered_kpis, load_filtered_main_data
-from services.data_service import artifact_table
+from services.data_service import artifact_table, compute_filtered_kpis, load_filtered_main_data
 from ui.components import context_badge, header, kpi_card, render_artifact_gallery, section
 from ui.utils import apply_current_admin_filters, filter_artifact_dataframe, selected_station_filter, session_outputs
 
@@ -170,11 +171,12 @@ def page_optimisation_rl():
 
                 # Podium
                 if len(df_rl) >= 3:
+                    podium_agents = [html.escape(str(df_rl.iloc[i]["Agent"])) for i in range(3)]
                     st.markdown(f"""
 <div class="podium">
-  <div class="podium-item silver"><div class="podium-rank">2e</div><div class="podium-name">{df_rl.iloc[1]['Agent']}</div></div>
-  <div class="podium-item gold"><div class="podium-rank">1er</div><div class="podium-name">{df_rl.iloc[0]['Agent']}</div></div>
-  <div class="podium-item bronze"><div class="podium-rank">3e</div><div class="podium-name">{df_rl.iloc[2]['Agent']}</div></div>
+  <div class="podium-item silver"><div class="podium-rank">2e</div><div class="podium-name">{podium_agents[1]}</div></div>
+  <div class="podium-item gold"><div class="podium-rank">1er</div><div class="podium-name">{podium_agents[0]}</div></div>
+  <div class="podium-item bronze"><div class="podium-rank">3e</div><div class="podium-name">{podium_agents[2]}</div></div>
 </div>""", unsafe_allow_html=True)
 
                 for _, row in df_rl.iterrows():

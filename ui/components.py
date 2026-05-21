@@ -50,9 +50,12 @@ def status_badge(label: str, status_type: str = "info"):
     colors = {"info": "blue", "success": "green", "warning": "orange", "error": "red"}
     color = colors.get(status_type, "grey")
     st.markdown(
-    f'<span style="background-color:{color}; color:white; padding:2px 8px; border-radius:4px; font-size:0.85em; font-weight:600;">{html.escape(label)}</span>',
-    unsafe_allow_html=True
-)
+        (
+            f'<span style="background-color:{color}; color:white; padding:2px 8px; '
+            f'border-radius:4px; font-size:0.85em; font-weight:600;">{html.escape(label)}</span>'
+        ),
+        unsafe_allow_html=True,
+    )
 
 
 def alert_banner(title: str, body: str, style: str = "info", meta: str = ""):
@@ -232,10 +235,10 @@ def sidebar_global(
     st.sidebar.markdown(
         f"""
 <div class="sb-user">
-  <div class="sb-avatar">{initials}</div>
+  <div class="sb-avatar">{html.escape(initials)}</div>
   <div>
     <div class="sb-name">{html.escape(display)}</div>
-    <div class="sb-role">{role_label}</div>
+    <div class="sb-role">{html.escape(role_label)}</div>
   </div>
 </div>
 """,

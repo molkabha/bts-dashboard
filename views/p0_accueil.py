@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import streamlit as st
 
 from security.middleware import security_middleware
@@ -111,7 +113,7 @@ def page_accueil():
             st.download_button(
                 "Telecharger le rapport PDF",
                 data=pdf_bytes,
-                file_name=f"rapport_bts_{__import__('datetime').datetime.now().strftime('%Y%m%d')}.pdf",
+                file_name=f"rapport_bts_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",
                 width="stretch",
             )

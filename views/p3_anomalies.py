@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -116,14 +118,17 @@ def page_anomalies():
                 conso = row.get("consommation_kwh", "")
                 conso_str = f"{float(conso):.1f} kWh" if conso != "" and not pd.isna(conso) else ""
                 votes = int(row.get("nb_votes_anomalie", 0) or 0)
+                safe_station = html.escape(station)
+                safe_ts = html.escape(ts_str)
+                safe_conso = html.escape(conso_str)
 
                 st.markdown(f"""
 <div class="anomaly-card {css_sev}{treated_cls}">
   <div class="ac-header">
     <span class="ac-badge {css_sev}">{severity}</span>
-    <span class="ac-station">{station}</span>
+    <span class="ac-station">{safe_station}</span>
   </div>
-  <div class="ac-detail">{ts_str} | Score : {score:.2f} | {conso_str} | {votes} detecteurs</div>
+  <div class="ac-detail">{safe_ts} | Score : {score:.2f} | {safe_conso} | {votes} detecteurs</div>
   <div class="ac-meta">{"TRAITE" if is_treated else ""}</div>
 </div>""", unsafe_allow_html=True)
 
