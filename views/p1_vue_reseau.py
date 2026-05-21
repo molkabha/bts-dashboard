@@ -7,6 +7,7 @@ import streamlit as st
 
 from security.middleware import security_middleware
 from services.data_service import (
+    artifact_table,
     compute_filtered_kpis,
     load_filtered_main_data,
     station_summary_from_df,
@@ -161,3 +162,13 @@ def page_vue_reseau():
             st.dataframe(scores.sort_values(sort_col, ascending=False)[display_cols],
                          width="stretch", hide_index=True)
             download_df_button(scores, "stations_reseau.csv", "Exporter CSV")
+
+    with section("Scores Stations Notebook"):
+        nb3_scores = artifact_table("streamlit_score_stations.parquet")
+        nb3_map = artifact_table("streamlit_carte_stations.parquet")
+        if not nb3_scores.empty:
+            st.caption("Scores stations pre-calcules exportes par NB3 pour Streamlit.")
+            st.dataframe(nb3_scores, width="stretch", hide_index=True)
+        if not nb3_map.empty:
+            st.caption("Synthese cartographique pre-calculee exportee par NB3.")
+            st.dataframe(nb3_map, width="stretch", hide_index=True)

@@ -33,6 +33,45 @@ NOTEBOOK_OUTPUTS = {
     "NB3": settings.NB3_OUTPUT,
 }
 
+ARTIFACT_REGISTRY: dict[str, dict[str, str]] = {
+    "agents_rl_7.pkl": {"notebook": "NB3", "type": "modele", "usage": "Agents RL entraines"},
+    "autoencoder.keras": {"notebook": "NB2", "type": "modele", "usage": "Autoencoder anomalies"},
+    "best_model.joblib": {"notebook": "NB1", "type": "modele", "usage": "Meilleur modele prediction"},
+    "config.joblib": {"notebook": "NB1", "type": "modele", "usage": "Configuration preprocessing NB1"},
+    "data_cleaning_avant_apres.png": {"notebook": "NB1", "type": "image", "usage": "Qualite donnees avant/apres"},
+    "dc1_synthese_anomalies.png": {"notebook": "NB1", "type": "image", "usage": "Synthese anomalies preliminaires"},
+    "decisions_par_station.parquet": {"notebook": "NB3", "type": "table", "usage": "Decisions station x heure"},
+    "df_avec_anomalies.parquet": {"notebook": "NB2", "type": "table", "usage": "Dataset enrichi anomalies"},
+    "df_full_processed.parquet": {"notebook": "NB1", "type": "table", "usage": "Dataset complet prepare NB1"},
+    "df_test_processed.parquet": {"notebook": "NB1", "type": "table", "usage": "Split test prepare NB1"},
+    "df_train_processed.parquet": {"notebook": "NB1", "type": "table", "usage": "Split train prepare NB1"},
+    "eda_correlations.png": {"notebook": "NB1", "type": "image", "usage": "Correlations EDA"},
+    "encodeurs.joblib": {"notebook": "NB1", "type": "modele", "usage": "Encodeurs categoriels"},
+    "kpi_reseau.json": {"notebook": "NB3", "type": "json", "usage": "KPI reseau finaux"},
+    "modele_lgbm.joblib": {"notebook": "NB1", "type": "modele", "usage": "Modele LightGBM"},
+    "modele_stacking.joblib": {"notebook": "NB1", "type": "modele", "usage": "Modele stacking"},
+    "modeles_anomalie.joblib": {"notebook": "NB2", "type": "modele", "usage": "Modeles detection anomalies"},
+    "performance_qualitative_modeles.csv": {"notebook": "NB2", "type": "table", "usage": "Performance qualitative detecteurs"},
+    "pipeline_inference.joblib": {"notebook": "NB3", "type": "modele", "usage": "Pipeline inference complet"},
+    "precision_recall_modeles.png": {"notebook": "NB2", "type": "image", "usage": "Precision/recall detecteurs"},
+    "quantile_models.joblib": {"notebook": "NB1", "type": "modele", "usage": "Modeles quantiles Q10/Q90"},
+    "rapport_optimisation.json": {"notebook": "NB3", "type": "json", "usage": "Rapport optimisation"},
+    "resultats_anomalie.json": {"notebook": "NB2", "type": "json", "usage": "Resultats detecteurs NB2"},
+    "resultats_modeles.json": {"notebook": "NB1", "type": "json", "usage": "Resultats modeles NB1"},
+    "rl_7agents_apprentissage.png": {"notebook": "NB3", "type": "image", "usage": "Apprentissage 7 agents RL"},
+    "score_stations.parquet": {"notebook": "NB2", "type": "table", "usage": "Score station NB2"},
+    "shap_bar.png": {"notebook": "NB1", "type": "image", "usage": "SHAP bar"},
+    "shap_beeswarm.png": {"notebook": "NB1", "type": "image", "usage": "SHAP beeswarm"},
+    "shap_waterfall.png": {"notebook": "NB1", "type": "image", "usage": "SHAP waterfall"},
+    "streamlit_carte_stations.parquet": {"notebook": "NB3", "type": "table", "usage": "Carte stations pre-calculee"},
+    "streamlit_data.parquet": {"notebook": "NB3", "type": "table", "usage": "Dataset principal Streamlit"},
+    "streamlit_profil_horaire.parquet": {"notebook": "NB3", "type": "table", "usage": "Profil horaire pre-calcule"},
+    "streamlit_score_stations.parquet": {"notebook": "NB3", "type": "table", "usage": "Scores stations Streamlit"},
+    "streamlit_timeseries.parquet": {"notebook": "NB3", "type": "table", "usage": "Series temporelles pre-calculees"},
+    "tableau_de_bord_complet.png": {"notebook": "NB3", "type": "image", "usage": "Tableau de bord notebook"},
+    "tsne_anomalies.png": {"notebook": "NB2", "type": "image", "usage": "Projection t-SNE anomalies"},
+}
+
 COLUMN_ALIASES = {
     "economie_estimee_kwh": ["economie_kwh_estimee"],
     "score_qos": ["score_qos_moy"],
@@ -186,6 +225,16 @@ def read_parquet_fast(path: Path, columns: list[str] | None = None, filters=None
     return normalize_dataframe_columns(fix_dataframe_text(df))
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def read_csv_artifact(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return fix_dataframe_text(pd.read_csv(path))
+    except Exception:
+        return pd.DataFrame()
+
+
 def expand_requested_columns(columns: list[str]) -> list[str]:
     """Include known notebook aliases when loading a subset of columns."""
     expanded: list[str] = []
@@ -293,6 +342,46 @@ def artifact_path(filename: str) -> Path:
         return local_best
 
     return candidates[0]
+
+
+def artifact_url(filename: str) -> str:
+    return f"https://huggingface.co/{settings.HF_REPO_ID}/resolve/main/{filename}"
+
+
+def artifact_inventory() -> pd.DataFrame:
+    rows = []
+    for filename, meta in ARTIFACT_REGISTRY.items():
+        local_candidates = [settings.OUTPUTS_DIR / filename] + [base / filename for base in NOTEBOOK_OUTPUTS.values()]
+        local_best = best_local_candidate(local_candidates)
+        size_mb = local_best.stat().st_size / 1024 / 1024 if local_best and local_best.exists() else None
+        rows.append({
+            "fichier": filename,
+            "notebook": meta["notebook"],
+            "type": meta["type"],
+            "usage": meta["usage"],
+            "source": "HF",
+            "fallback_local": bool(local_best),
+            "taille_mb": round(size_mb, 3) if size_mb is not None else None,
+            "lien_hf": artifact_url(filename),
+        })
+    return pd.DataFrame(rows)
+
+
+def artifact_image_path(filename: str) -> Path | None:
+    path = artifact_path(filename)
+    return path if path.exists() else None
+
+
+def artifact_table(filename: str, columns: list[str] | None = None) -> pd.DataFrame:
+    path = artifact_path(filename)
+    if not path.exists():
+        return pd.DataFrame()
+    suffix = path.suffix.lower()
+    if suffix == ".parquet":
+        return read_parquet_fast(path, columns)
+    if suffix == ".csv":
+        return read_csv_artifact(path)
+    return pd.DataFrame()
 
 
 def first_existing_dataset(names: list[str]) -> Path | None:

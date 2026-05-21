@@ -8,7 +8,7 @@ import streamlit as st
 
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import load_filtered_main_data
+from services.data_service import artifact_image_path, artifact_table, artifact_url, load_filtered_main_data
 from ui.components import header, kpi_card, section
 from ui.utils import apply_current_admin_filters, session_outputs
 
@@ -166,3 +166,22 @@ def page_anomalies():
                                title="Distribution du consensus (votes)")
                 fig_v.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0), height=250)
                 st.plotly_chart(fig_v, width="stretch")
+
+        with section("Artefacts Notebook NB2"):
+            c1, c2 = st.columns(2)
+            for col, filename, caption in [
+                (c1, "precision_recall_modeles.png", "Precision / recall des detecteurs"),
+                (c2, "tsne_anomalies.png", "Projection t-SNE des anomalies"),
+            ]:
+                path = artifact_image_path(filename)
+                if path:
+                    with col:
+                        st.image(str(path), caption=caption, width="stretch")
+            qualitative = artifact_table("performance_qualitative_modeles.csv")
+            if not qualitative.empty:
+                st.dataframe(qualitative, width="stretch", hide_index=True)
+            st.markdown(
+                "Modeles NB2 : "
+                f"[modeles_anomalie.joblib]({artifact_url('modeles_anomalie.joblib')}) | "
+                f"[autoencoder.keras]({artifact_url('autoencoder.keras')})"
+            )

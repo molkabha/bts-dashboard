@@ -5,7 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from security.middleware import security_middleware
-from services.data_service import compute_filtered_kpis, load_filtered_main_data, load_top_anomalies
+from services.data_service import artifact_image_path, compute_filtered_kpis, load_filtered_main_data, load_top_anomalies
 from ui.components import header, section, alert_banner
 from ui.utils import apply_current_admin_filters
 from utils.pdf_export import generate_report_pdf
@@ -92,6 +92,9 @@ def page_accueil():
 
     # PDF export
     with section("Rapport"):
+        notebook_dashboard = artifact_image_path("tableau_de_bord_complet.png")
+        if notebook_dashboard:
+            st.image(str(notebook_dashboard), caption="Tableau de bord complet genere par NB3", width="stretch")
         if st.button("Generer rapport PDF", type="primary", width="stretch"):
             anomaly_items = []
             if not top.empty:

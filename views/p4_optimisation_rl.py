@@ -11,6 +11,7 @@ from config.settings import settings
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
 from services.data_service import compute_filtered_kpis, load_filtered_main_data
+from services.data_service import artifact_image_path, artifact_table, artifact_url
 from ui.components import header, kpi_card, section
 from ui.utils import apply_current_admin_filters, session_outputs
 
@@ -91,7 +92,26 @@ def page_optimisation_rl():
 
     # Section 2 - 24h profile
     with section("Profil Horaire 24h"):
-        if "heure" in df.columns and "consommation_kwh" in df.columns:
+        profil_nb3 = artifact_table("streamlit_profil_horaire.parquet")
+        if not profil_nb3.empty:
+            hourly = profil_nb3.copy()
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_moy"],
+                                     name="Baseline (sans optimisation)", line=dict(color="#94a3b8", width=2)))
+            if "conso_optimisee_moy" in hourly.columns:
+                fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_optimisee_moy"],
+                                         name="Regles expertes", line=dict(color="#3b82f6", width=2),
+                                         fill="tonexty", fillcolor="rgba(59,130,246,0.1)"))
+            if "conso_optimisee_rl_moy" in hourly.columns:
+                fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_optimisee_rl_moy"],
+                                         name="Meilleur agent RL", line=dict(color="#059669", width=2.5),
+                                         fill="tonexty", fillcolor="rgba(5,150,105,0.1)"))
+            fig.update_layout(template=template, xaxis_title="Heure", yaxis_title="kWh moyen",
+                              margin=dict(l=0, r=0, t=20, b=0), height=320, hovermode="x unified")
+            st.plotly_chart(fig, width="stretch")
+            with st.expander("Voir profil horaire NB3"):
+                st.dataframe(hourly, width="stretch", hide_index=True)
+        elif "heure" in df.columns and "consommation_kwh" in df.columns:
             hourly = df.groupby("heure").agg(
                 conso_moy=("consommation_kwh", "mean"),
             ).reset_index()
@@ -121,6 +141,24 @@ def page_optimisation_rl():
                               margin=dict(l=0, r=0, t=20, b=0), height=320, hovermode="x unified")
             st.plotly_chart(fig, width="stretch")
 
+    with section("Series Temporelles NB3"):
+        ts_nb3 = artifact_table("streamlit_timeseries.parquet")
+        if not ts_nb3.empty and "timestamp" in ts_nb3.columns:
+            fig_ts = go.Figure()
+            fig_ts.add_trace(go.Scatter(x=ts_nb3["timestamp"], y=ts_nb3["conso_tot"],
+                                        name="Consommation totale", line=dict(color="#1e3a8a", width=2)))
+            if "economie_tot" in ts_nb3.columns:
+                fig_ts.add_trace(go.Scatter(x=ts_nb3["timestamp"], y=ts_nb3["economie_tot"],
+                                            name="Economie experte", line=dict(color="#3b82f6", width=1.8)))
+            if "economie_rl_tot" in ts_nb3.columns:
+                fig_ts.add_trace(go.Scatter(x=ts_nb3["timestamp"], y=ts_nb3["economie_rl_tot"],
+                                            name="Economie RL", line=dict(color="#059669", width=2)))
+            fig_ts.update_layout(template=template, margin=dict(l=0, r=0, t=20, b=0),
+                                 height=300, hovermode="x unified")
+            st.plotly_chart(fig_ts, width="stretch")
+            with st.expander("Voir series temporelles NB3"):
+                st.dataframe(ts_nb3, width="stretch", hide_index=True)
+
     # Section 3 - RL agents comparison (admin only - technical detail)
     if st.session_state.get("role") == "admin":
         with section("Comparaison des Agents RL"):
@@ -146,12 +184,28 @@ def page_optimisation_rl():
                     desc = AGENT_DESCRIPTIONS.get(agent, "Agent d'apprentissage par renforcement")
                     eco_str = f"{float(eco):.1f}%" if pd.notna(eco) and eco != "" else "0.0%"
                     viol_str = f"{float(viol):.1f}%" if pd.notna(viol) and viol != "" else "0.0%"
-                    st.markdown(f"**{agent}** — Economie : {eco_str} | Violations QoS : {viol_str}")
+                    st.markdown(f"**{agent}** - Economie : {eco_str} | Violations QoS : {viol_str}")
                     st.caption(desc)
 
                 st.dataframe(df_rl, width="stretch", hide_index=True)
             else:
                 st.info("Donnees agents RL non disponibles dans les artefacts NB3.")
+
+        with section("Artefacts Notebook NB3"):
+            c1, c2 = st.columns(2)
+            for col, filename, caption in [
+                (c1, "rl_7agents_apprentissage.png", "Apprentissage des 7 agents RL"),
+                (c2, "tableau_de_bord_complet.png", "Tableau de bord complet notebook"),
+            ]:
+                path = artifact_image_path(filename)
+                if path:
+                    with col:
+                        st.image(str(path), caption=caption, width="stretch")
+            st.markdown(
+                "Artefacts techniques NB3 : "
+                f"[agents_rl_7.pkl]({artifact_url('agents_rl_7.pkl')}) | "
+                f"[pipeline_inference.joblib]({artifact_url('pipeline_inference.joblib')})"
+            )
 
     # Section 4 - Decision distribution
     with section("Distribution des Decisions"):

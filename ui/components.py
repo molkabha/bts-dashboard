@@ -195,7 +195,7 @@ def sidebar_global(
     if date_from and date_to:
         filters["date_range"] = (date_from, date_to)
 
-    # Gouvernorat, Technologie, Type zone — populated from active dataset
+    # Gouvernorat, Technologie, Type zone - populated from notebook/HF data
     from services.data_service import load_filtered_main_data
     ds = load_filtered_main_data(["gouvernorat", "technologie", "type_zone"])
 

@@ -9,6 +9,7 @@ import streamlit as st
 
 from security.middleware import security_middleware
 from services.data_service import (
+    artifact_inventory,
     available_stations, db_execute, db_scalar, log_event,
     load_filtered_main_data,
 )
@@ -210,3 +211,8 @@ def page_configuration():
                 _save_config(dict(DEFAULT_THRESHOLDS))
                 st.success("Valeurs par defaut restaurees.")
                 st.rerun()
+
+    with section("Inventaire Artefacts Hugging Face"):
+        inv = artifact_inventory()
+        st.dataframe(inv, width="stretch", hide_index=True,
+                     column_config={"lien_hf": st.column_config.LinkColumn("Lien HF")})
