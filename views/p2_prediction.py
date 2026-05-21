@@ -10,11 +10,9 @@ import streamlit as st
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
 from services.data_service import (
-    artifact_image_path,
-    artifact_url,
     load_filtered_main_data,
 )
-from ui.components import header, kpi_card, section
+from ui.components import header, kpi_card, render_artifact_gallery, section
 from ui.utils import session_outputs, apply_current_admin_filters
 
 FEATURE_LABELS_FR = {
@@ -215,7 +213,6 @@ def page_prediction():
             st.dataframe(df_models, width="stretch", hide_index=True)
 
     with section("Artefacts Notebook NB1"):
-        c1, c2 = st.columns(2)
         images = [
             ("data_cleaning_avant_apres.png", "Nettoyage des donnees"),
             ("eda_correlations.png", "Correlations EDA"),
@@ -224,20 +221,17 @@ def page_prediction():
             ("shap_beeswarm.png", "SHAP - Distribution"),
             ("shap_waterfall.png", "SHAP - Explication locale"),
         ]
-        for i, (filename, caption) in enumerate(images):
-            path = artifact_image_path(filename)
-            if path:
-                with c1 if i % 2 == 0 else c2:
-                    st.image(str(path), caption=caption, width="stretch")
-
-        st.markdown(
-            "Modeles et datasets NB1 : "
-            f"[best_model.joblib]({artifact_url('best_model.joblib')}) | "
-            f"[modele_lgbm.joblib]({artifact_url('modele_lgbm.joblib')}) | "
-            f"[modele_stacking.joblib]({artifact_url('modele_stacking.joblib')}) | "
-            f"[quantile_models.joblib]({artifact_url('quantile_models.joblib')}) | "
-            f"[encodeurs.joblib]({artifact_url('encodeurs.joblib')}) | "
-            f"[config.joblib]({artifact_url('config.joblib')}) | "
-            f"[df_train_processed.parquet]({artifact_url('df_train_processed.parquet')}) | "
-            f"[df_test_processed.parquet]({artifact_url('df_test_processed.parquet')})"
+        render_artifact_gallery(
+            images,
+            title="Artefacts visuels NB1",
+            links=[
+                ("best_model.joblib", "best_model"),
+                ("modele_lgbm.joblib", "LightGBM"),
+                ("modele_stacking.joblib", "Stacking"),
+                ("quantile_models.joblib", "Quantiles"),
+                ("encodeurs.joblib", "Encodeurs"),
+                ("config.joblib", "Config"),
+                ("df_train_processed.parquet", "Train"),
+                ("df_test_processed.parquet", "Test"),
+            ],
         )

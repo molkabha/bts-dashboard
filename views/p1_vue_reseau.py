@@ -13,7 +13,7 @@ from services.data_service import (
     station_summary_from_df,
 )
 from ui.components import header, kpi_card, section
-from ui.utils import metric_value, download_df_button, apply_current_admin_filters
+from ui.utils import metric_value, download_df_button, apply_current_admin_filters, filter_artifact_dataframe
 
 
 def _render_folium_map(scores: pd.DataFrame):
@@ -164,11 +164,11 @@ def page_vue_reseau():
             download_df_button(scores, "stations_reseau.csv", "Exporter CSV")
 
     with section("Scores Stations Notebook"):
-        nb3_scores = artifact_table("streamlit_score_stations.parquet")
-        nb3_map = artifact_table("streamlit_carte_stations.parquet")
+        nb3_scores = filter_artifact_dataframe(artifact_table("streamlit_score_stations.parquet"))
+        nb3_map = filter_artifact_dataframe(artifact_table("streamlit_carte_stations.parquet"))
         if not nb3_scores.empty:
-            st.caption("Scores stations pre-calcules exportes par NB3 pour Streamlit.")
+            st.caption("Scores stations NB3 synchronises avec les filtres du dashboard quand les colonnes existent.")
             st.dataframe(nb3_scores, width="stretch", hide_index=True)
         if not nb3_map.empty:
-            st.caption("Synthese cartographique pre-calculee exportee par NB3.")
+            st.caption("Synthese cartographique NB3 synchronisee avec les filtres du dashboard quand les colonnes existent.")
             st.dataframe(nb3_map, width="stretch", hide_index=True)

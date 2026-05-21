@@ -79,11 +79,47 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
     if gf:
         if "date_range" in gf and "timestamp" in out.columns:
             out = apply_time_filters(out, {"date_range": gf["date_range"]})
+        stations = gf.get("stations")
+        if stations is not None and "station_id" in out.columns:
+            out = out[out["station_id"].astype(str).isin([str(s) for s in stations])]
         for key, col in [("gouvernorats", "gouvernorat"), ("technologies", "technologie"), ("zones", "type_zone")]:
             vals = gf.get(key)
             if vals and col in out.columns:
                 out = out[out[col].astype(str).isin(vals)]
     return out
+
+
+def selected_station_filter() -> str | None:
+    stations = st.session_state.get("global_filters", {}).get("stations") or []
+    stations = [str(station) for station in stations if str(station).strip()]
+    return stations[0] if len(stations) == 1 else None
+
+
+def active_filter_label() -> str:
+    gf = st.session_state.get("global_filters", {})
+    parts = []
+    station = selected_station_filter()
+    if station:
+        parts.append(f"Station {station}")
+    elif gf.get("stations"):
+        parts.append(f"{len(gf['stations'])} stations")
+    if gf.get("gouvernorats"):
+        parts.append(f"{len(gf['gouvernorats'])} gouvernorats")
+    if gf.get("technologies"):
+        parts.append(f"{len(gf['technologies'])} technologies")
+    if gf.get("zones"):
+        parts.append(f"{len(gf['zones'])} zones")
+    if gf.get("date_range"):
+        start, end = gf["date_range"]
+        parts.append(f"{start} -> {end}")
+    return "Contexte filtre : " + " | ".join(parts) if parts else "Contexte filtre : vue globale"
+
+
+def filter_artifact_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """Apply dashboard filters to notebook tables when matching columns exist."""
+    if df.empty:
+        return df
+    return apply_current_admin_filters(df)
 
 
 def selected_ref_from_table_event(event, table: pd.DataFrame, ref_col: str) -> str | None:

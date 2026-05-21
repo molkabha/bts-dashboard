@@ -7,6 +7,7 @@ import html
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Iterable
 
 import streamlit as st
 
@@ -70,6 +71,18 @@ def alert_banner(title: str, body: str, style: str = "info", meta: str = ""):
     )
 
 
+def context_badge(label: str, value: str, tone: str = "info"):
+    st.markdown(
+        f"""
+<div class="context-badge {html.escape(tone)}">
+  <span>{html.escape(label)}</span>
+  <strong>{html.escape(value)}</strong>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+
 def section(title: str):
     st.markdown(f'<div class="section">{html.escape(title)}</div>', unsafe_allow_html=True)
     return st.container()
@@ -109,6 +122,73 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
         unsafe_allow_html=True,
     )
 
+
+def render_artifact_gallery(
+    images: Iterable[tuple[str, str]],
+    *,
+    title: str = "Images notebook",
+    links: Iterable[tuple[str, str]] | None = None,
+    columns: int = 2,
+):
+    """Render notebook images consistently with filter context."""
+    from services.data_service import artifact_image_path, artifact_url
+    from ui.utils import selected_station_filter, active_filter_label
+
+    selected_station = selected_station_filter()
+    filter_label = active_filter_label()
+
+    st.markdown(
+        f"""
+<div class="artifact-toolbar">
+  <div>
+    <div class="artifact-title">{html.escape(title)}</div>
+    <div class="artifact-subtitle">
+      {html.escape(filter_label)}
+    </div>
+  </div>
+  <div class="artifact-scope {'station' if selected_station else 'global'}">
+    {'Station filtree' if selected_station else 'Vue globale'}
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(max(1, columns))
+    shown = 0
+    for i, (filename, caption) in enumerate(images):
+        path = artifact_image_path(filename)
+        if not path:
+            continue
+        shown += 1
+        with cols[i % len(cols)]:
+            st.markdown('<div class="artifact-card">', unsafe_allow_html=True)
+            st.image(str(path), width="stretch")
+            extra = (
+                f"Artefact global NB, contexte dashboard filtre sur {selected_station}."
+                if selected_station
+                else "Artefact global genere par notebook."
+            )
+            st.markdown(
+                f"""
+<div class="artifact-caption">
+  <strong>{html.escape(caption)}</strong>
+  <span>{html.escape(extra)}</span>
+</div>
+""",
+                unsafe_allow_html=True,
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    if shown == 0:
+        st.info("Aucune image notebook disponible pour cette section.")
+
+    if links:
+        link_html = " ".join(
+            f'<a href="{html.escape(artifact_url(filename))}" target="_blank">{html.escape(label)}</a>'
+            for filename, label in links
+        )
+        st.markdown(f'<div class="artifact-links">{link_html}</div>', unsafe_allow_html=True)
 
 
 def _data_freshness_label() -> str:
@@ -189,6 +269,13 @@ def sidebar_global(
 
     filters = {}
 
+    if station_options:
+        stations = [str(station) for station in station_options]
+        default_stations = st.session_state.get("sb_stations", stations)
+        default_stations = [s for s in default_stations if s in stations] or stations
+        sel_stations = st.sidebar.multiselect("Station", stations, default=default_stations, key="sb_stations")
+        filters["stations"] = sel_stations
+
     # Period
     date_from = st.sidebar.date_input("Debut periode", value=None, key="sb_date_from")
     date_to = st.sidebar.date_input("Fin periode", value=None, key="sb_date_to")
@@ -213,8 +300,6 @@ def sidebar_global(
         zones = sorted(ds["type_zone"].dropna().unique().astype(str).tolist())
         sel_zones = st.sidebar.multiselect("Type zone", zones, default=zones, key="sb_zones")
         filters["zones"] = sel_zones
-
-    st.sidebar.divider()
 
     st.sidebar.divider()
 
