@@ -1,0 +1,108 @@
+# BTS Dashboard — Tunisie Telecom
+
+## Présentation
+
+Ce projet est une solution d'optimisation énergétique des stations de base BTS de Tunisie Telecom. Il combine trois notebooks de data science et une application Streamlit qui présente :
+
+- la prédiction de consommation énergétique,
+- la détection d'anomalies,
+- l'optimisation décisionnelle et RL,
+- une interface de supervision réseau.
+
+## Notebooks
+
+### Notebook 1 — Apprentissage Supervisé
+- Objectif : prédire la consommation horaire des stations.
+- Étapes :
+  - compréhension métier et chargement des données
+  - nettoyage et correction des anomalies
+  - feature engineering et EDA
+  - comparaison de 7 modèles supervisés
+  - validation croisée temporelle
+  - évaluation finale et interprétabilité SHAP
+- Sorties clés :
+  - `best_model.joblib`
+  - `encodeurs.joblib`
+  - `quantile_models.joblib`
+  - `df_train_processed.parquet`
+  - `df_test_processed.parquet`
+  - `df_full_processed.parquet`
+  - `resultats_modeles.json`
+
+### Notebook 2 — Détection d'Anomalies (Non Supervisé)
+- Prérequis : sorties NB1 (`df_full_processed.parquet`, `config.joblib`).
+- Objectif : détecter les anomalies de consommation et qualifier les incidents QoS.
+- Étapes :
+  - création de features d'anomalie et standardisation
+  - estimation data-driven de la contamination
+  - entraînement de 7 détecteurs non supervisés
+  - calibration des scores et consensus des moteurs
+  - évaluation qualitative et visualisations
+- Sorties clés :
+  - `modeles_anomalie.joblib`
+  - `autoencoder.keras` (si TensorFlow)
+  - `performance_qualitative_modeles.csv`
+  - scores et données préparées pour NB3
+
+### Notebook 3 — Système de Décision & Optimisation Énergétique
+- Prérequis : exécutés NB1 et NB2.
+- Objectif : définir un moteur de décision et optimiser l'usage électrique via des règles et du Reinforcement Learning.
+- Contenu :
+  - chargement des artefacts NB1/NB2
+  - moteur de décision multi-mode : ECO / NORMAL / ATTENTION / CRITIQUE
+  - garde-fou QoS
+  - 5 stratégies expertes d'optimisation
+  - environnement de simulation BTS
+  - 7 agents RL entraînés et comparés
+  - visualisations des économies et des profils horaires
+  - pipeline d'inférence temps réel
+- Sorties clés :
+  - `pipeline_inference.joblib`
+  - `tableau_de_bord_complet.png`
+  - artefacts RL
+
+## Dashboard Streamlit
+
+L'application principale se lance depuis `app.py`.
+
+### Fonctionnalités
+- Authentification et gestion des permissions
+- Chargement des artefacts NB1/NB2/NB3
+- Navigation multi-pages :
+  - `Accueil` : synthèse réseau, KPIs, alertes et rapport PDF
+  - `Vue Globale Réseau` : carte Folium, tableau récapitulatif, KPI spatiaux
+  - `Prediction de Consommation` : performances NB1, comparatif réel vs prédit, importance des variables
+  - `Detection d'Anomalies` : feed d'anomalies, heatmap, consensus détecteurs
+  - `Optimisation et RL` : simulateur d'économies, profils horaires, comparaison des agents RL
+  - pages supplémentaires : simulation, upload admin, configuration, utilisateurs
+
+### Structure du code
+- `app.py` : point d'entrée Streamlit
+- `ui/dashboard.py` : router des pages
+- `views/` : pages du tableau de bord
+- `services/data_service.py` : accès aux données et calcul des KPI
+- `ui/components.py`, `ui/layout.py`, `ui/utils.py` : composants et utilitaires
+- `security/middleware.py` : contrôle d'accès
+
+## Installation rapide
+
+1. Créer un environnement Python.
+2. Installer les dépendances :
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Lancer l'application :
+   ```bash
+   python app.py
+   ```
+
+## Données
+
+- Les données principales sont stockées dans `VF/tunisie_telecom_dataset.csv`.
+- Les notebooks produisent des artefacts dans les dossiers `outputs/` et `VF/*/output`.
+
+## Notes
+
+- Le dashboard repose sur des artefacts générés par les notebooks.
+- NB1 prépare les prévisions, NB2 prépare la détection d'anomalies, NB3 prépare l'optimisation décisionnelle.
+- La vue réseau et les KPIs utilisent à la fois la consommation réelle, les scores QoS et les scores d'anomalie.
