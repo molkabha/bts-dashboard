@@ -7,27 +7,16 @@ session-state helpers that can be called at the top of each page render.
 
 from __future__ import annotations
 
-import functools
 import hmac
+import logging
 import secrets
 import time
-from typing import Any, Callable, Dict, Optional
+from typing import Dict, Optional
 
 import streamlit as st
 
 from config.settings import settings
-from utils.error_handler import AppError, ErrorCode
-from utils.logging_config import configure_application_logging
 
-try:
-    import redis
-except ImportError:
-    redis = None
-
-# Module-level storage for rate limiting (fallback when Redis is disabled).
-# WARNING: This storage is local to the current process and does not persist across restarts.
-# In multi-process deployments, rate limits will not be synchronized between instances.
-# Redis stays optional for the local dashboard; in-memory limits are enough here.
 _GLOBAL_RATE_LIMITS: Dict[str, list] = {}
 
 
@@ -37,22 +26,7 @@ class SecurityMiddleware:
     def __init__(self, secret_key: Optional[str] = None):
         """Initialize security middleware."""
         self.secret_key = secret_key or settings.SECRET_KEY or secrets.token_hex(32)
-        self.logger, _ = configure_application_logging("production")
-        self.redis_client = None
-
-        if settings.REDIS_ENABLED and redis:
-            try:
-                self.redis_client = redis.Redis(
-                    host=settings.REDIS_HOST,
-                    port=settings.REDIS_PORT,
-                    db=settings.REDIS_DB,
-                    password=settings.REDIS_PASSWORD,
-                    decode_responses=True
-                )
-                self.redis_client.ping()
-            except Exception as e:
-                self.logger.error("redis_connection_failed", error=str(e))
-                self.redis_client = None
+        self.logger = logging.getLogger(__name__)
 
     def _get_client_ip(self) -> str:
         """Get the client's IP address with trusted proxy validation."""
@@ -120,16 +94,6 @@ class SecurityMiddleware:
         ip = self._get_client_ip()
         keys = [f"lockout:ip:{ip}", f"lockout:user:{username}"]
 
-        if self.redis_client:
-            try:
-                for key in keys:
-                    self.redis_client.lpush(key, now)
-                    self.redis_client.ltrim(key, 0, 10)  # Keep only last 10
-                    self.redis_client.expire(key, 1800)  # 30 min expiry
-                return
-            except Exception as e:
-                self.logger.error("redis_lockout_record_failed", error=str(e))
-
         for key in keys:
             if key not in _GLOBAL_RATE_LIMITS:
                 _GLOBAL_RATE_LIMITS[key] = []
@@ -148,15 +112,7 @@ class SecurityMiddleware:
         max_remaining = 0
 
         for key in keys:
-            attempts = []
-            if self.redis_client:
-                try:
-                    attempts = [float(t) for t in self.redis_client.lrange(key, 0, -1)]
-                except Exception as e:
-                    self.logger.error("redis_lockout_check_failed", error=str(e))
-            else:
-                attempts = _GLOBAL_RATE_LIMITS.get(key, [])
-
+            attempts = _GLOBAL_RATE_LIMITS.get(key, [])
             recent = [t for t in attempts if now - t < window]
 
             if len(recent) >= max_attempts:
@@ -174,12 +130,6 @@ class SecurityMiddleware:
         ip = self._get_client_ip()
         keys = [f"lockout:ip:{ip}", f"lockout:user:{username}"]
 
-        if self.redis_client:
-            try:
-                self.redis_client.delete(*keys)
-            except Exception:
-                pass
-
         for key in keys:
             _GLOBAL_RATE_LIMITS.pop(key, None)
 
@@ -190,27 +140,10 @@ class SecurityMiddleware:
     def check_rate_limit(self, client_id: str, max_requests: int = 100, window: int = 60) -> bool:
         """
         Return True if the client is within the rate limit, False if exceeded.
-        Uses Redis if enabled, otherwise falls back to a global dictionary.
         """
         now = time.time()
         ip = self._get_client_ip()
-        # Track by both IP and username to prevent distributed attacks
         keys = [f"rl:ip:{ip}", f"rl:user:{client_id}"]
-
-        if self.redis_client:
-            try:
-                for key in keys:
-                    # Use Redis pipeline for atomicity
-                    pipe = self.redis_client.pipeline()
-                    pipe.incr(key)
-                    pipe.expire(key, window)
-                    count, _ = pipe.execute()
-                    if int(count) > max_requests:
-                        return False
-                return True
-            except Exception as e:
-                self.logger.error("redis_rate_limit_failed", error=str(e))
-                # Fallback to in-memory if Redis fails
 
         # In-memory fallback
         for key in keys:
@@ -286,48 +219,9 @@ class SecurityMiddleware:
             st.error(f"Acces refuse. Role {role} requis.")
             st.stop()
 
-    # ------------------------------------------------------------------
-    # Decorators
-    # ------------------------------------------------------------------
-
-    def require_auth(self, func: Callable) -> Callable:
-        """Decorator: raise AppError if no user is authenticated."""
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            if not st.session_state.get("authenticated"):
-                raise AppError(ErrorCode.AUTH_FAILED, "Authentication required")
-            return func(*args, **kwargs)
-        return wrapper
-
-    def require_role(self, role: str) -> Callable:
-        """Decorator factory: raise AppError if the user does not have *role*."""
-        def decorator(func: Callable) -> Callable:
-            @functools.wraps(func)
-            def wrapper(*args, **kwargs):
-                if st.session_state.get("role") != role:
-                    raise AppError(ErrorCode.INSUFFICIENT_PERMISSIONS,
-                                   f"Role '{role}' required")
-                return func(*args, **kwargs)
-            return wrapper
-        return decorator
-
 
 # ---------------------------------------------------------------------------
 # Module-level singleton
 # ---------------------------------------------------------------------------
 
 security_middleware = SecurityMiddleware()
-
-
-def init_security(config: Dict[str, Any]) -> None:
-    """Re-initialise the module singleton with production config."""
-    global security_middleware
-    security_middleware = SecurityMiddleware(secret_key=config.get("SECRET_KEY"))
-    security_middleware.logger.info(
-        "Security middleware initialized",
-        extra={
-            "environment": config.get("ENVIRONMENT", "development"),
-            "csrf_protection": config.get("CSRF_PROTECTION", True),
-            "rate_limiting": config.get("RATE_LIMITING", True),
-        },
-    )

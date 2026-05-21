@@ -47,22 +47,11 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "SECRET_KEY must be set to a secure value in production environment"
                 )
-            if not self.REDIS_ENABLED:
-                raise ValueError(
-                    "REDIS_ENABLED must be True in production environment for reliable rate limiting"
-                )
         return self
 
     # Security
     TRUSTED_PROXIES: List[str] = Field(default=["127.0.0.1"])
     CSRF_ROTATE_TOKEN: bool = Field(default=True)
-
-    # Redis
-    REDIS_HOST: str = Field(default="localhost")
-    REDIS_PORT: int = Field(default=6379)
-    REDIS_DB: int = Field(default=0)
-    REDIS_PASSWORD: Optional[str] = Field(default=None)
-    REDIS_ENABLED: bool = Field(default=False)
 
     # Database
     DB_PATH: Path = Field(default=ROOT / "dashboard_ops.sqlite3")
