@@ -97,7 +97,7 @@ def live_indicator():
 
 def header(title: str, subtitle: str, logo_path: Path | None = None):
     role = st.session_state.get("role")
-    display = "Administrateur" if role == "admin" else "Ingenieur reseau" if role == "engineer" else "Connexion"
+    display = "Administrateur" if role == "admin" else "Ingenieur reseau" if role in {"engineer", "ingenieur"} else "Connexion"
     cls = "admin" if role == "admin" else ""
     logo_html = ""
     if logo_path:
@@ -208,12 +208,12 @@ def _data_freshness_label() -> str:
 
 PAGE_LABELS = [
     "Accueil",
-    "Vue Globale Reseau",
-    "Prediction (NB1)",
-    "Anomalies (NB2)",
-    "Optimisation RL (NB3)",
+    "Reseau",
+    "Prevision",
+    "Alertes",
+    "Optimisation",
     "Simulation Temps Reel",
-    "Upload Dataset",
+    "Donnees",
     "Configuration",
     "Gestion Utilisateurs",
 ]
@@ -257,7 +257,7 @@ def sidebar_global(
     if role != "admin":
         visible_pages = [
             p for p in visible_pages if p not in (
-                "Upload Dataset",
+                "Donnees",
                 "Configuration",
                 "Gestion Utilisateurs")]
 

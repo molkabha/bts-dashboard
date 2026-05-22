@@ -122,7 +122,7 @@ def page_configuration():
                     "strat_calendaire", True), key="cfg_strat_cal")
 
     # Section 3 - RL parameters
-    with section("Parametres RL"):
+    with st.expander("Parametres RL avances", expanded=False):
         st.caption("Ces parametres s'appliquent au prochain relancement du pipeline.")
         c1, c2 = st.columns(2)
         with c1:
@@ -212,7 +212,7 @@ def page_configuration():
                 st.success("Valeurs par defaut restaurees.")
                 st.rerun()
 
-    with section("Inventaire Artefacts Hugging Face"):
+    with st.expander("Inventaire artefacts Hugging Face", expanded=False):
         inv = artifact_inventory()
         st.dataframe(inv, width="stretch", hide_index=True,
                      column_config={"lien_hf": st.column_config.LinkColumn("Lien HF")})

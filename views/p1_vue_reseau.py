@@ -109,7 +109,7 @@ def _render_folium_map(scores: pd.DataFrame):
 
 def page_vue_reseau():
     security_middleware.enforce()
-    header("Vue Globale Reseau", "Lecture spatiale et operationnelle du reseau")
+    header("Reseau", "Carte, criticite et priorites operationnelles")
 
     cols = [
         "timestamp", "station_id", "gouvernorat", "type_zone", "technologie",
@@ -173,7 +173,7 @@ def page_vue_reseau():
                          width="stretch", hide_index=True)
             download_df_button(scores, "stations_reseau.csv", "Exporter CSV")
 
-    with section("Scores Stations Notebook"):
+    with st.expander("Details techniques NB3", expanded=False):
         nb3_scores = filter_artifact_dataframe(artifact_table("streamlit_score_stations.parquet"))
         nb3_map = filter_artifact_dataframe(artifact_table("streamlit_carte_stations.parquet"))
         if not nb3_scores.empty:

@@ -54,7 +54,7 @@ def _model_results(nb1: dict) -> dict:
 
 def page_prediction():
     security_middleware.enforce()
-    header("Prediction de Consommation", "Performance du modele NB1 et analyses predictives")
+    header("Prevision", "Consommation reelle, consommation predite et ecarts utiles")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     outputs = session_outputs()
@@ -168,7 +168,7 @@ def page_prediction():
                         st.caption("Le modele est precis : les erreurs sont petites et symetriques autour de zero.")
 
     # Section 3 - Feature importance
-    with section("Facteurs d'Influence"):
+    with st.expander("Facteurs d'influence avances", expanded=False):
         shap_data = nb1.get("feature_importance", nb1.get("shap_values", nb1.get("importances", {})))
 
         # Dynamic fallback: Pearson correlation if artifact is missing
@@ -204,7 +204,7 @@ def page_prediction():
     # Section 4 - Model comparison
     models = _model_results(nb1)
     if models:
-        with section("Comparaison des Modeles"):
+        with st.expander("Comparaison technique des modeles", expanded=False):
             df_models = pd.DataFrame.from_dict(models, orient="index").reset_index(names="Modele")
             if "r2" in df_models.columns:
                 df_models = df_models.sort_values("r2", ascending=False).reset_index(drop=True)
@@ -212,7 +212,7 @@ def page_prediction():
                 df_models.insert(0, "Rang", ranks[:len(df_models)])
             st.dataframe(df_models, width="stretch", hide_index=True)
 
-    with section("Artefacts Notebook NB1"):
+    with st.expander("Artefacts notebook NB1", expanded=False):
         images = [
             ("data_cleaning_avant_apres.png", "Nettoyage des donnees"),
             ("eda_correlations.png", "Correlations EDA"),

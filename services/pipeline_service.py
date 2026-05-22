@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from services.decision_service import MoteurDecisionEnergie
 from services.optimization_service import StrategieOptimisation
@@ -28,6 +29,92 @@ def _fill_business_columns(df: pd.DataFrame, source: pd.DataFrame, columns: list
     return df
 
 
+def _ensure_temporal_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Create standard temporal columns used by NB1/NB2/NB3 pages."""
+    if "timestamp" not in df.columns:
+        return df
+    ts = pd.to_datetime(df["timestamp"], errors="coerce")
+    df["timestamp"] = ts
+    if "heure" not in df.columns:
+        df["heure"] = ts.dt.hour
+    if "mois" not in df.columns:
+        df["mois"] = ts.dt.month
+    if "jour_semaine" not in df.columns:
+        df["jour_semaine"] = ts.dt.weekday
+    if "est_weekend" not in df.columns:
+        df["est_weekend"] = pd.to_numeric(df["jour_semaine"], errors="coerce").ge(5).astype(int)
+    return df
+
+
+def _simulate_nb1_prediction(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add NB1-like prediction columns when the uploaded dataset does not already
+    contain model outputs. This keeps the admin upload usable across all pages.
+    """
+    if "consommation_kwh" not in df.columns:
+        return df
+
+    conso = pd.to_numeric(df["consommation_kwh"], errors="coerce")
+    if "conso_predite" not in df.columns or _blank_mask(df["conso_predite"]).any():
+        pred = conso.copy()
+        if {"station_id", "heure"}.issubset(df.columns):
+            profile = (
+                pd.DataFrame({"station_id": df["station_id"].astype(str), "heure": df["heure"], "conso": conso})
+                .groupby(["station_id", "heure"])["conso"]
+                .transform("median")
+            )
+            pred = profile.fillna(conso.median()).astype(float)
+        elif "heure" in df.columns:
+            pred = conso.groupby(df["heure"]).transform("median").fillna(conso.median())
+        else:
+            pred = conso.rolling(24, min_periods=1).median().fillna(conso.median())
+        df["conso_predite"] = pred.round(3)
+
+    pred = pd.to_numeric(df["conso_predite"], errors="coerce").fillna(conso)
+    if "pred_q10" not in df.columns:
+        df["pred_q10"] = (pred * 0.90).round(3)
+    if "pred_q90" not in df.columns:
+        df["pred_q90"] = (pred * 1.10).round(3)
+    if "ecart_pct" not in df.columns:
+        df["ecart_pct"] = ((conso - pred) / pred.replace(0, np.nan) * 100).replace([np.inf, -np.inf], np.nan).fillna(0)
+    return df
+
+
+def _simulate_nb2_anomalies(df: pd.DataFrame) -> pd.DataFrame:
+    """Add NB2-like anomaly scores and detector votes when missing."""
+    if "anomalie_score_ensemble" in df.columns and "nb_votes_anomalie" in df.columns:
+        return df
+
+    index = df.index
+    conso = pd.to_numeric(df.get("consommation_kwh", pd.Series(0, index=index)), errors="coerce").fillna(0)
+    pred = pd.to_numeric(df.get("conso_predite", conso), errors="coerce").fillna(conso)
+    cpu = pd.to_numeric(df.get("charge_cpu_pct", pd.Series(50, index=index)), errors="coerce").fillna(50)
+    qos = pd.to_numeric(df.get("score_qos", pd.Series(0.82, index=index)), errors="coerce").fillna(0.82)
+    voix = pd.to_numeric(df.get("taux_charge_voix", pd.Series(0.2, index=index)), errors="coerce").fillna(0.2)
+    data = pd.to_numeric(df.get("taux_charge_data", pd.Series(0.3, index=index)), errors="coerce").fillna(0.3)
+
+    residual = ((conso - pred).abs() / pred.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
+    cpu_score = ((cpu - 70) / 30).clip(lower=0, upper=1)
+    qos_score = ((0.75 - qos) / 0.35).clip(lower=0, upper=1)
+    traffic_score = ((voix + data - 1.05) / 0.75).clip(lower=0, upper=1)
+    anomaly_score = (0.45 * residual.clip(0, 1) + 0.20 * cpu_score + 0.25 * qos_score + 0.10 * traffic_score).clip(0, 1)
+
+    if "anomalie_score_ensemble" not in df.columns:
+        df["anomalie_score_ensemble"] = anomaly_score.round(3)
+    if "nb_votes_anomalie" not in df.columns:
+        votes = (
+            residual.gt(0.25).astype(int)
+            + residual.gt(0.40).astype(int)
+            + cpu_score.gt(0.35).astype(int)
+            + cpu_score.gt(0.65).astype(int)
+            + qos_score.gt(0.25).astype(int)
+            + qos_score.gt(0.55).astype(int)
+            + traffic_score.gt(0.35).astype(int)
+        )
+        df["nb_votes_anomalie"] = votes.astype(int)
+    return df
+
+
 def simulate_nb_pipeline(
     df_in: pd.DataFrame,
     thresholds: dict | None = None,
@@ -47,6 +134,9 @@ def simulate_nb_pipeline(
         pd.DataFrame: Processed DataFrame with decision and optimization columns.
     """
     df = df_in.copy()
+    df = _ensure_temporal_columns(df)
+    df = _simulate_nb1_prediction(df)
+    df = _simulate_nb2_anomalies(df)
 
     # 1. Basic Decision Logic (NB1/NB2 results mapping to modes)
     has_nb3_decision = {"mode_operation", "action_proposee", "economie_estimee_kwh"}.issubset(df.columns)

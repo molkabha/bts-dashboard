@@ -94,11 +94,12 @@ def page_accueil():
 
     # PDF export
     with section("Rapport"):
-        render_artifact_gallery(
-            [("tableau_de_bord_complet.png", "Tableau de bord complet genere par NB3")],
-            title="Apercu notebook",
-            columns=1,
-        )
+        with st.expander("Apercu notebook avance", expanded=False):
+            render_artifact_gallery(
+                [("tableau_de_bord_complet.png", "Tableau de bord complet genere par NB3")],
+                title="Apercu notebook",
+                columns=1,
+            )
         if st.button("Generer rapport PDF", type="primary", width="stretch"):
             anomaly_items = []
             if not top.empty:

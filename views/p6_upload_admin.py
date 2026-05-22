@@ -68,7 +68,10 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     st.cache_data.clear()
     st.session_state.pop("data", None)
     log_event("admin_dataset_published", {"file": source_name, "rows": len(processed)})
-    return True, f"Dataset publie : {len(processed):,} lignes."
+    return True, (
+        f"Dataset publie : {len(processed):,} lignes traitees par le pipeline dashboard "
+        "NB1 prediction -> NB2 anomalies -> NB3 decisions/optimisation."
+    )
 
 
 def page_upload_admin():
@@ -78,13 +81,13 @@ def page_upload_admin():
         st.error("Acces refuse. Cette page est reservee aux administrateurs.")
         return
 
-    header("Upload Dataset", "Importer, valider et publier un nouveau dataset")
+    header("Donnees", "Importer un dataset et le publier dans tout le dashboard")
     info = active_dataset_info()
     if info:
         st.info(f"Dataset actif : {info.get('name', 'Standard')} ({info.get('published_at', '')})")
 
     # Section 1 - Upload
-    with section("Importer un Dataset"):
+    with section("Importer et Publier"):
         uploaded = st.file_uploader("Glisser-deposer un fichier CSV ou Parquet", type=["csv", "parquet"],
                                     key="upload_dataset")
         if uploaded is not None:
@@ -97,7 +100,8 @@ def page_upload_admin():
             # Schema validation
             validation = _validate_schema(df_source)
             val_df = pd.DataFrame(validation)
-            st.dataframe(val_df, width="stretch", hide_index=True)
+            with st.expander("Schema attendu et impact des colonnes manquantes", expanded=False):
+                st.dataframe(val_df, width="stretch", hide_index=True)
 
             missing_critical = [v["Colonne"] for v in validation
                                 if v["Statut"] == "ABSENTE" and v["Colonne"] in ("station_id", "consommation_kwh")]
@@ -106,8 +110,8 @@ def page_upload_admin():
                 return
 
             # Preview
-            st.markdown("**Apercu (10 premieres lignes)**")
-            st.dataframe(df_source.head(10), width="stretch", hide_index=True)
+            with st.expander("Apercu du fichier source", expanded=False):
+                st.dataframe(df_source.head(10), width="stretch", hide_index=True)
 
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -119,17 +123,23 @@ def page_upload_admin():
                 missing_pct = df_source.isna().mean().mean() * 100
                 kpi_card("Valeurs manquantes", f"{missing_pct:.1f}%", "moyenne")
 
-            if st.button("Valider et publier", type="primary", width="stretch"):
+            st.info(
+                "A la publication, ce fichier devient la source active pour les pages admin et ingenieur. "
+                "Le dashboard ajoute les sorties NB1/NB2/NB3 necessaires si elles ne sont pas deja presentes."
+            )
+
+            if st.button("Executer NB1/NB2/NB3 et publier", type="primary", width="stretch"):
                 with st.spinner("Publication en cours..."):
                     ok, msg = _publish_dataset(df_source, uploaded.name)
                 if ok:
                     st.success(msg)
+                    st.info("Les filtres, cartes, alertes, predictions et optimisations utilisent maintenant ce dataset.")
                 else:
                     st.error(msg)
 
     # Section 2 - Pipeline rerun
-    with section("Relance Pipeline"):
-        st.warning("Cette operation va retraiter le dataset actif avec le pipeline NB1/NB2/NB3.")
+    with st.expander("Relance avancee du pipeline", expanded=False):
+        st.warning("Cette operation retraite un echantillon du dataset actif avec le pipeline NB1/NB2/NB3 du dashboard.")
         if st.button("Relancer le pipeline complet", type="primary"):
             progress = st.progress(0)
             status = st.empty()
@@ -153,6 +163,6 @@ def page_upload_admin():
     # Section 3 - Pipeline result
     result = st.session_state.get("pipeline_result")
     if isinstance(result, pd.DataFrame) and not result.empty:
-        with section("Resultat du Pipeline"):
+        with st.expander("Resultat du Pipeline", expanded=False):
             st.dataframe(result.head(500), width="stretch", hide_index=True)
             download_df_button(result, "pipeline_result.csv", "Exporter resultat")

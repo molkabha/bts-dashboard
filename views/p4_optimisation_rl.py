@@ -32,7 +32,7 @@ AGENT_DESCRIPTIONS = {
 
 def page_optimisation_rl():
     security_middleware.enforce()
-    header("Optimisation et RL", "Economies realisees et agents de reinforcement learning")
+    header("Optimisation", "Economies, modes operationnels et recommandations")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     outputs = session_outputs()
@@ -127,7 +127,7 @@ def page_optimisation_rl():
             with st.expander("Voir profil horaire NB3"):
                 st.dataframe(hourly, width="stretch", hide_index=True)
 
-    with section("Series Temporelles NB3"):
+    with st.expander("Series temporelles avancees", expanded=False):
         ts_nb3 = filter_artifact_dataframe(artifact_table("streamlit_timeseries.parquet"))
         if selected_station and "timestamp" in df.columns and "consommation_kwh" in df.columns:
             ts_nb3 = df.copy()
@@ -162,7 +162,7 @@ def page_optimisation_rl():
 
     # Section 3 - RL agents comparison (admin only - technical detail)
     if st.session_state.get("role") == "admin":
-        with section("Comparaison des Agents RL"):
+        with st.expander("Comparaison technique des agents RL", expanded=False):
             rl_data = nb3.get("rl_resultats_tous_agents", {})
             if rl_data:
                 df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
@@ -193,7 +193,7 @@ def page_optimisation_rl():
             else:
                 st.info("Donnees agents RL non disponibles dans les artefacts NB3.")
 
-        with section("Artefacts Notebook NB3"):
+        with st.expander("Artefacts notebook NB3", expanded=False):
             render_artifact_gallery(
                 [
                     ("rl_7agents_apprentissage.png", "Apprentissage des 7 agents RL"),

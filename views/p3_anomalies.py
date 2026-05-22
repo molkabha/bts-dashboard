@@ -25,7 +25,7 @@ def _severity_label(score: float) -> str:
 
 def page_anomalies():
     security_middleware.enforce()
-    header("Detection d'Anomalies", "Identification et gestion des anomalies NB2")
+    header("Alertes", "Anomalies actives, criticite et traitement")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     outputs = session_outputs()
@@ -158,7 +158,7 @@ def page_anomalies():
                 st.plotly_chart(fig, width="stretch")
 
     if st.session_state.get("role") == "admin":
-        with section("Consensus des Detecteurs"):
+        with st.expander("Diagnostic technique des detecteurs", expanded=False):
             nb2 = outputs.get("nb2", {})
             if nb2:
                 st.dataframe(pd.DataFrame.from_dict(nb2, orient="index").reset_index(names="Detecteur"),
@@ -172,7 +172,7 @@ def page_anomalies():
                 fig_v.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0), height=250)
                 st.plotly_chart(fig_v, width="stretch")
 
-        with section("Artefacts Notebook NB2"):
+        with st.expander("Artefacts notebook NB2", expanded=False):
             render_artifact_gallery(
                 [
                     ("precision_recall_modeles.png", "Precision / recall des detecteurs"),
