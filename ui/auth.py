@@ -11,32 +11,51 @@ def login_page(logo_path: Path):
     # Rate limiting is already handled in authenticate_user.
     logo = image_data_uri(logo_path)
     logo_html = f'<img class="login-logo" src="{logo}" alt="Tunisie Telecom">' if logo else ""
-    st.markdown(
-        f"""
-<div class="login-hero">
+    st.markdown('<div class="login-page-title">', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    left, right = st.columns([1.05, 0.95], vertical_alignment="center")
+    with left:
+        st.markdown(
+            f"""
+<div class="login-panel brand-panel">
   {logo_html}
   <div class="login-kicker">Tunisie Telecom</div>
-  <div class="login-heading">BTS Energy Management System</div>
+  <div class="login-heading">BTS Energy Management</div>
+  <div class="login-subtitle">Supervision énergétique des stations radio, alertes et optimisation.</div>
+  <div class="login-points">
+    <span>Prédiction</span>
+    <span>Anomalies</span>
+    <span>Optimisation</span>
+  </div>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
-    left, center, right = st.columns([1, 1.05, 1])
-    with center:
-        with st.container(border=True):
-            with st.form("login_unique"):
-                user = st.text_input("Identifiant", key="login_user", placeholder="email admin ou ingenieur")
-                pwd = st.text_input("Mot de passe", type="password", key="login_pwd")
-                submitted = st.form_submit_button("Se connecter", type="primary", width="stretch")
+            unsafe_allow_html=True,
+        )
 
-            with st.expander("Mot de passe oublie", expanded=False):
-                with st.form("forgot_password"):
-                    reset_login = st.text_input("Email ou identifiant", key="reset_login")
-                    reset_submitted = st.form_submit_button("Recevoir un mot de passe temporaire", width="stretch")
+    with right:
+        st.markdown('<div class="login-form-card">', unsafe_allow_html=True)
+        st.markdown(
+            """
+<div class="form-title">Connexion</div>
+<div class="form-subtitle">Accès sécurisé au tableau de bord.</div>
+""",
+            unsafe_allow_html=True,
+        )
+        with st.form("login_unique"):
+            user = st.text_input("Identifiant", key="login_user", placeholder="Email ou nom utilisateur")
+            pwd = st.text_input("Mot de passe", type="password", key="login_pwd", placeholder="Mot de passe")
+            submitted = st.form_submit_button("Se connecter", type="primary", width="stretch")
 
-            st.markdown(
-                '<div class="login-footer">Acces securise aux donnees NB1, NB2 et NB3</div>',
-                unsafe_allow_html=True)
+        with st.expander("Mot de passe oublié", expanded=False):
+            with st.form("forgot_password"):
+                reset_login = st.text_input("Email ou identifiant", key="reset_login")
+                reset_submitted = st.form_submit_button("Recevoir un mot de passe temporaire", width="stretch")
+
+        st.markdown(
+            '<div class="login-footer">Accès réservé aux administrateurs et ingénieurs autorisés.</div>',
+            unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
     if "reset_submitted" in locals() and reset_submitted:
         reset_login = UserInputValidator.sanitize_string(reset_login, 120)
