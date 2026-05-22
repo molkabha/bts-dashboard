@@ -223,7 +223,6 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 /* Login */
 .login-panel { min-height:390px; border:1px solid var(--tt-border); border-radius:10px; background:#fff; box-shadow:0 12px 30px rgba(15,23,42,0.07); }
 .brand-panel { padding:34px 36px; border-left:4px solid var(--tt-red); display:flex; flex-direction:column; justify-content:center; }
-.login-form-card { border:1px solid var(--tt-border); border-radius:10px; background:#fff; padding:28px 30px 22px 30px; box-shadow:0 12px 30px rgba(15,23,42,0.07); }
 .login-logo { display:block; width:150px; height:auto; object-fit:contain; margin:0 0 24px 0; }
 .login-kicker { color:var(--tt-red); font-size:11px; font-weight:850; letter-spacing:1.4px; text-transform:uppercase; }
 .login-heading { color:var(--tt-text); font-size:30px; font-weight:850; margin-top:8px; line-height:1.08; max-width:420px; }
@@ -233,6 +232,16 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .form-title { color:var(--tt-text); font-size:24px; font-weight:850; line-height:1.15; }
 .form-subtitle { color:var(--tt-muted); font-size:13px; margin:4px 0 18px 0; }
 .login-footer { color:var(--tt-muted); text-align:center; font-size:11.5px; margin-top:14px; line-height:1.4; }
+.login-panel + div [data-testid="stVerticalBlockBorderWrapper"],
+[data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] {
+  border:1px solid var(--tt-border) !important;
+  border-radius:10px !important;
+  box-shadow:0 12px 30px rgba(15,23,42,0.07) !important;
+  background:#fff !important;
+}
+[data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+  padding:28px 30px 22px 30px !important;
+}
 
 /* Podium */
 .podium { display:flex; gap:12px; justify-content:center; margin:16px 0; }
@@ -270,7 +279,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { backg
 .badge-critical { background:#450a0a; color:#fca5a5; border-color:#7f1d1d; }
 [data-testid="stSidebar"] { background:linear-gradient(180deg,#0b1220 0%,#111827 100%) !important; border-right:1px solid var(--tt-border) !important; }
 [data-testid="stSidebar"] .sb-user { background:#0f172a; border-color:#1f2937; }
-.login-panel, .login-form-card { background:#111827; border-color:#1f2937; }
+.login-panel, [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] { background:#111827 !important; border-color:#1f2937 !important; }
 .login-heading, .form-title { color:var(--tt-text); }
 .login-points span { background:#0f172a; border-color:#1f2937; color:#e5e7eb; }
 </style>

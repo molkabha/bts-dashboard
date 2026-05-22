@@ -11,8 +11,6 @@ def login_page(logo_path: Path):
     # Rate limiting is already handled in authenticate_user.
     logo = image_data_uri(logo_path)
     logo_html = f'<img class="login-logo" src="{logo}" alt="Tunisie Telecom">' if logo else ""
-    st.markdown('<div class="login-page-title">', unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
     left, right = st.columns([1.05, 0.95], vertical_alignment="center")
     with left:
@@ -34,50 +32,51 @@ def login_page(logo_path: Path):
         )
 
     with right:
-        st.markdown('<div class="login-form-card">', unsafe_allow_html=True)
-        st.markdown(
-            """
+        with st.container(border=True):
+            st.markdown(
+                """
 <div class="form-title">Connexion</div>
 <div class="form-subtitle">Accès sécurisé au tableau de bord.</div>
 """,
-            unsafe_allow_html=True,
-        )
-        with st.form("login_unique"):
-            user = st.text_input("Identifiant", key="login_user", placeholder="Email ou nom utilisateur")
-            pwd = st.text_input("Mot de passe", type="password", key="login_pwd", placeholder="Mot de passe")
-            submitted = st.form_submit_button("Se connecter", type="primary", width="stretch")
+                unsafe_allow_html=True,
+            )
 
-        with st.expander("Mot de passe oublié", expanded=False):
-            with st.form("forgot_password"):
-                reset_login = st.text_input("Email ou identifiant", key="reset_login")
-                reset_submitted = st.form_submit_button("Recevoir un mot de passe temporaire", width="stretch")
+            with st.form("login_unique"):
+                user = st.text_input("Identifiant", key="login_user", placeholder="Email ou nom utilisateur")
+                pwd = st.text_input("Mot de passe", type="password", key="login_pwd", placeholder="Mot de passe")
+                submitted = st.form_submit_button("Se connecter", type="primary", width="stretch")
 
-        st.markdown(
-            '<div class="login-footer">Accès réservé aux administrateurs et ingénieurs autorisés.</div>',
-            unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+            if submitted:
+                success, user_record, message = authenticate_user(user, pwd)
+                if success and user_record:
+                    session_data = create_user_session(user_record)
+                    st.session_state.update(session_data)
+                    from services.data_service import log_event
+                    log_event("login", {"role": session_data["role"]})
+                    st.rerun()
+                else:
+                    st.error(message)
 
-    if "reset_submitted" in locals() and reset_submitted:
-        reset_login = UserInputValidator.sanitize_string(reset_login, 120)
-        if not reset_login:
-            st.error("Saisissez votre email ou identifiant.")
-        else:
-            ok, message = reset_user_password(reset_login)
-            if ok:
-                st.success(message)
-            else:
-                st.error(message)
+            with st.expander("Mot de passe oublié", expanded=False):
+                with st.form("forgot_password"):
+                    reset_login = st.text_input("Email ou identifiant", key="reset_login")
+                    reset_submitted = st.form_submit_button("Recevoir un mot de passe temporaire", width="stretch")
 
-    if "submitted" in locals() and submitted:
-        success, user_record, message = authenticate_user(user, pwd)
-        if success and user_record:
-            session_data = create_user_session(user_record)
-            st.session_state.update(session_data)
-            from services.data_service import log_event
-            log_event("login", {"role": session_data["role"]})
-            st.rerun()
-        else:
-            st.error(message)
+                if reset_submitted:
+                    reset_login = UserInputValidator.sanitize_string(reset_login, 120)
+                    if not reset_login:
+                        st.error("Saisissez votre email ou identifiant.")
+                    else:
+                        ok, message = reset_user_password(reset_login)
+                        if ok:
+                            st.success(message)
+                        else:
+                            st.error(message)
+
+            st.markdown(
+                '<div class="login-footer">Accès réservé aux administrateurs et ingénieurs autorisés.</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def force_password_change_page():
