@@ -115,12 +115,10 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
 
             info = active_dataset_info()
             dataset = str(info.get("name") or "Standard")
-            published = str(info.get("published_at") or "artefacts notebook")
             filters = active_filter_label().replace("Contexte filtre : ", "")
             meta_html = f"""
         <div class="topbar-meta">
           <span>Dataset : <strong>{html.escape(dataset)}</strong></span>
-          <span>MAJ : <strong>{html.escape(published[:16])}</strong></span>
           <span>Filtres : <strong>{html.escape(filters)}</strong></span>
         </div>"""
         except Exception:
@@ -232,14 +230,22 @@ def _data_freshness_label() -> str:
 PAGE_LABELS = [
     "Accueil",
     "Reseau",
-    "Prevision",
     "Alertes",
     "Optimisation",
-    "Simulation Temps Reel",
     "Donnees",
     "Configuration",
     "Gestion Utilisateurs",
 ]
+
+PAGE_INDEX_BY_LABEL = {
+    "Accueil": 0,
+    "Reseau": 1,
+    "Alertes": 3,
+    "Optimisation": 4,
+    "Donnees": 6,
+    "Configuration": 7,
+    "Gestion Utilisateurs": 8,
+}
 
 
 def sidebar_global(
@@ -286,7 +292,7 @@ def sidebar_global(
 
     st.sidebar.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
     selected_label = st.sidebar.radio("Page", visible_pages, label_visibility="collapsed")
-    page_index = PAGE_LABELS.index(selected_label) if selected_label in PAGE_LABELS else 0
+    page_index = PAGE_INDEX_BY_LABEL.get(selected_label, 0)
 
     st.sidebar.divider()
 
@@ -309,39 +315,38 @@ def sidebar_global(
         if sel_stations:
             filters["stations"] = sel_stations
 
-    # Period
-    date_from = st.sidebar.date_input("Debut periode", value=None, key="sb_date_from")
-    date_to = st.sidebar.date_input("Fin periode", value=None, key="sb_date_to")
-    if date_from and date_to:
-        filters["date_range"] = (date_from, date_to)
+    with st.sidebar.expander("Filtres avances", expanded=False):
+        date_from = st.date_input("Debut periode", value=None, key="sb_date_from")
+        date_to = st.date_input("Fin periode", value=None, key="sb_date_to")
+        if date_from and date_to:
+            filters["date_range"] = (date_from, date_to)
 
-    # Gouvernorat, Technologie, Type zone - populated from notebook/HF data
-    from services.data_service import load_filtered_main_data
-    ds = load_filtered_main_data(["gouvernorat", "technologie", "type_zone"])
+        from services.data_service import load_filtered_main_data
+        ds = load_filtered_main_data(["gouvernorat", "technologie", "type_zone"])
 
-    if "gouvernorat" in ds.columns:
-        govs = sorted(ds["gouvernorat"].dropna().unique().astype(str).tolist())
-        sel_govs = st.sidebar.multiselect(
-            "Gouvernorat", govs, default=[], key="sb_govs", placeholder="Tous les gouvernorats"
-        )
-        if sel_govs:
-            filters["gouvernorats"] = sel_govs
+        if "gouvernorat" in ds.columns:
+            govs = sorted(ds["gouvernorat"].dropna().unique().astype(str).tolist())
+            sel_govs = st.multiselect(
+                "Gouvernorat", govs, default=[], key="sb_govs", placeholder="Tous les gouvernorats"
+            )
+            if sel_govs:
+                filters["gouvernorats"] = sel_govs
 
-    if "technologie" in ds.columns:
-        techs = sorted(ds["technologie"].dropna().unique().astype(str).tolist())
-        sel_techs = st.sidebar.multiselect(
-            "Technologie", techs, default=[], key="sb_techs", placeholder="Toutes les technologies"
-        )
-        if sel_techs:
-            filters["technologies"] = sel_techs
+        if "technologie" in ds.columns:
+            techs = sorted(ds["technologie"].dropna().unique().astype(str).tolist())
+            sel_techs = st.multiselect(
+                "Technologie", techs, default=[], key="sb_techs", placeholder="Toutes les technologies"
+            )
+            if sel_techs:
+                filters["technologies"] = sel_techs
 
-    if "type_zone" in ds.columns:
-        zones = sorted(ds["type_zone"].dropna().unique().astype(str).tolist())
-        sel_zones = st.sidebar.multiselect(
-            "Type zone", zones, default=[], key="sb_zones", placeholder="Toutes les zones"
-        )
-        if sel_zones:
-            filters["zones"] = sel_zones
+        if "type_zone" in ds.columns:
+            zones = sorted(ds["type_zone"].dropna().unique().astype(str).tolist())
+            sel_zones = st.multiselect(
+                "Type zone", zones, default=[], key="sb_zones", placeholder="Toutes les zones"
+            )
+            if sel_zones:
+                filters["zones"] = sel_zones
 
     st.sidebar.divider()
 

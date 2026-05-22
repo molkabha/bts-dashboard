@@ -8,7 +8,7 @@ import streamlit as st
 
 from security.middleware import security_middleware
 from services.data_service import compute_filtered_kpis, load_filtered_main_data, load_top_anomalies
-from ui.components import alert_banner, header, kpi_card, render_artifact_gallery, section
+from ui.components import alert_banner, header, kpi_card, section
 from ui.utils import apply_current_admin_filters
 from utils.pdf_export import generate_report_pdf
 
@@ -53,38 +53,17 @@ def page_accueil():
         with c5:
             kpi_card("Economies", f"{eco_dt:,.0f} DT", "Potentiel RL", "green")
 
-    # Navigation cards
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.markdown("""
-<div class="nav-card">
-  <div class="nc-title">Carte du reseau</div>
-  <div class="nc-value">Vue Globale</div>
-  <div class="nc-desc">Visualiser toutes les stations sur la carte interactive</div>
-</div>""", unsafe_allow_html=True)
-        if st.button("Ouvrir la carte", key="nav_map", width="stretch"):
+        if st.button("Carte reseau", key="nav_map", width="stretch"):
             st.session_state["_nav_override"] = 1
             st.rerun()
-
     with c2:
-        st.markdown(f"""
-<div class="nav-card">
-  <div class="nc-title">Stations critiques</div>
-  <div class="nc-value">{nb_critiques}</div>
-  <div class="nc-desc">Stations necessitant une intervention immediate</div>
-</div>""", unsafe_allow_html=True)
-        if st.button("Voir les anomalies", key="nav_anom", width="stretch"):
+        if st.button("Alertes", key="nav_anom", width="stretch"):
             st.session_state["_nav_override"] = 3
             st.rerun()
-
     with c3:
-        st.markdown(f"""
-<div class="nav-card">
-  <div class="nc-title">Economies du mois</div>
-  <div class="nc-value">{eco_dt:,.0f} DT</div>
-  <div class="nc-desc">Grace aux optimisations energetiques RL</div>
-</div>""", unsafe_allow_html=True)
-        if st.button("Voir les optimisations", key="nav_opt", width="stretch"):
+        if st.button("Optimisation", key="nav_opt", width="stretch"):
             st.session_state["_nav_override"] = 4
             st.rerun()
 
@@ -109,12 +88,6 @@ def page_accueil():
 
     # PDF export
     with section("Rapport"):
-        with st.expander("Apercu notebook avance", expanded=False):
-            render_artifact_gallery(
-                [("tableau_de_bord_complet.png", "Tableau de bord complet genere par NB3")],
-                title="Apercu notebook",
-                columns=1,
-            )
         if st.button("Generer rapport PDF", type="primary", width="stretch"):
             anomaly_items = []
             if not top.empty:
