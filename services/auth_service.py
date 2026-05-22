@@ -102,9 +102,8 @@ def update_user_password(username: str, new_password: str, must_change_password:
 def reset_user_password(username_or_email: str) -> tuple[bool, str]:
     """Send a temporary password to an active user and force password change."""
     rec = get_user_record(username_or_email)
-    generic_message = "Si le compte existe, un mot de passe temporaire sera envoye par email."
     if not rec:
-        return True, generic_message
+        return False, "Aucun compte actif ne correspond a cet email ou identifiant."
     if not rec.get("is_active"):
         return False, "Compte desactive."
 
