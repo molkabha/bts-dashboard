@@ -221,13 +221,13 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 }
 
 /* Login */
-.login-panel { min-height:390px; border:1px solid var(--tt-border); border-radius:10px; background:#fff; box-shadow:0 12px 30px rgba(15,23,42,0.07); }
-.brand-panel { padding:34px 36px; border-left:4px solid var(--tt-red); display:flex; flex-direction:column; justify-content:center; }
-.login-logo { display:block; width:150px; height:auto; object-fit:contain; margin:0 0 24px 0; }
+.login-panel { border:1px solid var(--tt-border); border-top:4px solid var(--tt-red); border-radius:10px; background:#fff; box-shadow:0 12px 30px rgba(15,23,42,0.07); margin:18px 0 12px 0; }
+.brand-panel { padding:30px 34px 26px 34px; display:flex; flex-direction:column; align-items:center; text-align:center; }
+.login-logo { display:block; width:150px; height:auto; object-fit:contain; margin:0 auto 20px auto; }
 .login-kicker { color:var(--tt-red); font-size:11px; font-weight:850; letter-spacing:1.4px; text-transform:uppercase; }
-.login-heading { color:var(--tt-text); font-size:30px; font-weight:850; margin-top:8px; line-height:1.08; max-width:420px; }
-.login-subtitle { color:var(--tt-muted); font-size:14px; line-height:1.55; margin-top:12px; max-width:440px; }
-.login-points { display:flex; flex-wrap:wrap; gap:8px; margin-top:24px; }
+.login-heading { color:var(--tt-text); font-size:28px; font-weight:850; margin-top:8px; line-height:1.08; max-width:420px; }
+.login-subtitle { color:var(--tt-muted); font-size:13.5px; line-height:1.5; margin-top:10px; max-width:440px; }
+.login-points { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; margin-top:20px; }
 .login-points span { border:1px solid var(--tt-border); border-radius:999px; background:#f8fafc; color:var(--tt-text); padding:6px 10px; font-size:11.5px; font-weight:800; }
 .form-title { color:var(--tt-text); font-size:24px; font-weight:850; line-height:1.15; }
 .form-subtitle { color:var(--tt-muted); font-size:13px; margin:4px 0 18px 0; }
@@ -240,7 +240,7 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
   background:#fff !important;
 }
 [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] > div {
-  padding:28px 30px 22px 30px !important;
+  padding:24px 30px 22px 30px !important;
 }
 
 /* Podium */

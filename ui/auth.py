@@ -12,8 +12,8 @@ def login_page(logo_path: Path):
     logo = image_data_uri(logo_path)
     logo_html = f'<img class="login-logo" src="{logo}" alt="Tunisie Telecom">' if logo else ""
 
-    left, right = st.columns([1.05, 0.95], vertical_alignment="center")
-    with left:
+    left, center, right = st.columns([1, 1.05, 1])
+    with center:
         st.markdown(
             f"""
 <div class="login-panel brand-panel">
@@ -31,7 +31,6 @@ def login_page(logo_path: Path):
             unsafe_allow_html=True,
         )
 
-    with right:
         with st.container(border=True):
             st.markdown(
                 """
