@@ -161,7 +161,7 @@ def page_simulation():
 
         # Event injection (Admin only)
         if role == "admin":
-            with section("Injection d'Evenements"):
+            with st.expander("Injection d'evenements avancee", expanded=False):
                 ec1, ec2 = st.columns(2)
                 with ec1:
                     if st.button("Pic chaleur", width="stretch", key="inj_heat"):
@@ -177,7 +177,8 @@ def page_simulation():
         # Export
         sim_data = st.session_state.get("sim_data")
         if isinstance(sim_data, pd.DataFrame) and not sim_data.empty:
-            download_df_button(sim_data, "session_simulation.csv", "Exporter CSV")
+            with st.expander("Export session", expanded=False):
+                download_df_button(sim_data, "session_simulation.csv", "Exporter CSV")
 
     with col_cockpit:
         # Generate simulation tick
