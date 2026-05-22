@@ -80,7 +80,7 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
         if "date_range" in gf and "timestamp" in out.columns:
             out = apply_time_filters(out, {"date_range": gf["date_range"]})
         stations = gf.get("stations")
-        if stations is not None and "station_id" in out.columns:
+        if stations and "station_id" in out.columns:
             out = out[out["station_id"].astype(str).isin([str(s) for s in stations])]
         for key, col in [("gouvernorats", "gouvernorat"), ("technologies", "technologie"), ("zones", "type_zone")]:
             vals = gf.get(key)

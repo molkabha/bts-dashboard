@@ -168,8 +168,9 @@ def page_vue_reseau():
                 "score_anom_moy",
                 "categorie"]
             display_cols = [c for c in display_cols if c in scores.columns]
-            sort_col = "score_anom_moy" if "score_anom_moy" in scores.columns else "station_id"
-            st.dataframe(scores.sort_values(sort_col, ascending=False)[display_cols],
+            sort_col = "score_criticite" if "score_criticite" in scores.columns else "score_anom_moy" if "score_anom_moy" in scores.columns else "station_id"
+            st.caption("Stations classees par priorite operationnelle pour faciliter la lecture.")
+            st.dataframe(scores.sort_values(sort_col, ascending=False)[display_cols].head(30),
                          width="stretch", hide_index=True)
             download_df_button(scores, "stations_reseau.csv", "Exporter CSV")
 

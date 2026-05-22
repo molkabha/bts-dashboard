@@ -99,11 +99,33 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
     role = st.session_state.get("role")
     display = "Administrateur" if role == "admin" else "Ingenieur reseau" if role in {"engineer", "ingenieur"} else "Connexion"
     cls = "admin" if role == "admin" else ""
+    if logo_path is None:
+        logo_path = Path("static/logo.png")
     logo_html = ""
     if logo_path:
         logo = image_data_uri(logo_path)
         if logo:
             logo_html = f'<img class="topbar-logo" src="{logo}" alt="Tunisie Telecom">'
+
+    meta_html = ""
+    if st.session_state.get("authenticated"):
+        try:
+            from services.data_service import active_dataset_info
+            from ui.utils import active_filter_label
+
+            info = active_dataset_info()
+            dataset = str(info.get("name") or "Standard")
+            published = str(info.get("published_at") or "artefacts notebook")
+            filters = active_filter_label().replace("Contexte filtre : ", "")
+            meta_html = f"""
+        <div class="topbar-meta">
+          <span>Dataset : <strong>{html.escape(dataset)}</strong></span>
+          <span>MAJ : <strong>{html.escape(published[:16])}</strong></span>
+          <span>Filtres : <strong>{html.escape(filters)}</strong></span>
+        </div>"""
+        except Exception:
+            meta_html = ""
+
     st.markdown(
         f"""
 <div class="topbar">
@@ -114,8 +136,9 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
         <div class="brand">Tunisie Telecom - BTS Energy Management</div>
         <div class="title">{html.escape(title)}</div>
         <div class="subtitle">{html.escape(subtitle)}</div>
+        {meta_html}
       </div>
-      <div style="text-align:right; margin-top:35px;">
+      <div class="topbar-role">
         <div><span class="role-pill {html.escape(cls)}">{html.escape(display)}</span></div>
       </div>
     </div>
@@ -274,10 +297,17 @@ def sidebar_global(
 
     if station_options:
         stations = [str(station) for station in station_options]
-        default_stations = st.session_state.get("sb_stations", stations)
-        default_stations = [s for s in default_stations if s in stations] or stations
-        sel_stations = st.sidebar.multiselect("Station", stations, default=default_stations, key="sb_stations")
-        filters["stations"] = sel_stations
+        default_stations = st.session_state.get("sb_stations", [])
+        default_stations = [s for s in default_stations if s in stations]
+        sel_stations = st.sidebar.multiselect(
+            "Station",
+            stations,
+            default=default_stations,
+            key="sb_stations",
+            placeholder="Toutes les stations",
+        )
+        if sel_stations:
+            filters["stations"] = sel_stations
 
     # Period
     date_from = st.sidebar.date_input("Debut periode", value=None, key="sb_date_from")
@@ -291,18 +321,27 @@ def sidebar_global(
 
     if "gouvernorat" in ds.columns:
         govs = sorted(ds["gouvernorat"].dropna().unique().astype(str).tolist())
-        sel_govs = st.sidebar.multiselect("Gouvernorat", govs, default=govs, key="sb_govs")
-        filters["gouvernorats"] = sel_govs
+        sel_govs = st.sidebar.multiselect(
+            "Gouvernorat", govs, default=[], key="sb_govs", placeholder="Tous les gouvernorats"
+        )
+        if sel_govs:
+            filters["gouvernorats"] = sel_govs
 
     if "technologie" in ds.columns:
         techs = sorted(ds["technologie"].dropna().unique().astype(str).tolist())
-        sel_techs = st.sidebar.multiselect("Technologie", techs, default=techs, key="sb_techs")
-        filters["technologies"] = sel_techs
+        sel_techs = st.sidebar.multiselect(
+            "Technologie", techs, default=[], key="sb_techs", placeholder="Toutes les technologies"
+        )
+        if sel_techs:
+            filters["technologies"] = sel_techs
 
     if "type_zone" in ds.columns:
         zones = sorted(ds["type_zone"].dropna().unique().astype(str).tolist())
-        sel_zones = st.sidebar.multiselect("Type zone", zones, default=zones, key="sb_zones")
-        filters["zones"] = sel_zones
+        sel_zones = st.sidebar.multiselect(
+            "Type zone", zones, default=[], key="sb_zones", placeholder="Toutes les zones"
+        )
+        if sel_zones:
+            filters["zones"] = sel_zones
 
     st.sidebar.divider()
 

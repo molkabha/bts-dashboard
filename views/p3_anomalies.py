@@ -100,7 +100,8 @@ def page_anomalies():
                 display_df = display_df.sort_values("timestamp", ascending=False)
 
             treated = st.session_state["treated_anomalies"]
-            for idx, row in display_df.head(20).iterrows():
+            st.caption("Les alertes les plus prioritaires sont affichees en premier.")
+            for idx, row in display_df.head(12).iterrows():
                 score = float(row["_score"])
                 severity = row["_severity"]
                 station = str(row.get("station_id", ""))

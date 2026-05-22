@@ -73,16 +73,20 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 }
 
 /* Topbar */
-.topbar { border:1px solid var(--tt-border); border-left:4px solid var(--tt-red); padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:14px; background:var(--tt-card); border-radius:8px; box-shadow:0 1px 2px rgba(15,23,42,0.04); }
+.topbar { border:1px solid var(--tt-border); border-left:4px solid var(--tt-red); padding:12px 16px; margin-bottom:14px; display:flex; align-items:center; gap:14px; background:var(--tt-card); border-radius:8px; box-shadow:0 1px 2px rgba(15,23,42,0.04); }
 .topbar-logo { width:66px; height:38px; object-fit:contain; }
 .topbar-content { min-width:0; flex:1; }
 .brand { color:var(--tt-red); font-size:10.5px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; }
 .title { color:var(--tt-text); font-size:22px; font-weight:820; line-height:1.18; }
 .subtitle { color:var(--tt-muted); font-size:12.5px; margin-top:2px; }
+.topbar-role { text-align:right; margin-top:2px; flex:0 0 auto; }
+.topbar-meta { display:flex; flex-wrap:wrap; gap:8px; margin-top:9px; }
+.topbar-meta span { display:inline-flex; gap:4px; align-items:center; color:var(--tt-muted); background:#f8fafc; border:1px solid var(--tt-border); border-radius:999px; padding:3px 8px; font-size:10.5px; line-height:1.3; max-width:100%; }
+.topbar-meta strong { color:var(--tt-text); font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:260px; }
 
 /* Role pills */
 .role-pill { display:inline-block; background:#f1f5f9; color:var(--tt-text); border:1px solid var(--tt-border); padding:4px 9px; border-radius:999px; font-size:10.5px; font-weight:800; text-transform:uppercase; }
-.role-pill.admin { background:var(--tt-red); }
+.role-pill.admin { background:var(--tt-red); color:#fff; border-color:var(--tt-red); }
 
 /* Badges */
 .badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; border:1px solid transparent; }
@@ -125,6 +129,8 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .alert .alert-title { font-weight:800; font-size:13px; margin-bottom:2px; }
 .alert .alert-body { font-size:12.5px; color:var(--tt-muted); }
 .alert .alert-meta { font-size:11px; color:var(--tt-muted); margin-top:4px; font-weight:600; }
+
+.summary-strip { border:1px solid var(--tt-border); border-left:3px solid var(--tt-blue-soft); background:#fff; border-radius:6px; padding:11px 13px; color:var(--tt-text); font-size:13.5px; font-weight:760; line-height:1.45; margin-bottom:8px; }
 
 /* Filter and artefact context */
 .context-badge { display:flex; justify-content:space-between; gap:12px; align-items:center; border:1px solid var(--tt-border); border-left:4px solid var(--tt-info); background:var(--tt-card); border-radius:8px; padding:10px 12px; margin:8px 0; font-size:12px; color:var(--tt-muted); }
@@ -194,6 +200,8 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 [data-testid="stSidebar"] .sb-user .sb-name { font-weight:800; font-size:13px; color:var(--tt-text); line-height:1.2; }
 [data-testid="stSidebar"] .sb-user .sb-role { font-size:11px; color:var(--tt-muted); }
 .data-freshness { font-size:11px; color:var(--tt-muted); padding:6px 10px; background:#f1f5f9; border-radius:6px; border:1px solid var(--tt-border); margin:8px 0; }
+[data-testid="stSidebar"] [data-baseweb="tag"] { max-width:100%; }
+[data-testid="stSidebar"] [data-baseweb="select"] { font-size:12px; }
 
 /* Expanders: keep technical content secondary */
 [data-testid="stExpander"] { border:1px solid var(--tt-border) !important; border-radius:6px !important; background:var(--tt-card) !important; box-shadow:none !important; }
@@ -205,6 +213,8 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
   .topbar-logo { width:52px; height:32px; }
   .title { font-size:19px; }
   .subtitle { font-size:12px; }
+  .topbar-role { display:none; }
+  .topbar-meta span { font-size:10px; }
   .kpi { min-height:auto; padding:11px 12px; }
   .kpi-value { font-size:21px; }
   .cockpit-clock { font-size:22px; letter-spacing:1px; }

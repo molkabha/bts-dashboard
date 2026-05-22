@@ -8,7 +8,7 @@ import streamlit as st
 
 from security.middleware import security_middleware
 from services.data_service import compute_filtered_kpis, load_filtered_main_data, load_top_anomalies
-from ui.components import alert_banner, header, render_artifact_gallery, section
+from ui.components import alert_banner, header, kpi_card, render_artifact_gallery, section
 from ui.utils import apply_current_admin_filters
 from utils.pdf_export import generate_report_pdf
 
@@ -26,7 +26,7 @@ def page_accueil():
     nb_stations = kpis.get("nb_stations", 0)
     nb_critiques = 0
     if not df.empty and "mode_operation" in df.columns:
-        nb_critiques = int(df["mode_operation"].astype(str).eq("CRITIQUE").sum())
+        nb_critiques = int(df[df["mode_operation"].astype(str).eq("CRITIQUE")]["station_id"].nunique())
     eco_dt = kpis.get("economie_dt", 0) or 0
 
     # Dynamic summary phrase
@@ -36,7 +36,22 @@ def page_accueil():
             f"{nb_critiques} necessitent une intervention. "
             f"Les optimisations actives ont economise {eco_dt:,.0f} DT sur la periode."
         )
-        st.markdown(f"**{phrase}**")
+        st.markdown(f'<div class="summary-strip">{phrase}</div>', unsafe_allow_html=True)
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            kpi_card("Stations", f"{nb_stations}", "Perimetre filtre", "blue")
+        with c2:
+            conso = kpis.get("conso_totale_kwh")
+            kpi_card("Consommation", f"{conso:,.0f} kWh" if conso is not None else "0 kWh", "Total periode", "gray")
+        with c3:
+            qos = kpis.get("score_qos_moyen")
+            kpi_card("QoS moyenne", f"{qos:.2f}" if qos is not None else "0.00", "Qualite service", "eco")
+        with c4:
+            anom = kpis.get("pct_anomalies")
+            kpi_card("Anomalies", f"{anom:.1f}%" if anom is not None else "0.0%", "Score > seuil", "orange")
+        with c5:
+            kpi_card("Economies", f"{eco_dt:,.0f} DT", "Potentiel RL", "green")
 
     # Navigation cards
     c1, c2, c3 = st.columns(3)

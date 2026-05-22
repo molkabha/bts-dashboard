@@ -42,7 +42,7 @@ def _gauge(value: float, title: str, min_val: float, max_val: float, suffix: str
             "threshold": {"line": {"color": "#c8102e", "width": 2}, "value": max_val * 0.85},
         },
     ))
-    fig.update_layout(margin=dict(l=20, r=20, t=40, b=10), height=160,
+    fig.update_layout(margin=dict(l=10, r=10, t=34, b=4), height=145,
                       paper_bgcolor="rgba(0,0,0,0)", font={"family": "Inter"})
     return fig
 
@@ -104,7 +104,7 @@ def _session_summary(sim_data: pd.DataFrame, selected_stations: list[str]):
 def page_simulation():
     security_middleware.enforce()
     role = st.session_state.get("role")
-    header("Simulation Temps Reel", "Pipeline NB1/NB2/NB3 en action")
+    header("Simulation Temps Reel", "Flux BTS simule, decisions et economies en direct")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     stations = available_stations()
@@ -116,7 +116,7 @@ def page_simulation():
         st.warning("Aucune station assignee disponible.")
         return
 
-    col_ctrl, col_cockpit = st.columns([1, 2])
+    col_ctrl, col_cockpit = st.columns([0.85, 2.15])
 
     with col_ctrl:
         with section("Panneau de Controle"):
