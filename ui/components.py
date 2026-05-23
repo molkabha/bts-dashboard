@@ -130,13 +130,7 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
         <div class="brand">Tunisie Telecom - BTS Energy Management</div>
         <div class="title">{html.escape(title)}</div>
         <div class="subtitle">{html.escape(subtitle)}</div>
-        {meta_html}
-      </div>
-      <div class="topbar-role">
-        <div><span class="role-pill {html.escape(cls)}">{html.escape(display)}</span></div>
-      </div>
     </div>
-  </div>
 </div>
 """,
         unsafe_allow_html=True,
