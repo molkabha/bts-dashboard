@@ -1,4 +1,4 @@
-"""Page 6 - Simulation replay NB3 (donnees notebooks)."""
+"""Page Simulation — replay horaire (ingenieur)."""
 
 from __future__ import annotations
 
@@ -8,15 +8,14 @@ from datetime import datetime
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 
 from config.settings import settings
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import engineer_assigned_stations, load_nb2_network_stats
-from services.nb_metrics import economie_rl_kwh_series, effective_economie_kwh, harmonize_nb3_economies
+from services.data_service import engineer_assigned_stations
+from services.nb_metrics import effective_economie_kwh, harmonize_nb3_economies
 from services.nb_replay import load_replay_source, replay_batch, replay_timestamps
-from ui.components import header, kpi_card, section
+from ui.components import header, kpi_card
 from ui.page_helpers import load_dashboard_df, mode_explanation
 from ui.utils import active_filter_label, download_df_button
 
@@ -58,7 +57,6 @@ def _advance_replay(source_df, selected_stations, sim_mode, sim_base_date, start
     on_date, start_dt = _replay_window(source_df, selected_stations, sim_mode, sim_base_date, start_hour)
     on_date_arg = on_date if sim_mode == "Une journee" else None
     max_rows = 72 * len(selected_stations)
-    injection = st.session_state.get("sim_injection")
     replay_ok = False
 
     for _ in range(max(1, steps)):
@@ -70,15 +68,7 @@ def _advance_replay(source_df, selected_stations, sim_mode, sim_base_date, start
         if processed.empty:
             st.session_state["sim_running"] = False
             break
-
         processed = harmonize_nb3_economies(processed)
-        if injection == "heat":
-            if "temperature_ambiante" in processed.columns:
-                processed["temperature_ambiante"] = _num(processed, "temperature_ambiante", 25) + 15
-            processed["consommation_kwh"] = _num(processed, "consommation_kwh", 0) * 1.3
-        elif injection == "traffic" and "charge_cpu_pct" in processed.columns:
-            processed["charge_cpu_pct"] = (_num(processed, "charge_cpu_pct", 0) * 2).clip(0, 99)
-
         existing = st.session_state.get("sim_data", pd.DataFrame())
         if isinstance(existing, pd.DataFrame) and not existing.empty:
             st.session_state["sim_data"] = pd.concat([existing, processed], ignore_index=True).tail(max_rows)
@@ -86,9 +76,6 @@ def _advance_replay(source_df, selected_stations, sim_mode, sim_base_date, start
             st.session_state["sim_data"] = processed
         st.session_state["sim_tick"] = tick + 1
         replay_ok = True
-
-    if injection:
-        st.session_state.pop("sim_injection", None)
     return replay_ok
 
 
@@ -107,25 +94,22 @@ def _primary_row(latest_all: pd.DataFrame) -> pd.Series:
 
 def page_simulation():
     security_middleware.enforce()
-    role = st.session_state.get("role", "")
-    header("Simulation", "Replay horaire sur vos stations — decisions et economies")
-
-    template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
+    header("Simulation", "Avancez pas a pas sur vos stations assignees")
     st.caption(active_filter_label())
 
+    template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
+    role = st.session_state.get("role", "")
     stations = _station_options(role)
     if not stations:
-        st.warning("Aucune station disponible pour les filtres actifs.")
+        st.warning("Aucune station assignee.")
         return
 
-    col_ctrl, col_main = st.columns([1, 2.8])
+    col_ctrl, col_main = st.columns([1, 2.5])
 
     with col_ctrl:
-        section("Replay")
         default_pick = [s for s in (st.session_state.get("sim_stations") or stations[:1]) if s in stations] or stations[:1]
         selected_stations = st.multiselect("Stations", stations, default=default_pick, key="sim_stations")
-
-        sim_mode = st.radio("Periode", ["Periode filtree", "Une journee"], key="sim_mode", horizontal=True)
+        sim_mode = st.radio("Periode", ["Filtre actif", "Une journee"], key="sim_mode", horizontal=True)
         sim_base_date = datetime.now().date()
         start_hour = 0
         if sim_mode == "Une journee":
@@ -133,31 +117,11 @@ def page_simulation():
             if not bounds.empty and "timestamp" in bounds.columns:
                 ts = pd.to_datetime(bounds["timestamp"], errors="coerce").dropna()
                 if not ts.empty:
-                    sim_base_date = st.date_input(
-                        "Jour", value=ts.min().date(),
-                        min_value=ts.min().date(), max_value=ts.max().date(), key="sim_date",
-                    )
-            else:
-                sim_base_date = st.date_input("Jour", value=datetime.now().date(), key="sim_date")
-            start_hour = st.slider("Heure de depart", 0, 23, 0, key="sim_start_hour")
-
-        st.select_slider("Pas par clic", options=[1, 2, 5, 10], value=2, key="sim_speed")
-        st.checkbox("Auto", value=False, key="sim_auto")
-
-        b1, b2, b3 = st.columns(3)
-        with b1:
-            btn_start = st.button("Demarrer", type="primary", use_container_width=True)
-        with b2:
-            btn_step = st.button("Suivant", use_container_width=True)
-        with b3:
-            btn_reset = st.button("Reset", use_container_width=True)
-
-        if btn_reset:
-            for key in ("sim_data", "sim_running", "sim_tick", "sim_source_df", "sim_injection", "sim_total_ticks"):
-                st.session_state.pop(key, None)
-            st.rerun()
-
-        if btn_start:
+                    sim_base_date = st.date_input("Jour", value=ts.min().date(), key="sim_date")
+            start_hour = st.slider("Heure debut", 0, 23, 0, key="sim_start_hour")
+        st.select_slider("Pas", options=[1, 2, 5], value=2, key="sim_speed")
+        c1, c2, c3 = st.columns(3)
+        if c1.button("Go", type="primary", use_container_width=True):
             source_df = load_replay_source()
             st.session_state.update({
                 "sim_running": True, "sim_tick": 0, "sim_data": pd.DataFrame(),
@@ -168,118 +132,74 @@ def page_simulation():
                 source_df, selected_stations, start_dt,
                 on_date=on_date if sim_mode == "Une journee" else None,
             ))
-
-        if btn_step and st.session_state.get("sim_running"):
+        if c2.button("Pas", use_container_width=True) and st.session_state.get("sim_running"):
             st.session_state["sim_advance"] = True
-
+        if c3.button("Reset", use_container_width=True):
+            for key in ("sim_data", "sim_running", "sim_tick", "sim_source_df", "sim_total_ticks"):
+                st.session_state.pop(key, None)
+            st.rerun()
         total = int(st.session_state.get("sim_total_ticks") or 0)
         tick = int(st.session_state.get("sim_tick", 0))
         if total > 0:
-            st.progress(min(1.0, tick / total))
-            st.caption(f"{tick} / {total} pas")
-
+            st.progress(min(1.0, tick / total), text=f"{tick}/{total}")
         sim_export = st.session_state.get("sim_data")
         if isinstance(sim_export, pd.DataFrame) and not sim_export.empty:
-            download_df_button(sim_export, "simulation_session.csv", "CSV")
+            download_df_button(sim_export, "simulation.csv", "Export")
 
     with col_main:
         if not selected_stations:
             st.info("Selectionnez au moins une station.")
             return
 
-        advance_manual = st.session_state.pop("sim_advance", False)
-        advance_auto = False
-        if st.session_state.get("sim_auto") and st.session_state.get("sim_running"):
-            interval_ms = max(800, 350 * int(st.session_state.get("sim_speed", 2)))
-            advance_auto = st_autorefresh(interval=interval_ms, key="sim_autorefresh") > 0
-
-        if (advance_manual or advance_auto) and st.session_state.get("sim_running"):
-            source_df = st.session_state.get("sim_source_df")
-            if not isinstance(source_df, pd.DataFrame) or source_df.empty:
-                source_df = load_replay_source()
-                st.session_state["sim_source_df"] = source_df
-            ok = _advance_replay(
+        if st.session_state.pop("sim_advance", False) and st.session_state.get("sim_running"):
+            source_df = st.session_state.get("sim_source_df") or load_replay_source()
+            st.session_state["sim_source_df"] = source_df
+            _advance_replay(
                 source_df, selected_stations, sim_mode, sim_base_date, start_hour,
                 int(st.session_state.get("sim_speed", 1)),
             )
-            if not ok and not st.session_state.get("sim_running"):
-                st.warning("Fin du replay — elargissez les filtres sidebar ou changez la date.")
 
         sim_data = st.session_state.get("sim_data")
         if not isinstance(sim_data, pd.DataFrame) or sim_data.empty:
-            st.info("Demarrer le replay pour afficher les mesures horaires NB3.")
+            st.info("Lancez le replay avec Go.")
             return
 
         sim_data = harmonize_nb3_economies(sim_data)
         latest_ts = sim_data["timestamp"].max()
         latest_all = sim_data[sim_data["timestamp"] == latest_ts]
         row = _primary_row(latest_all)
-
-        eco_rl = float(economie_rl_kwh_series(latest_all).sum())
-        eco_comb = float(effective_economie_kwh(latest_all).sum())
+        eco = float(effective_economie_kwh(latest_all).sum())
         conso = float(_num(latest_all, "consommation_kwh", 0).sum())
-        qos = float(_num(latest_all, "score_qos", 0.75).mean())
-        mode = str(row.get("mode_operation", "—"))
+        mode = str(row.get("mode_operation", "NORMAL"))
         action = str(row.get("action_proposee", row.get("action_rl", "—")))
 
-        st.caption(f"Pas horaire : **{str(latest_ts)[:19]}**")
+        st.caption(str(latest_ts)[:19])
 
-        k1, k2, k3 = st.columns(3)
-        with k1:
-            kpi_card("Consommation", f"{conso:.2f} kWh", "Ce pas", "blue")
-        with k2:
-            kpi_card(
-                "Economie NB3",
-                f"{eco_comb:.3f} kWh",
-                f"{eco_comb * settings.PRIX_KWH_TN:.2f} DT · RL {eco_rl:.3f} kWh",
-                "green" if eco_comb > 0 else "gray",
-            )
-        with k3:
-            kpi_card("QoS", f"{qos:.2f}", mode, "eco" if qos >= 0.75 else "danger")
-
-        if eco_rl <= 0 and eco_comb <= 0:
-            st.caption(
-                "Pas sans gain energetique (souvent mode NORMAL). Les economies apparaissent sur les pas ECO / optimisation NB3."
-            )
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            kpi_card("Conso", f"{conso:.2f} kWh", "", "blue")
+        with c2:
+            kpi_card("Economie", f"{eco * settings.PRIX_KWH_TN:.2f} DT", f"{eco:.2f} kWh", "green" if eco > 0 else "gray")
+        with c3:
+            kpi_card("Mode", mode, "", "eco" if mode == "ECO" else "orange")
 
         color = MODE_COLORS.get(mode, "#64748b")
-        eco_dt = eco_rl * settings.PRIX_KWH_TN
         st.markdown(
             f"""
 <div class="decision-card" style="border-left-color:{color};">
-  <div class="dc-mode" style="color:{color};">{html.escape(str(row.get('station_id', 'Flotte')))} — {html.escape(mode)}</div>
+  <div class="dc-mode" style="color:{color};">{html.escape(str(row.get('station_id', '—')))}</div>
   <div class="dc-action">{html.escape(action)}</div>
   <div class="dc-reason">{html.escape(mode_explanation(row))}</div>
-  <div class="dc-saving">RL : {eco_rl:.3f} kWh ({eco_dt:.2f} DT) | Combinee : {eco_comb:.3f} kWh</div>
 </div>""",
             unsafe_allow_html=True,
         )
 
-        section("Consommation — session")
         hist = sim_data.copy()
         hist["conso"] = _num(hist, "consommation_kwh", 0)
         hist["eco"] = effective_economie_kwh(hist)
-        agg = hist.groupby("timestamp", as_index=False).agg(conso=("conso", "sum"), eco=("eco", "sum")).tail(48)
-        agg["optimise"] = agg["conso"] - agg["eco"]
-
+        agg = hist.groupby("timestamp", as_index=False).agg(conso=("conso", "sum"), eco=("eco", "sum")).tail(36)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"], name="Mesuree", line=dict(color="#94a3b8")))
-        fig.add_trace(go.Scatter(
-            x=agg["timestamp"], y=agg["optimise"], name="Apres NB3",
-            line=dict(color="#059669", width=2), fill="tonexty", fillcolor="rgba(5,150,105,0.1)",
-        ))
-        fig.update_layout(template=template, height=300, margin=dict(l=0, r=0, t=8, b=0), hovermode="x unified")
-        st.plotly_chart(fig, use_container_width=True)
-
-        eco_sess = float(effective_economie_kwh(sim_data).sum())
-        conso_sess = float(_num(sim_data, "consommation_kwh", 0).sum())
-        nb_h = int(sim_data["timestamp"].nunique())
-        s1, s2, s3 = st.columns(3)
-        with s1:
-            kpi_card("Session — conso", f"{conso_sess:.1f} kWh", f"{nb_h} pas", "gray")
-        with s2:
-            kpi_card("Session — economie", f"{eco_sess:.1f} kWh", f"{eco_sess * settings.PRIX_KWH_TN:.1f} DT", "green")
-        with s3:
-            seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
-            alertes = int((_num(sim_data, "anomalie_score_ensemble", 0) > seuil).sum())
-            kpi_card("Alertes NB2", str(alertes), f"seuil {seuil:.2f}", "orange" if alertes else "eco")
+        fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"] - agg["eco"], name="Optimisee", line=dict(color="#059669")))
+        fig.update_layout(template=template, height=260, margin=dict(l=0, r=0, t=8, b=0))
+        st.plotly_chart(fig, width="stretch")

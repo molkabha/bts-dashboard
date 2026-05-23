@@ -113,20 +113,18 @@ def selected_station_filter() -> str | None:
 def active_filter_label() -> str:
     gf = merged_active_filters()
     if not gf:
-        return "Filtres : vue globale (toutes les donnees)"
+        return "Periode et stations : tout le parc"
     parts = []
     station = selected_station_filter()
     if station:
-        parts.append(f"station {station}")
+        parts.append(station)
     elif gf.get("stations"):
         parts.append(f"{len(gf['stations'])} stations")
-    if gf.get("gouvernorats"):
-        parts.append(", ".join(gf["gouvernorats"][:3]) + ("…" if len(gf["gouvernorats"]) > 3 else ""))
-    if gf.get("technologies"):
-        parts.append(f"{len(gf['technologies'])} techno")
-    if gf.get("modes"):
-        parts.append("/".join(gf["modes"]))
     if gf.get("date_range"):
         start, end = gf["date_range"]
         parts.append(f"{start} → {end}")
-    return "Filtres actifs : " + " · ".join(parts)
+    if gf.get("gouvernorats"):
+        parts.append(", ".join(gf["gouvernorats"][:2]))
+    if gf.get("modes"):
+        parts.append("/".join(gf["modes"]))
+    return " · ".join(parts)

@@ -69,8 +69,8 @@ L'application principale se lance depuis `app.py`.
 - Authentification et gestion des permissions
 - Chargement des artefacts NB1/NB2/NB3
 - Navigation :
-  - **Admin** : Accueil, Carte, NB1 — Prediction, NB2 — Anomalies, NB3 — Decisions, Comparaison, Import / dataset, gestion stations et utilisateurs
-  - **Ingenieur** : Simulation uniquement (replay horaire sur stations assignees)
+  - **Admin** : Accueil, Carte, Prediction, Anomalies, Decisions, Comparaison, Import, Stations, Utilisateurs
+  - **Ingenieur** : Simulation (replay sur stations assignees)
 
 ### Structure du code
 - `app.py` : point d'entrée Streamlit

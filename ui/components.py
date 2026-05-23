@@ -7,7 +7,15 @@ import html
 import time
 from datetime import datetime
 from pathlib import Path
+
 import streamlit as st
+
+from ui.display import (
+    ADMIN_PAGE_INDEX,
+    ADMIN_PAGE_LABELS,
+    ENGINEER_PAGE_INDEX,
+    ENGINEER_PAGE_LABELS,
+)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -90,17 +98,14 @@ def section(title: str):
 
 
 def page_footer():
-    from services.data_service import active_dataset_info, load_nb3_network_kpi
+    from services.data_service import active_dataset_info
 
     info = active_dataset_info()
-    kpi = load_nb3_network_kpi()
-    ds_label = info.get("name", "streamlit_data (NB3)") if info else "streamlit_data (NB3)"
-    gen = kpi.get("generated_at", "") if kpi else ""
-    footer = f"Source active : {ds_label}"
-    if gen:
-        footer += f" | Artefacts NB generes : {str(gen)[:19]}"
-    footer += " | Tunisie Telecom"
-    st.markdown(f'<div class="page-footer">{footer}</div>', unsafe_allow_html=True)
+    ds_label = info.get("name", "Dataset actif") if info else "Dataset actif"
+    st.markdown(
+        f'<div class="page-footer">{html.escape(ds_label)} · Tunisie Telecom</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def header(title: str, subtitle: str, logo_path: Path | None = None):
@@ -125,41 +130,6 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
 """,
         unsafe_allow_html=True,
     )
-
-
-NB_PAGE_LABELS = [
-    "NB1 — Prediction",
-    "NB2 — Anomalies",
-    "NB3 — Decisions",
-]
-
-ENGINEER_PAGE_LABELS = ["Simulation"]
-
-ADMIN_PAGE_LABELS = [
-    "Accueil",
-    "Carte",
-    *NB_PAGE_LABELS,
-    "Comparaison",
-    "Import / dataset",
-    "Gestion des stations",
-    "Gestion des utilisateurs",
-]
-
-ENGINEER_PAGE_INDEX = {
-    "Simulation": 6,
-}
-
-ADMIN_PAGE_INDEX = {
-    "Accueil": 0,
-    "Carte": 1,
-    "NB1 — Prediction": 2,
-    "NB2 — Anomalies": 3,
-    "NB3 — Decisions": 14,
-    "Comparaison": 10,
-    "Import / dataset": 11,
-    "Gestion des stations": 12,
-    "Gestion des utilisateurs": 13,
-}
 
 def sidebar_global(
     role: str,

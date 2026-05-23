@@ -22,7 +22,7 @@ from utils.security import password_hash, generate_temp_password
 
 def page_utilisateurs():
     security_middleware.enforce(role="admin")
-    header("Gestion des utilisateurs", "Administration des comptes et permissions")
+    header("Utilisateurs", "Comptes et acces stations")
 
     tab1, tab2, tab3 = st.tabs(["Annuaire", "Ajouter un compte", "Acces Stations"])
 

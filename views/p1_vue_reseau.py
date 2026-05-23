@@ -94,25 +94,23 @@ def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFram
 
 def page_vue_reseau():
     security_middleware.enforce(role="admin")
-    header("Carte", "Carte interactive et inventaire stations")
-
-    df = load_dashboard_df(["mode_operation", "latitude", "longitude"])
+    header("Carte", "Localisation et etat des stations")
     st.caption(active_filter_label())
 
+    df = load_dashboard_df(["mode_operation", "latitude", "longitude"])
     if df.empty:
-        st.warning("Aucune donnee pour les filtres choisis. Cliquez « Reinitialiser filtres » dans la barre laterale.")
+        st.warning("Aucune donnee pour les filtres actifs.")
         return
 
     nb_stations = df["station_id"].nunique() if "station_id" in df.columns else 0
-    st.caption(f"{nb_stations} stations · {len(df):,} mesures")
+    st.caption(f"{nb_stations} stations")
 
     scores = get_station_map_data(df)
     scores = _attach_station_modes(df, scores)
 
-    with section("Carte du parc"):
-        _render_folium_map(scores)
+    _render_folium_map(scores)
 
-    with section("Inventaire stations"):
+    with section("Liste"):
         tbl_cols = ["station_id", "gouvernorat", "technologie", "conso_moy", "score_qos_moy", "categorie"]
         tbl_cols = [c for c in tbl_cols if c in scores.columns]
         if "mode_actuel" in scores.columns:

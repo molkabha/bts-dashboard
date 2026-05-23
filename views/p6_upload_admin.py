@@ -79,7 +79,7 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
 
 def page_upload_admin():
     security_middleware.enforce(role="admin")
-    header("Import / dataset", "Importer un dataset et le publier dans tout le dashboard")
+    header("Import", "Publier un nouveau jeu de donnees")
     info = active_dataset_info()
     if info:
         st.info(f"Dataset actif : {info.get('name', 'Standard')} ({info.get('published_at', '')})")

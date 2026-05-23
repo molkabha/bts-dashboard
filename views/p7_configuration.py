@@ -71,15 +71,12 @@ def _station_inventory() -> pd.DataFrame:
 
 def page_configuration():
     security_middleware.enforce(role="admin")
-    header(
-        "Gestion des stations",
-        "Activer ou desactiver les stations visibles dans tout le dashboard",
-    )
+    header("Stations", "Activer ou masquer des stations du parc")
 
     inventory = _station_inventory()
     if inventory.empty:
         st.warning(
-            "Aucune station dans le dataset actif. Publiez un jeu de donnees (page Import / dataset) "
+            "Aucune station dans le dataset actif. Publiez un jeu de donnees (page Import) "
             "ou verifiez les artefacts NB sur Hugging Face."
         )
         return

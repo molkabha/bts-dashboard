@@ -195,76 +195,47 @@ def latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
     return df.groupby("station_id", as_index=False).last()
 
 
-def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 20) -> None:
+def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12) -> None:
     prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
     work = latest.copy()
     work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
     for _, row in work.sort_values("_prio").head(limit).iterrows():
         mode = str(row.get("mode_operation", "NORMAL"))
         color = MODE_COLORS.get(mode, "#64748b")
-        action = str(row.get("action_rl", row.get("action_proposee", row.get("action_principale", "Monitoring"))))
+        action = str(row.get("action_rl", row.get("action_proposee", row.get("action_principale", "—"))))
         eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
         eco_dt = eco_kwh * settings.PRIX_KWH_TN
-        expl = mode_explanation(row)
         sid = str(row.get("station_id", ""))
         st.markdown(f"""
 <div class="decision-card" style="border-left-color:{color};">
-  <div class="dc-mode" style="color:{color};">{html.escape(sid)} — {html.escape(mode)}</div>
-  <div class="dc-action">Action proposee : {html.escape(action)}</div>
-  <div class="dc-reason">{html.escape(expl)}</div>
-  <div class="dc-saving">Gain estime : {eco_dt:.2f} DT | {eco_kwh:.2f} kWh</div>
+  <div class="dc-mode" style="color:{color};">{html.escape(sid)} · {html.escape(mode)}</div>
+  <div class="dc-action">{html.escape(action)}</div>
+  <div class="dc-saving">{eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>
 </div>""", unsafe_allow_html=True)
 
 
 def render_nb3_rl_agents(nb3: dict, template: str) -> None:
     rl_data = nb3.get("rl_resultats_tous_agents", {})
     if not rl_data:
-        st.info("Comparaison agents : cle `rl_resultats_tous_agents` dans rapport_optimisation.json.")
+        st.caption("Donnees agents non disponibles.")
         return
     df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
     if "economie_pct" in df_rl.columns:
         df_rl["economie_pct"] = pd.to_numeric(df_rl["economie_pct"], errors="coerce")
-        df_rl = df_rl.sort_values("economie_pct", ascending=False).reset_index(drop=True)
-        fig = px.bar(
-            df_rl.head(10),
-            x="economie_pct",
-            y="Agent",
-            orientation="h",
-            labels={"economie_pct": "Economie %"},
-            title="Classement agents RL (NB3)",
-        )
-        fig.update_layout(
-            template=template,
-            height=max(240, 36 * min(10, len(df_rl))),
-            margin=dict(l=0, r=0, t=30, b=0),
-            showlegend=False,
-        )
-        st.plotly_chart(fig, width="stretch")
-    if len(df_rl) >= 3:
-        podium = [html.escape(str(df_rl.iloc[i]["Agent"])) for i in range(3)]
-        st.markdown(f"""
-<div class="podium">
-  <div class="podium-item silver"><div class="podium-rank">2e</div><div class="podium-name">{podium[1]}</div></div>
-  <div class="podium-item gold"><div class="podium-rank">1er</div><div class="podium-name">{podium[0]}</div></div>
-  <div class="podium-item bronze"><div class="podium-rank">3e</div><div class="podium-name">{podium[2]}</div></div>
-</div>""", unsafe_allow_html=True)
+        df_rl = df_rl.sort_values("economie_pct", ascending=False)
     st.dataframe(df_rl, width="stretch", hide_index=True)
 
 
 def mode_explanation(row: pd.Series) -> str:
-    """Short operational explanation for current mode."""
     mode = str(row.get("mode_operation", "NORMAL"))
-    heure = int(row.get("heure", 12) or 12)
-    cpu = float(row.get("charge_cpu_pct", 0) or 0)
     score = float(row.get("anomalie_score_ensemble", 0) or 0)
     if mode == "ECO":
-        return f"Mode ECO declenche car heure creuse ({heure}h), CPU {cpu:.0f}%, score anomalie faible ({score:.2f})"
+        return "Heure creuse ou faible charge — reduction possible."
     if mode == "CRITIQUE":
-        return f"Mode CRITIQUE : score anomalie eleve ({score:.2f}) ou consensus detecteurs fort"
+        return f"Anomalie forte (score {score:.2f}) — intervention rapide."
     if mode == "ATTENTION":
-        ecart = abs(float(row.get("ecart_pct", 0) or 0))
-        return f"Mode ATTENTION : ecart consommation {ecart:.1f}% vs profil ou score {score:.2f}"
-    return f"Mode NORMAL : supervision standard, score anomalie {score:.2f}"
+        return f"Ecart ou score eleve ({score:.2f}) — surveillance renforcee."
+    return "Fonctionnement nominal."
 
 
 def render_executive_report_export(kpis: dict) -> None:
@@ -278,8 +249,7 @@ def render_executive_report_export(kpis: dict) -> None:
     from ui.utils import apply_current_admin_filters
     from utils.pdf_export import generate_report_pdf
 
-    with section("Generer le rapport"):
-        st.caption("Synthese PDF des KPI et des 5 principales alertes pour la periode filtree.")
+    with section("Rapport PDF"):
         top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
         seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
         anomaly_items = []
