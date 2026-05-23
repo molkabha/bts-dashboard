@@ -66,11 +66,23 @@ Ce projet est une solution d'optimisation énergétique des stations de base BTS
 L'application principale se lance depuis `app.py`.
 
 ### Fonctionnalités
-- Authentification et gestion des permissions
+- Authentification et gestion des permissions (RLS par station pour les ingénieurs)
 - Chargement des artefacts NB1/NB2/NB3
 - Navigation :
-  - **Admin** : Accueil, Carte, Prediction, Anomalies, Decisions, Comparaison, Import, Stations, Utilisateurs
-  - **Ingenieur** : Simulation (replay sur stations assignees)
+  - **Admin** : Accueil, Carte, Prédiction (NB1), Anomalies (NB2), Optimisation (NB3), Simulation temps réel, Configuration
+  - **Ingénieur réseau** : mêmes pages opérationnelles (stations assignées uniquement, sans résultats ML), plus Simulation
+- **Configuration** (admin) : gestion des stations, utilisateurs, import de dataset
+
+### Pages et notebooks
+| Page | Notebook | Contenu principal |
+|------|----------|-------------------|
+| Accueil | — | 4 KPIs, répartition des modes, top 5 stations critiques |
+| Carte | — | Carte Mapbox (criticité), filtres sidebar, comparaison gouvernorats |
+| Prédiction | NB1 | Réel vs prédit, bande Q10/Q90, R² |
+| Anomalies | NB2 | Scatter score × heure, stations prioritaires |
+| Optimisation | NB3 | Règles vs RL, courbe d'apprentissage, économies CO₂ |
+| Simulation | NB3 | Replay horaire en temps réel |
+| Configuration | — | Stations, utilisateurs, upload dataset |
 
 ### Structure du code
 - `app.py` : point d'entrée Streamlit

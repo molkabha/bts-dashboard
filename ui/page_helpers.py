@@ -196,24 +196,30 @@ def latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
     return df.groupby("station_id", as_index=False).last()
 
 
-def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12) -> None:
+def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_savings: bool = True) -> None:
     prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
     work = latest.copy()
     work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
     for _, row in work.sort_values("_prio").head(limit).iterrows():
         mode = display_text(row.get("mode_operation"), "NORMAL")
         color = MODE_COLORS.get(mode, "#64748b")
-        action = display_text(
-            row.get("action_rl") or row.get("action_proposee") or row.get("action_principale"),
-        )
-        eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
-        eco_dt = eco_kwh * settings.PRIX_KWH_TN
+        if show_savings:
+            action = display_text(
+                row.get("action_rl") or row.get("action_proposee") or row.get("action_principale"),
+            )
+        else:
+            action = display_text(row.get("action_proposee") or row.get("action_principale"), "—")
+        saving_html = ""
+        if show_savings:
+            eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
+            eco_dt = eco_kwh * settings.PRIX_KWH_TN
+            saving_html = f'<div class="dc-saving">{eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>'
         sid = str(row.get("station_id", ""))
         st.markdown(f"""
 <div class="decision-card" style="border-left-color:{color};">
   <div class="dc-mode" style="color:{color};">{html.escape(sid)} · {html.escape(mode)}</div>
   <div class="dc-action">{html.escape(action)}</div>
-  <div class="dc-saving">{eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>
+  {saving_html}
 </div>""", unsafe_allow_html=True)
 
 

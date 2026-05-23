@@ -35,8 +35,8 @@ def is_admin() -> bool:
 
 
 def redirect_engineer_home() -> None:
-    """Send non-admin users to their default page (Simulation)."""
-    st.session_state["_nav_override"] = 6
+    """Send non-admin users to their default page (Accueil)."""
+    st.session_state["_nav_override"] = 0
     st.rerun()
 
 

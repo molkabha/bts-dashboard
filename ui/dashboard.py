@@ -15,6 +15,7 @@ from services.data_service import (
     init_db,
     load_outputs,
 )
+from ui.display import ADMIN_ONLY_PAGE_INDICES
 from ui.layout import configure_page
 from ui.auth import login_page, force_password_change_page
 from ui.components import sidebar_global, page_footer
@@ -26,11 +27,7 @@ from views.p2_prediction import page_prediction
 from views.p3_anomalies import page_anomalies
 from views.p4_optimisation_rl import page_optimisation_rl
 from views.p5_simulation import page_simulation
-from views.p8_station import page_station_detail
-from views.p10_comparaison import page_comparaison
-from views.p6_upload_admin import page_upload_admin
 from views.p7_configuration import page_configuration
-from views.p8_utilisateurs import page_utilisateurs
 
 # Page indices are stable for deep links (_nav_override).
 PAGE_FUNCTIONS = {
@@ -39,21 +36,16 @@ PAGE_FUNCTIONS = {
     2: page_prediction,
     3: page_anomalies,
     6: page_simulation,
-    8: page_station_detail,
-    10: page_comparaison,
-    11: page_upload_admin,
     12: page_configuration,
-    13: page_utilisateurs,
     14: page_optimisation_rl,
 }
 
-ADMIN_ONLY_INDICES = {0, 1, 2, 3, 8, 10, 11, 12, 13, 14}
-ENGINEER_PAGE_INDICES = {6}
-NO_DATASET_PRELOAD = {11, 12, 13}
+ENGINEER_PAGE_INDICES = {0, 1, 2, 3, 6, 14}
+NO_DATASET_PRELOAD = {12}
 
 
-def _default_home_page(role: str) -> int:
-    return 0 if role == "admin" else 6
+def _default_home_page(_role: str) -> int:
+    return 0
 
 
 def main():
@@ -105,7 +97,9 @@ def main():
         page_index = _default_home_page(role)
 
     if role != "admin":
-        if page_index not in ENGINEER_PAGE_INDICES:
+        if page_index in ADMIN_ONLY_PAGE_INDICES:
+            page_index = _default_home_page(role)
+        elif page_index not in ENGINEER_PAGE_INDICES:
             page_index = _default_home_page(role)
 
     st.session_state["global_filters"] = filters

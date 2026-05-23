@@ -1,4 +1,4 @@
-"""Page 12 - Gestion des stations (admin)."""
+"""Page 12 - Configuration (stations, utilisateurs, import dataset)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from services.data_service import (
     station_summary_from_df,
 )
 from ui.components import header, kpi_card, section
+from views.p6_upload_admin import render_upload_panel
+from views.p8_utilisateurs import render_utilisateurs_panel
 
 
 def _station_inventory() -> pd.DataFrame:
@@ -69,14 +71,11 @@ def _station_inventory() -> pd.DataFrame:
     return merged.sort_values("Station").reset_index(drop=True)
 
 
-def page_configuration():
-    security_middleware.enforce(role="admin")
-    header("Stations", "Activer ou masquer des stations du parc")
-
+def _render_stations_tab():
     inventory = _station_inventory()
     if inventory.empty:
         st.warning(
-            "Aucune station dans le dataset actif. Publiez un jeu de donnees (page Import) "
+            "Aucune station dans le dataset actif. Publiez un jeu de donnees (onglet Import) "
             "ou verifiez les artefacts NB sur Hugging Face."
         )
         return
@@ -95,8 +94,8 @@ def page_configuration():
         kpi_card("Desactivees", str(inactive_count), "Exclues filtres / cartes", "orange")
 
     st.caption(
-        "Les stations desactivees sont masquees pour tous les utilisateurs (carte, KPI, filtres, ingenieurs). "
-        "Les acces par ingenieur se gerent dans **Gestion des utilisateurs**."
+        "Les stations desactivees sont masquees pour tous les utilisateurs. "
+        "Les acces par ingenieur se gerent dans l'onglet Utilisateurs."
     )
 
     with section("Parc stations"):
@@ -162,3 +161,19 @@ def page_configuration():
             log_event("station_parc_saved", {"inactive": len(load_inactive_stations())})
             st.success("Parc stations enregistre. Les vues du dashboard sont a jour.")
             st.rerun()
+
+
+def page_configuration():
+    security_middleware.enforce(role="admin")
+    header("Configuration", "Stations, utilisateurs et import de dataset")
+
+    tab_stations, tab_users, tab_import = st.tabs(["Stations", "Utilisateurs", "Import dataset"])
+
+    with tab_stations:
+        _render_stations_tab()
+
+    with tab_users:
+        render_utilisateurs_panel()
+
+    with tab_import:
+        render_upload_panel()

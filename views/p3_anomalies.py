@@ -13,7 +13,7 @@ from ui.components import header, kpi_card, section
 from ui.display import PAGE_ANOMALIES
 from ui.formatting import format_dataframe_for_display
 from ui.page_helpers import load_dashboard_df
-from ui.utils import active_filter_label
+from ui.utils import active_filter_label, is_admin
 
 
 def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
@@ -35,66 +35,120 @@ def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _priority_stations(work: pd.DataFrame, seuil: float, anom_col: str) -> pd.DataFrame:
+    if "station_id" not in work.columns:
+        return pd.DataFrame()
+    agg = work.groupby("station_id", as_index=False).agg(
+        score=(anom_col, "max"),
+        alertes=(anom_col, lambda s: int((pd.to_numeric(s, errors="coerce").fillna(0) > seuil).sum())),
+    )
+    if "gouvernorat" in work.columns:
+        gov = work.groupby("station_id")["gouvernorat"].first()
+        agg["gouvernorat"] = agg["station_id"].map(gov)
+    if "mode_operation" in work.columns:
+        mode = work.sort_values("timestamp").groupby("station_id")["mode_operation"].last() if "timestamp" in work.columns else work.groupby("station_id")["mode_operation"].first()
+        agg["mode"] = agg["station_id"].map(mode)
+    return agg.sort_values("score", ascending=False).head(15)
+
+
 def page_anomalies():
-    security_middleware.enforce(role="admin")
-    header(PAGE_ANOMALIES, "Detecteurs et alertes sur le filtre actif")
+    security_middleware.enforce()
+
+    subtitle = "Score × heure et stations prioritaires"
+    if not is_admin():
+        subtitle = "Surveillance QoS de vos stations (sans scores ML)"
+    header(PAGE_ANOMALIES, subtitle)
     st.caption(active_filter_label())
 
-    df = load_dashboard_df(["ecart_pct", "score_qos", "gouvernorat"])
+    df = load_dashboard_df(["ecart_pct", "score_qos", "gouvernorat", "heure"])
     if df.empty:
         st.warning("Aucune donnee pour les filtres actifs.")
         return
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
-    nb2_stats = load_nb2_network_stats()
-    seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
-    anom_col = "anomalie_score_ensemble"
-    work = df.copy()
-    work["_score"] = pd.to_numeric(work.get(anom_col, 0), errors="coerce").fillna(0)
-    anom_df = work[work["_score"] > seuil]
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        kpi_card("Score moyen", f"{work['_score'].mean():.2f}", "", "orange")
-    with c2:
-        kpi_card("Alertes", str(len(anom_df)), f"> {seuil:.2f}", "red")
-    with c3:
-        kpi_card("Stations", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
+    if is_admin():
+        nb2_stats = load_nb2_network_stats()
+        seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
+        anom_col = "anomalie_score_ensemble"
+        work = df.copy()
+        work["_score"] = pd.to_numeric(work.get(anom_col, 0), errors="coerce").fillna(0)
+        anom_df = work[work["_score"] > seuil]
 
-    det_df = _detector_rows(nb2_stats)
-    if not det_df.empty:
-        with section("Detecteurs"):
-            st.dataframe(det_df, width="stretch", hide_index=True)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            kpi_card("Score moyen", f"{work['_score'].mean():.2f}", "", "orange")
+        with c2:
+            kpi_card("Alertes", str(len(anom_df)), f"> {seuil:.2f}", "red")
+        with c3:
+            kpi_card("Stations touchees", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
 
-    with section("Alertes principales"):
-        if anom_df.empty:
-            st.success("Aucune alerte sur cette periode.")
-        else:
-            cols = [c for c in ["timestamp", "station_id", "_score", "ecart_pct", "mode_operation"] if c in anom_df.columns]
-            show = anom_df[cols].sort_values("_score", ascending=False).head(25)
-            show = show.rename(columns={
-                "timestamp": "Date",
-                "station_id": "Station",
-                "_score": "Score",
-                "ecart_pct": "Ecart %",
-                "mode_operation": "Mode",
-            })
-            st.dataframe(format_dataframe_for_display(show), width="stretch", hide_index=True)
+        det_df = _detector_rows(nb2_stats)
+        if not det_df.empty:
+            with section("Detecteurs NB2"):
+                st.dataframe(det_df, width="stretch", hide_index=True)
 
-    if {"ecart_pct", anom_col}.issubset(work.columns):
-        with section("Vue d'ensemble"):
-            scatter_df = work.copy()
-            scatter_df["ecart_pct"] = pd.to_numeric(scatter_df["ecart_pct"], errors="coerce").fillna(0)
-            scatter_df["score"] = pd.to_numeric(scatter_df[anom_col], errors="coerce").fillna(0)
+        with section("Stations prioritaires"):
+            prio = _priority_stations(work, seuil, anom_col)
+            if prio.empty:
+                st.success("Aucune station prioritaire.")
+            else:
+                st.dataframe(format_dataframe_for_display(prio), width="stretch", hide_index=True)
+
+        work["_heure"] = pd.to_numeric(work.get("heure", work["timestamp"].dt.hour if "timestamp" in work.columns else 0), errors="coerce").fillna(0)
+        with section("Score × heure"):
             fig = px.scatter(
-                scatter_df,
-                x="ecart_pct",
-                y="score",
-                color="mode_operation" if "mode_operation" in scatter_df.columns else None,
-                hover_data=["station_id"] if "station_id" in scatter_df.columns else None,
-                labels={"ecart_pct": "Ecart %", "score": "Score"},
+                work,
+                x="_heure",
+                y="_score",
+                color="mode_operation" if "mode_operation" in work.columns else None,
+                hover_data=["station_id"] if "station_id" in work.columns else None,
+                labels={"_heure": "Heure", "_score": "Score anomalie"},
                 color_discrete_map=MODE_COLORS,
             )
-            fig.add_hline(y=seuil, line_dash="dash", line_color="#c8102e")
-            fig.update_layout(template=template, height=300, margin=dict(l=0, r=0, t=8, b=0))
+            fig.add_hline(y=seuil, line_dash="dash", line_color="#c8102e", annotation_text="Seuil")
+            fig.update_layout(template=template, height=320, margin=dict(l=0, r=0, t=8, b=0))
+            st.plotly_chart(fig, width="stretch")
+    else:
+        qos_seuil = 0.70
+        work = df.copy()
+        work["_qos"] = pd.to_numeric(work.get("score_qos", 0.75), errors="coerce").fillna(0.75)
+        low_qos = work[work["_qos"] < qos_seuil]
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            kpi_card("QoS moyen", f"{work['_qos'].mean() * 100:.0f}%", "", "blue")
+        with c2:
+            kpi_card("Alertes QoS", str(len(low_qos)), f"< {qos_seuil:.0%}", "orange")
+        with c3:
+            kpi_card("Stations", str(work["station_id"].nunique()) if "station_id" in work.columns else "0", "", "gray")
+
+        with section("Stations a surveiller"):
+            if "station_id" in work.columns:
+                prio = (
+                    work.groupby("station_id", as_index=False)
+                    .agg(qos=("score_qos", "mean"), lignes=("score_qos", "count"))
+                    .sort_values("qos")
+                    .head(15)
+                )
+                if "gouvernorat" in work.columns:
+                    prio["gouvernorat"] = prio["station_id"].map(work.groupby("station_id")["gouvernorat"].first())
+                st.dataframe(format_dataframe_for_display(prio), width="stretch", hide_index=True)
+
+        work["_heure"] = pd.to_numeric(
+            work.get("heure", work["timestamp"].dt.hour if "timestamp" in work.columns else 0),
+            errors="coerce",
+        ).fillna(0)
+        with section("QoS × heure"):
+            fig = px.scatter(
+                work,
+                x="_heure",
+                y="_qos",
+                color="mode_operation" if "mode_operation" in work.columns else None,
+                hover_data=["station_id"] if "station_id" in work.columns else None,
+                labels={"_heure": "Heure", "_qos": "Score QoS"},
+                color_discrete_map=MODE_COLORS,
+            )
+            fig.add_hline(y=qos_seuil, line_dash="dash", line_color="#c8102e")
+            fig.update_layout(template=template, height=320, margin=dict(l=0, r=0, t=8, b=0))
             st.plotly_chart(fig, width="stretch")

@@ -77,9 +77,8 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     )
 
 
-def page_upload_admin():
-    security_middleware.enforce(role="admin")
-    header("Import", "Publier un nouveau jeu de donnees")
+def render_upload_panel():
+    """Contenu import dataset (sans en-tete de page)."""
     info = active_dataset_info()
     if info:
         st.info(f"Dataset actif : {info.get('name', 'Standard')} ({info.get('published_at', '')})")
@@ -176,3 +175,9 @@ def page_upload_admin():
         with st.expander("Resultat du Pipeline", expanded=False):
             st.dataframe(result.head(500), width="stretch", hide_index=True)
             download_df_button(result, "pipeline_result.csv", "Exporter resultat")
+
+
+def page_upload_admin():
+    security_middleware.enforce(role="admin")
+    header("Import", "Publier un nouveau jeu de donnees")
+    render_upload_panel()

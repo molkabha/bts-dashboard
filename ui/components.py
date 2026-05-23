@@ -176,7 +176,7 @@ def sidebar_global(
     else:
         visible_pages = list(ENGINEER_PAGE_LABELS)
         page_map = ENGINEER_PAGE_INDEX
-        default_page = "Simulation"
+        default_page = "Accueil"
 
     st.sidebar.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
     nav_key = f"nav_page_{role}"

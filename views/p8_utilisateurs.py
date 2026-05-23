@@ -20,10 +20,8 @@ from ui.components import header, section
 from utils.security import password_hash, generate_temp_password
 
 
-def page_utilisateurs():
-    security_middleware.enforce(role="admin")
-    header("Utilisateurs", "Comptes et acces stations")
-
+def render_utilisateurs_panel():
+    """Contenu gestion utilisateurs (sans en-tete de page)."""
     tab1, tab2, tab3 = st.tabs(["Annuaire", "Ajouter un compte", "Acces Stations"])
 
     with tab1:
@@ -34,6 +32,12 @@ def page_utilisateurs():
 
     with tab3:
         _render_station_access()
+
+
+def page_utilisateurs():
+    security_middleware.enforce(role="admin")
+    header("Utilisateurs", "Comptes et acces stations")
+    render_utilisateurs_panel()
 
 
 def _render_user_list():
