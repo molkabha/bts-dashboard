@@ -78,7 +78,7 @@ def login_page(logo_path: Path):
                 """
 <div class="login-footer">
   <strong>Tunisie Telecom</strong> — Gestion énergétique BTS<br>
-  Accès réservé : <span style="color:#059669;font-weight:800;">ADMINISTRATEUR</span> et
+  Accès réservé : <span style="color:#c8102e;font-weight:800;">ADMINISTRATEUR</span> et
   <span style="color:#2563eb;font-weight:800;">INGÉNIEUR RÉSEAU</span>
 </div>
 """,

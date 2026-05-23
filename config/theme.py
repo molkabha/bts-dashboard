@@ -169,7 +169,7 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .role-pill { display:inline-block; background:#f1f5f9; color:var(--tt-text); border:1px solid var(--tt-border); padding:4px 9px; border-radius:999px; font-size:10.5px; font-weight:800; text-transform:uppercase; }
 .role-pill.admin { background:var(--tt-red); color:#fff; border-color:var(--tt-red); }
 .role-badge { display:inline-block; margin-top:6px; padding:4px 10px; border-radius:999px; font-size:10px; font-weight:850; letter-spacing:0.5px; text-transform:uppercase; }
-.role-badge-admin { background:#059669; color:#fff; border:1px solid #047857; }
+.role-badge-admin { background:var(--tt-red); color:#fff; border:1px solid var(--tt-red-dark); }
 .role-badge-engineer { background:#2563eb; color:#fff; border:1px solid #1d4ed8; }
 .global-status-bar { display:flex; flex-wrap:wrap; gap:10px; margin:-4px 0 14px 0; padding:10px 12px; background:var(--tt-card); border:1px solid var(--tt-border); border-radius:8px; }
 .gsb-item { flex:1; min-width:120px; display:flex; flex-direction:column; gap:2px; padding:6px 10px; border-radius:6px; border:1px solid var(--tt-border); background:#f8fafc; }
