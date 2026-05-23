@@ -1065,12 +1065,16 @@ def enrich_dashboard_data(df: pd.DataFrame, requested_columns: list[str]) -> pd.
 
         nb3_cols = list(dict.fromkeys(["timestamp", "station_id", *NB3_BUSINESS_COLUMNS]))
         nb3 = read_parquet_fast(artifact_path("streamlit_data.parquet"), nb3_cols)
-        out = merge_business_columns(out, nb3, NB3_BUSINESS_COLUMNS, ["station_id", "timestamp"])
+        out = merge_business_columns(
+            out, nb3, NB3_BUSINESS_COLUMNS, ["station_id", "timestamp"], zero_as_missing=True,
+        )
 
     if {"station_id", "heure"}.issubset(out.columns):
         decision_cols = list(dict.fromkeys(["station_id", "heure", *NB3_DECISION_COLUMNS]))
         decisions = read_parquet_fast(artifact_path("decisions_par_station.parquet"), decision_cols)
-        out = merge_business_columns(out, decisions, NB3_DECISION_COLUMNS, ["station_id", "heure"])
+        out = merge_business_columns(
+            out, decisions, NB3_DECISION_COLUMNS, ["station_id", "heure"], zero_as_missing=True,
+        )
 
     out = harmonize_nb3_economies(normalize_dataframe_columns(out))
     if "source_decision_nb3" not in out.columns:

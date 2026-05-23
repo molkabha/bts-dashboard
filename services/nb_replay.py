@@ -7,6 +7,7 @@ from datetime import datetime
 import pandas as pd
 
 from services.data_service import load_filtered_main_data
+from services.nb_metrics import harmonize_nb3_economies
 
 REPLAY_COLUMNS = [
     "timestamp",
@@ -39,7 +40,10 @@ REPLAY_COLUMNS = [
 
 def load_replay_source() -> pd.DataFrame:
     """Full enriched dataset for hour-by-hour replay."""
-    return load_filtered_main_data(REPLAY_COLUMNS)
+    df = load_filtered_main_data(REPLAY_COLUMNS)
+    if df.empty:
+        return df
+    return harmonize_nb3_economies(df)
 
 
 def replay_timestamps(
@@ -80,4 +84,6 @@ def replay_batch(
         (pd.to_datetime(source["timestamp"], errors="coerce") == ts)
         & (source["station_id"].astype(str).isin(stations))
     ].copy()
+    if not batch.empty:
+        batch = harmonize_nb3_economies(batch)
     return batch, ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts

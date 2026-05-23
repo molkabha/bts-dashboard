@@ -20,11 +20,30 @@ def numeric_series(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.Se
     return pd.to_numeric(df[column], errors="coerce").fillna(default)
 
 
+NB3_ZERO_AS_MISSING = frozenset({
+    "economie_estimee_kwh",
+    "economie_rl_kwh",
+    "action_rl",
+    "action_proposee",
+    "mode_operation",
+})
+
+
+def _needs_fill_mask(series: pd.Series, column: str, zero_as_missing: bool) -> pd.Series:
+    missing = blank_mask(series)
+    if zero_as_missing and column in NB3_ZERO_AS_MISSING:
+        numeric = pd.to_numeric(series, errors="coerce")
+        missing = missing | numeric.fillna(0).le(0)
+    return missing
+
+
 def merge_business_columns(
     df: pd.DataFrame,
     source: pd.DataFrame,
     columns: list[str],
     keys: list[str],
+    *,
+    zero_as_missing: bool = False,
 ) -> pd.DataFrame:
     """Fill missing or blank business columns from notebook artefacts (NB2/NB3)."""
     if df.empty or source.empty:
@@ -46,7 +65,7 @@ def merge_business_columns(
         if col not in merged.columns:
             merged[col] = merged[src_name]
         else:
-            missing = blank_mask(merged[col])
+            missing = _needs_fill_mask(merged[col], col, zero_as_missing)
             if missing.any():
                 merged.loc[missing, col] = merged.loc[missing, src_name]
         merged = merged.drop(columns=[src_name], errors="ignore")
@@ -88,10 +107,16 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def economie_rl_kwh_series(df: pd.DataFrame) -> pd.Series:
+    """Hourly RL economy (expert fallback when RL is empty/zero)."""
+    if df.empty:
+        return pd.Series(dtype=float)
+    harmonized = harmonize_nb3_economies(df)
+    return numeric_series(harmonized, "economie_rl_kwh", 0.0)
+
+
 def effective_economie_kwh(df: pd.DataFrame) -> pd.Series:
     """Per-row NB3 economy (max RL vs expert), matching notebook / simulation."""
-    if "economie_kwh" in df.columns:
-        return numeric_series(df, "economie_kwh", 0.0)
     if df.empty:
         return pd.Series(dtype=float)
     harmonized = harmonize_nb3_economies(df)
