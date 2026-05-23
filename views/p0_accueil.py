@@ -45,11 +45,9 @@ def page_accueil():
     seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
     scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
     nb_incidents = int((scores > seuil).sum())
-    pct_anom_nb2 = float(nb2_stats.get("pct_anomalies_reseau") or kpis.get("pct_anomalies") or 0)
-    dispo = max(0, 100 - pct_anom_nb2)
 
     with section("Indicateurs strategiques"):
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             eco_help = f"{eco_label} · ~{eco_mois:,.0f} DT/mois"
             if pct_eco_nb3 > 0:
@@ -61,8 +59,6 @@ def page_accueil():
             kpi_card("% stations ECO", f"{pct_eco:.1f}%", "Mode actif", "eco")
         with c4:
             kpi_card("Incidents", str(nb_incidents), "Anomalies majeures", "orange")
-        with c5:
-            kpi_card("Disponibilite", f"{dispo:.1f}%", "Systeme", "gray")
 
     c1, c2 = st.columns(2)
     with c1:
