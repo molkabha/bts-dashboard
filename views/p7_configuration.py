@@ -80,7 +80,7 @@ def page_configuration():
     inventory = _station_inventory()
     if inventory.empty:
         st.warning(
-            "Aucune station dans le dataset actif. Publiez un jeu de donnees (page Donnees) "
+            "Aucune station dans le dataset actif. Publiez un jeu de donnees (page Import / dataset) "
             "ou verifiez les artefacts NB sur Hugging Face."
         )
         return
@@ -100,7 +100,7 @@ def page_configuration():
 
     st.caption(
         "Les stations desactivees sont masquees pour tous les utilisateurs (carte, KPI, filtres, ingenieurs). "
-        "Les acces par ingenieur se gerent dans **Gestion Utilisateurs**."
+        "Les acces par ingenieur se gerent dans **Gestion des utilisateurs**."
     )
 
     with section("Parc stations"):

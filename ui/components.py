@@ -249,13 +249,13 @@ ENGINEER_PAGE_LABELS = [
 ]
 
 ADMIN_PAGE_LABELS = [
-    "Vue executive",
-    "Parc",
-    "Optimisation",
+    "Accueil",
+    "Carte",
+    "Optimisation RL",
     "Comparaison",
-    "Donnees",
-    "Gestion stations",
-    "Gestion Utilisateurs",
+    "Import / dataset",
+    "Gestion des stations",
+    "Gestion des utilisateurs",
 ]
 
 ENGINEER_PAGE_INDEX = {
@@ -267,13 +267,13 @@ ENGINEER_PAGE_INDEX = {
 }
 
 ADMIN_PAGE_INDEX = {
-    "Vue executive": 0,
-    "Parc": 1,
-    "Optimisation": 14,
+    "Accueil": 0,
+    "Carte": 1,
+    "Optimisation RL": 14,
     "Comparaison": 10,
-    "Donnees": 11,
-    "Gestion stations": 12,
-    "Gestion Utilisateurs": 13,
+    "Import / dataset": 11,
+    "Gestion des stations": 12,
+    "Gestion des utilisateurs": 13,
 }
 
 # Legacy aliases (tests / deep links)
@@ -320,7 +320,7 @@ def sidebar_global(
     if is_admin:
         visible_pages = list(ADMIN_PAGE_LABELS)
         page_map = ADMIN_PAGE_INDEX
-        default_page = "Vue executive"
+        default_page = "Accueil"
     else:
         visible_pages = list(ENGINEER_PAGE_LABELS)
         page_map = ENGINEER_PAGE_INDEX
