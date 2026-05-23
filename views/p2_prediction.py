@@ -102,6 +102,89 @@ def _render_reel_vs_predit(sdf: pd.DataFrame, template: str):
     st.plotly_chart(fig, width="stretch")
 
 
+def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name: str) -> None:
+    with section("Comparaison des modeles"):
+        if models_df.empty:
+            st.info("Artefact resultats_modeles.json manquant.")
+            return
+
+        tab_table, tab_r2, tab_errors = st.tabs(["Tableau", "Graphique R²", "Erreurs"])
+
+        display = models_df.copy()
+        for col in ("R2", "RMSE", "MAE", "MAPE %"):
+            if col in display.columns:
+                display[col] = pd.to_numeric(display[col], errors="coerce")
+
+        with tab_table:
+            if prod_name:
+                st.caption(f"Modele retenu en production : {prod_name}")
+            show = display.copy()
+            if "Production" in show.columns:
+                show["Retenu"] = show["Production"].map({True: "Oui", False: ""})
+                show = show.drop(columns=["Production"])
+            st.dataframe(
+                show,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "R2": st.column_config.NumberColumn("R²", format="%.4f"),
+                    "RMSE": st.column_config.NumberColumn("RMSE (kWh)", format="%.3f"),
+                    "MAE": st.column_config.NumberColumn("MAE (kWh)", format="%.3f"),
+                    "MAPE %": st.column_config.NumberColumn("MAPE %", format="%.2f"),
+                },
+            )
+
+        with tab_r2:
+            chart_df = display.sort_values("R2", ascending=True)
+            colors = ["#059669" if str(m) == prod_name else "#1e3a8a" for m in chart_df["Modele"]]
+            fig = go.Figure(
+                go.Bar(
+                    x=chart_df["R2"],
+                    y=chart_df["Modele"],
+                    orientation="h",
+                    marker_color=colors,
+                    text=[f"{v:.3f}" for v in chart_df["R2"]],
+                    textposition="outside",
+                )
+            )
+            fig.update_layout(
+                template=template,
+                height=max(220, 44 * len(chart_df)),
+                margin=dict(l=0, r=40, t=8, b=0),
+                xaxis_title="R² (jeu test)",
+                showlegend=False,
+            )
+            st.plotly_chart(fig, width="stretch")
+
+        with tab_errors:
+            err_cols = [c for c in ("RMSE", "MAE") if c in display.columns and display[c].notna().any()]
+            if not err_cols:
+                st.info("RMSE / MAE non disponibles dans l'artefact NB1.")
+            else:
+                melt = display.melt(
+                    id_vars=["Modele"],
+                    value_vars=err_cols,
+                    var_name="Metrique",
+                    value_name="Valeur",
+                )
+                fig = px.bar(
+                    melt,
+                    x="Valeur",
+                    y="Modele",
+                    color="Metrique",
+                    orientation="h",
+                    barmode="group",
+                    color_discrete_map={"RMSE": "#1e3a8a", "MAE": "#64748b"},
+                )
+                fig.update_layout(
+                    template=template,
+                    height=max(220, 44 * len(display)),
+                    margin=dict(l=0, r=0, t=8, b=0),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                )
+                st.plotly_chart(fig, width="stretch")
+
+
 def page_prediction():
     security_middleware.enforce()
 
@@ -125,28 +208,6 @@ def page_prediction():
             kpi_card("R²", f"{float(r2):.3f}" if r2 is not None else "—", "Jeu test", "blue")
         with c3:
             kpi_card("RMSE", f"{float(rmse):.3f} kWh" if rmse is not None else "—", "", "gray")
-
-        models_df = load_nb1_models_comparison()
-        with section("Comparaison des modeles"):
-            if models_df.empty:
-                st.info("Artefact resultats_modeles.json manquant.")
-            else:
-                chart_df = models_df.copy()
-                chart_df["R2"] = pd.to_numeric(chart_df["R2"], errors="coerce")
-                fig = px.bar(
-                    chart_df.sort_values("R2"),
-                    x="R2",
-                    y="Modele",
-                    orientation="h",
-                    color_discrete_sequence=["#1e3a8a"],
-                )
-                fig.update_layout(
-                    template=template,
-                    height=max(200, 40 * len(chart_df)),
-                    showlegend=False,
-                    margin=dict(l=0, r=0, t=8, b=0),
-                )
-                st.plotly_chart(fig, width="stretch")
 
     df = load_dashboard_df()
     if df.empty:
@@ -189,6 +250,9 @@ def page_prediction():
             _render_reel_vs_predit(sdf, template)
 
     if is_admin():
+        models_df = load_nb1_models_comparison()
+        _render_models_comparison(models_df, template, prod_name)
+
         nb1 = session_outputs().get("nb1", {})
         shap_data = nb1.get("feature_importance", nb1.get("shap_values", {}))
         if shap_data:
