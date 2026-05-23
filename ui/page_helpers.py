@@ -17,7 +17,7 @@ from services.data_service import (
     load_filtered_main_data,
     load_station_map_data,
 )
-from ui.formatting import display_text
+from ui.formatting import display_text, resolve_row_action
 from ui.utils import apply_current_admin_filters, filters_cache_key
 
 DEFAULT_COLS = [
@@ -203,12 +203,7 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_sav
     for _, row in work.sort_values("_prio").head(limit).iterrows():
         mode = display_text(row.get("mode_operation"), "NORMAL")
         color = MODE_COLORS.get(mode, "#64748b")
-        if show_savings:
-            action = display_text(
-                row.get("action_rl") or row.get("action_proposee") or row.get("action_principale"),
-            )
-        else:
-            action = display_text(row.get("action_proposee") or row.get("action_principale"), "—")
+        action = resolve_row_action(row, prefer_rl=show_savings)
         saving_html = ""
         if show_savings:
             eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)

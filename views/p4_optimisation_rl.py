@@ -12,7 +12,11 @@ import streamlit as st
 from config.settings import settings
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import build_nb3_profil_horaire, compute_filtered_kpis
+from services.data_service import (
+    build_nb3_profil_horaire,
+    compute_filtered_kpis,
+    dashboard_data_coverage,
+)
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_OPTIMISATION
 from ui.formatting import display_text
@@ -44,6 +48,25 @@ def page_optimisation_rl():
     if df.empty:
         st.warning("Aucune donnée pour les filtres actifs.")
         return
+
+    with st.expander("Provenance des données (période filtrée)", expanded=False):
+        st.caption(
+            "Les métriques sont fusionnées depuis les parquets/JSON NB1, NB2 et NB3 "
+            "(voir `enrich_dashboard_data`). Aucune action n'est inventée par le dashboard."
+        )
+        cov = dashboard_data_coverage(df)
+        if not cov.empty:
+            st.dataframe(cov, width="stretch", hide_index=True)
+        if "action_proposee" in df.columns:
+            actions = df["action_proposee"].astype(str).str.strip().str.lower()
+            pct_aa = float((actions == "aucune_action").mean() * 100)
+            st.caption(
+                f"Part des lignes avec action experte « Aucune action » : {pct_aa:.1f} % — "
+                "code NB3 normal quand le moteur ne recommande pas de mesure (souvent mode NORMAL/ECO)."
+            )
+        if "source_decision_nb3" in df.columns:
+            nb3_rows = df["source_decision_nb3"].astype(str).eq("NB3").sum()
+            st.caption(f"Lignes avec décision NB3 fusionnée : {nb3_rows:,} / {len(df):,}")
 
     kpis = compute_filtered_kpis(df)
 

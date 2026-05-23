@@ -1086,18 +1086,64 @@ NB2_BUSINESS_COLUMNS = ["score_qos", "anomalie_score_ensemble", "nb_votes_anomal
 NB3_BUSINESS_COLUMNS = [
     "mode_operation",
     "action_proposee",
+    "action_principale",
     "action_rl",
     "economie_estimee_kwh",
     "economie_rl_kwh",
     "score_qos",
+    "meilleur_agent_rl",
 ]
 NB3_DECISION_COLUMNS = [
     "action_rl",
+    "action_proposee",
+    "action_principale",
     "economie_rl_kwh",
     "economie_estimee_kwh",
     "mode_operation",
     "score_qos",
 ]
+
+
+DASHBOARD_COLUMN_SOURCES: dict[str, str] = {
+    "timestamp": "Dataset actif",
+    "station_id": "Dataset actif",
+    "consommation_kwh": "Dataset actif",
+    "conso_predite": "NB1 — streamlit_data.parquet / df_full_processed.parquet",
+    "pred_q10": "NB1 — streamlit_data.parquet",
+    "pred_q90": "NB1 — streamlit_data.parquet",
+    "ecart_pct": "NB1 — streamlit_data.parquet",
+    "anomalie_score_ensemble": "NB2 — df_avec_anomalies.parquet",
+    "nb_votes_anomalie": "NB2 — df_avec_anomalies.parquet",
+    "mode_operation": "NB3 — streamlit_data.parquet",
+    "action_proposee": "NB3 — streamlit_data.parquet / decisions_par_station.parquet",
+    "action_principale": "NB3 — decisions_par_station.parquet",
+    "action_rl": "NB3 — streamlit_data.parquet / decisions_par_station.parquet",
+    "economie_estimee_kwh": "NB3 — streamlit_data.parquet",
+    "economie_rl_kwh": "NB3 — streamlit_data.parquet",
+    "economie_kwh": "Calcul dashboard (max règles / RL, aligné NB3)",
+    "score_qos": "Dataset / NB2 / NB3 (fusion)",
+    "meilleur_agent_rl": "NB3 — kpi_reseau.json ou streamlit_data",
+}
+
+
+def dashboard_data_coverage(df: pd.DataFrame) -> pd.DataFrame:
+    """Taux de remplissage par colonne sur le dataframe filtre (vérifie la fusion NB)."""
+    from services.nb_metrics import blank_mask
+
+    if df.empty:
+        return pd.DataFrame()
+    rows: list[dict] = []
+    for col, source in DASHBOARD_COLUMN_SOURCES.items():
+        if col not in df.columns:
+            rows.append({"Colonne": col, "Source notebook": source, "Remplissage %": "—"})
+            continue
+        filled = float((~blank_mask(df[col])).mean() * 100)
+        rows.append({
+            "Colonne": col,
+            "Source notebook": source,
+            "Remplissage %": round(filled, 1),
+        })
+    return pd.DataFrame(rows)
 
 
 def enrich_dashboard_data(df: pd.DataFrame, requested_columns: list[str]) -> pd.DataFrame:

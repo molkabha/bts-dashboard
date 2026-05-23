@@ -23,6 +23,50 @@ def display_text(value: Any, default: str = "—") -> str:
     return str(value).strip()
 
 
+# Codes d'action exportes par le notebook NB3 (snake_case).
+ACTION_LABELS_FR: dict[str, str] = {
+    "aucune_action": "Aucune action",
+    "aucune action": "Aucune action",
+    "maintien": "Maintien",
+    "maintien_conso": "Maintien de la consommation",
+    "reduction_puissance": "Réduction de puissance",
+    "reduire_puissance": "Réduire la puissance",
+    "couper_porteur": "Couper un porteur",
+    "mode_eco": "Passage mode ECO",
+    "mode_eco_force": "Forcer mode ECO",
+    "alerte_qos": "Alerte QoS",
+    "intervention": "Intervention terrain",
+}
+
+
+def format_action_label(value: Any, default: str = "—") -> str:
+    """Libelle FR pour les actions NB3 (ex. aucune_action → Aucune action)."""
+    if is_missing(value):
+        return default
+    raw = str(value).strip()
+    key = raw.lower().replace(" ", "_")
+    if key in ACTION_LABELS_FR:
+        return ACTION_LABELS_FR[key]
+    return raw.replace("_", " ").strip().capitalize()
+
+
+def resolve_row_action(row: Any, *, prefer_rl: bool = True, default: str = "—") -> str:
+    """Choisit la meilleure colonne d'action disponible sur une ligne enrichie NB3."""
+    order = (
+        ("action_rl", "action_proposee", "action_principale")
+        if prefer_rl
+        else ("action_proposee", "action_principale", "action_rl")
+    )
+    for col in order:
+        try:
+            val = row.get(col) if hasattr(row, "get") else None
+        except Exception:
+            val = None
+        if not is_missing(val):
+            return format_action_label(val, default=default)
+    return default
+
+
 def display_number(
     value: Any,
     *,

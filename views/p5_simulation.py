@@ -16,7 +16,7 @@ from services.data_service import engineer_assigned_stations
 from services.nb_metrics import effective_economie_kwh, harmonize_nb3_economies
 from services.nb_replay import load_replay_source, replay_batch, replay_timestamps
 from ui.components import header, kpi_card
-from ui.formatting import display_text
+from ui.formatting import display_text, resolve_row_action
 from ui.page_helpers import load_dashboard_df, mode_explanation
 from ui.utils import active_filter_label, download_df_button
 
@@ -181,7 +181,7 @@ def page_simulation():
         eco = float(effective_economie_kwh(latest_all).sum())
         conso = float(_num(latest_all, "consommation_kwh", 0).sum())
         mode = display_text(row.get("mode_operation"), "NORMAL")
-        action = display_text(row.get("action_proposee") or row.get("action_rl"))
+        action = resolve_row_action(row, prefer_rl=False)
 
         st.caption(str(latest_ts)[:19])
 

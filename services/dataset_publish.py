@@ -15,7 +15,14 @@ from services.nb_metrics import blank_mask, harmonize_nb3_economies
 
 NB1_COLUMNS = ["conso_predite", "pred_q10", "pred_q90", "ecart_pct"]
 NB2_COLUMNS = ["anomalie_score_ensemble", "nb_votes_anomalie"]
-NB3_COLUMNS = ["mode_operation", "action_proposee", "economie_estimee_kwh", "economie_rl_kwh", "action_rl"]
+NB3_COLUMNS = [
+    "mode_operation",
+    "action_proposee",
+    "action_principale",
+    "economie_estimee_kwh",
+    "economie_rl_kwh",
+    "action_rl",
+]
 
 
 class PublishDatasetError(ValueError):
