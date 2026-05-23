@@ -1207,7 +1207,6 @@ def load_nb1_models_comparison() -> pd.DataFrame:
             "R2": float(block["r2"]),
             "RMSE": block.get("rmse"),
             "MAE": block.get("mae"),
-            "MAPE %": block.get("mape"),
             "Production": str(name) == prod_name if prod_name else False,
         })
     if not rows:

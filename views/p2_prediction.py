@@ -111,7 +111,7 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
         tab_table, tab_r2, tab_errors = st.tabs(["Tableau", "Graphique R²", "Erreurs"])
 
         display = models_df.copy()
-        for col in ("R2", "RMSE", "MAE", "MAPE %"):
+        for col in ("R2", "RMSE", "MAE"):
             if col in display.columns:
                 display[col] = pd.to_numeric(display[col], errors="coerce")
 
@@ -130,7 +130,6 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
                     "R2": st.column_config.NumberColumn("R²", format="%.4f"),
                     "RMSE": st.column_config.NumberColumn("RMSE (kWh)", format="%.3f"),
                     "MAE": st.column_config.NumberColumn("MAE (kWh)", format="%.3f"),
-                    "MAPE %": st.column_config.NumberColumn("MAPE %", format="%.2f"),
                 },
             )
 
