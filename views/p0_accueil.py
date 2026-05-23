@@ -7,7 +7,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config.settings import settings
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, kpi_card, section
@@ -41,12 +40,7 @@ def page_accueil():
     eco_label = kpis.get("economie_periode_label") or "Reseau NB3"
     co2 = kpis.get("co2_evite_t") or 0
     pct_eco = kpis.get("pct_mode_eco") or 0
-    nb_stations = kpis.get("nb_stations", 0)
-    conso = kpis.get("conso_totale_kwh") or 0
-    nb_mois = int(kpis.get("nb_mois_periode") or 12)
-    cout_annuel = conso * settings.PRIX_KWH_TN if conso else 0
-    cout_mois = cout_annuel / nb_mois if nb_mois else cout_annuel
-    pct_eco_sur_cout = (eco_mois / cout_mois * 100) if cout_mois else float(kpis.get("economie_combinee_pct") or 0)
+    pct_eco_nb3 = float(kpis.get("economie_combinee_pct") or 0)
     nb2_stats = load_nb2_network_stats()
     seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
     scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
@@ -55,28 +49,19 @@ def page_accueil():
     dispo = max(0, 100 - pct_anom_nb2)
 
     with section("Indicateurs strategiques"):
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
-            kpi_card(
-                "Cout energie flotte",
-                f"{cout_mois:,.0f} DT/mois",
-                f"Facture estimee · {cout_annuel:,.0f} DT sur {nb_mois} mois (0,40 DT/kWh)",
-                "blue",
-            )
+            eco_help = f"{eco_label} · ~{eco_mois:,.0f} DT/mois"
+            if pct_eco_nb3 > 0:
+                eco_help += f" · {pct_eco_nb3:.1f}% conso"
+            kpi_card("Economies realisees", f"{eco_dt:,.0f} DT", eco_help, "green")
         with c2:
-            kpi_card(
-                "Economies realisees",
-                f"{eco_dt:,.0f} DT",
-                f"{eco_label} · ~{eco_mois:,.0f} DT/mois (~{pct_eco_sur_cout:.1f}% du cout energie)",
-                "green",
-            )
-        with c3:
             kpi_card("CO2 evite", f"{co2:.1f} t", "Equivalent", "eco")
-        with c4:
+        with c3:
             kpi_card("% stations ECO", f"{pct_eco:.1f}%", "Mode actif", "eco")
-        with c5:
+        with c4:
             kpi_card("Incidents", str(nb_incidents), "Anomalies majeures", "orange")
-        with c6:
+        with c5:
             kpi_card("Disponibilite", f"{dispo:.1f}%", "Systeme", "gray")
 
     c1, c2 = st.columns(2)
