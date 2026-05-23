@@ -7,8 +7,6 @@ import html
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable
-
 import streamlit as st
 
 
@@ -91,35 +89,6 @@ def section(title: str):
     return st.container()
 
 
-def live_indicator():
-    st.markdown('<div class="live-indicator"><div class="live-dot"></div>LIVE</div>', unsafe_allow_html=True)
-
-
-def global_status_bar(metrics: dict | None = None):
-    """Fleet-wide status strip: alerts, OK stations, instant consumption."""
-    if metrics is None:
-        metrics = st.session_state.get("_fleet_metrics")
-    if metrics is None:
-        try:
-            from ui.page_helpers import fleet_status_metrics, load_dashboard_df
-
-            metrics = fleet_status_metrics(load_dashboard_df())
-        except Exception:
-            metrics = {}
-
-    st.markdown(
-        f"""
-<div class="global-status-bar">
-  <div class="gsb-item gsb-danger"><span>Critiques</span><strong>{metrics.get('critiques', 0)}</strong></div>
-  <div class="gsb-item gsb-warning"><span>Attention</span><strong>{metrics.get('attention', 0)}</strong></div>
-  <div class="gsb-item gsb-success"><span>Stations OK</span><strong>{metrics.get('ok', 0)}</strong></div>
-  <div class="gsb-item gsb-info"><span>Conso instantanee</span><strong>{metrics.get('conso_instant', 0):,.1f} kWh</strong></div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-
 def page_footer():
     from services.data_service import active_dataset_info, load_nb3_network_kpi
 
@@ -134,7 +103,7 @@ def page_footer():
     st.markdown(f'<div class="page-footer">{footer}</div>', unsafe_allow_html=True)
 
 
-def header(title: str, subtitle: str, logo_path: Path | None = None, *, show_status: bool = False):
+def header(title: str, subtitle: str, logo_path: Path | None = None):
     if logo_path is None:
         logo_path = Path("static/logo.png")
     logo_html = ""
@@ -156,88 +125,6 @@ def header(title: str, subtitle: str, logo_path: Path | None = None, *, show_sta
 """,
         unsafe_allow_html=True,
     )
-    if show_status and st.session_state.get("authenticated"):
-        global_status_bar()  # opt-in only (admin / debug)
-
-
-def render_artifact_gallery(
-    images: Iterable[tuple[str, str]],
-    *,
-    title: str = "Images notebook",
-    links: Iterable[tuple[str, str]] | None = None,
-    columns: int = 2,
-):
-    """Render notebook images consistently with filter context."""
-    from services.data_service import artifact_image_path, artifact_url
-    from ui.utils import selected_station_filter, active_filter_label
-
-    selected_station = selected_station_filter()
-    filter_label = active_filter_label()
-
-    st.markdown(
-        f"""
-<div class="artifact-toolbar">
-  <div>
-    <div class="artifact-title">{html.escape(title)}</div>
-    <div class="artifact-subtitle">
-      {html.escape(filter_label)}
-    </div>
-  </div>
-  <div class="artifact-scope {'station' if selected_station else 'global'}">
-    {'Station filtree' if selected_station else 'Vue globale'}
-  </div>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
-
-    cols = st.columns(max(1, columns))
-    shown = 0
-    for i, (filename, caption) in enumerate(images):
-        path = artifact_image_path(filename)
-        if not path:
-            continue
-        shown += 1
-        with cols[i % len(cols)]:
-            st.markdown('<div class="artifact-card">', unsafe_allow_html=True)
-            st.image(str(path), width="stretch")
-            extra = (
-                f"Artefact global NB, contexte dashboard filtre sur {selected_station}."
-                if selected_station
-                else "Artefact global genere par notebook."
-            )
-            st.markdown(
-                f"""
-<div class="artifact-caption">
-  <strong>{html.escape(caption)}</strong>
-  <span>{html.escape(extra)}</span>
-</div>
-""",
-                unsafe_allow_html=True,
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    if shown == 0:
-        st.info("Aucune image notebook disponible pour cette section.")
-
-    if links:
-        link_html = " ".join(
-            f'<a href="{html.escape(artifact_url(filename))}" target="_blank">{html.escape(label)}</a>'
-            for filename, label in links
-        )
-        st.markdown(f'<div class="artifact-links">{link_html}</div>', unsafe_allow_html=True)
-
-
-def _data_freshness_label() -> str:
-    from services.data_service import active_dataset_info, artifact_path
-    info = active_dataset_info()
-    pub = str(info.get("published_at") or "").strip()
-    if pub:
-        return pub
-    path = artifact_path("streamlit_data.parquet")
-    if path.exists():
-        return datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-    return "Non disponible"
 
 
 NB_PAGE_LABELS = [
@@ -276,11 +163,6 @@ ADMIN_PAGE_INDEX = {
     "Gestion des stations": 12,
     "Gestion des utilisateurs": 13,
 }
-
-# Legacy aliases (tests / deep links)
-PAGE_LABELS = ADMIN_PAGE_LABELS
-PAGE_INDEX_BY_LABEL = ADMIN_PAGE_INDEX
-
 
 def sidebar_global(
     role: str,

@@ -1,10 +1,15 @@
-"""Shared data-loading helpers for dashboard pages."""
+"""Shared data-loading and NB UI helpers for dashboard pages."""
 
 from __future__ import annotations
+
+import html
 
 import plotly.express as px
 import pandas as pd
 import streamlit as st
+
+from config.settings import settings
+from config.theme import MODE_COLORS
 
 from services.data_service import (
     compute_filtered_kpis,
@@ -182,51 +187,68 @@ def render_conso_gouvernorat_par_periode(
     st.plotly_chart(fig_gov, width="stretch")
 
 
-def fleet_status_metrics(df: pd.DataFrame) -> dict:
-    """Compute global status bar metrics from filtered dataframe."""
-    if df.empty:
-        return {
-            "critiques": 0, "attention": 0, "ok": 0,
-            "conso_instant": 0.0, "pct_eco": 0.0, "eei_moy": 0.0,
-        }
-    modes = df["mode_operation"].astype(str) if "mode_operation" in df.columns else pd.Series(dtype=str)
-    if "station_id" in df.columns and not modes.empty:
-        latest = df.sort_values("timestamp", ascending=False).groupby("station_id").first() if "timestamp" in df.columns else df.groupby("station_id").last()
-        modes = latest["mode_operation"].astype(str) if "mode_operation" in latest.columns else modes
-        stations = latest.index.nunique()
-    else:
-        stations = df["station_id"].nunique() if "station_id" in df.columns else 0
-
-    critiques = int((modes == "CRITIQUE").sum())
-    attention = int((modes == "ATTENTION").sum())
-    ok = max(0, int(stations) - critiques - attention) if stations else 0
-
+def latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "station_id" not in df.columns:
+        return df
     if "timestamp" in df.columns:
-        last_ts = df["timestamp"].max()
-        snap = df[df["timestamp"] == last_ts] if pd.notna(last_ts) else df.tail(min(100, len(df)))
-    else:
-        snap = df.tail(min(100, len(df)))
+        return df.sort_values("timestamp").groupby("station_id", as_index=False).last()
+    return df.groupby("station_id", as_index=False).last()
 
-    conso = pd.to_numeric(snap.get("consommation_kwh", pd.Series(dtype=float)), errors="coerce").sum()
-    kpis = compute_filtered_kpis(df)
-    pct_eco = float(kpis.get("pct_mode_eco") or 0)
 
-    eei = None
-    if "consommation_kwh" in snap.columns and "trafic_data_mbps" in snap.columns:
-        trafic = pd.to_numeric(snap["trafic_data_mbps"], errors="coerce").replace(0, pd.NA)
-        eei = (pd.to_numeric(snap["consommation_kwh"], errors="coerce") / trafic).mean()
-    if eei is None or pd.isna(eei):
-        conso_vals = pd.to_numeric(snap.get("consommation_kwh", pd.Series(dtype=float)), errors="coerce")
-        eei = float(conso_vals.mean()) if not conso_vals.empty else 0.0
+def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 20) -> None:
+    prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
+    work = latest.copy()
+    work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
+    for _, row in work.sort_values("_prio").head(limit).iterrows():
+        mode = str(row.get("mode_operation", "NORMAL"))
+        color = MODE_COLORS.get(mode, "#64748b")
+        action = str(row.get("action_rl", row.get("action_proposee", row.get("action_principale", "Monitoring"))))
+        eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
+        eco_dt = eco_kwh * settings.PRIX_KWH_TN
+        expl = mode_explanation(row)
+        sid = str(row.get("station_id", ""))
+        st.markdown(f"""
+<div class="decision-card" style="border-left-color:{color};">
+  <div class="dc-mode" style="color:{color};">{html.escape(sid)} — {html.escape(mode)}</div>
+  <div class="dc-action">Action proposee : {html.escape(action)}</div>
+  <div class="dc-reason">{html.escape(expl)}</div>
+  <div class="dc-saving">Gain estime : {eco_dt:.2f} DT | {eco_kwh:.2f} kWh</div>
+</div>""", unsafe_allow_html=True)
 
-    return {
-        "critiques": critiques,
-        "attention": attention,
-        "ok": ok,
-        "conso_instant": float(conso or 0),
-        "pct_eco": pct_eco,
-        "eei_moy": float(eei) if eei is not None and not pd.isna(eei) else 0.0,
-    }
+
+def render_nb3_rl_agents(nb3: dict, template: str) -> None:
+    rl_data = nb3.get("rl_resultats_tous_agents", {})
+    if not rl_data:
+        st.info("Comparaison agents : cle `rl_resultats_tous_agents` dans rapport_optimisation.json.")
+        return
+    df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
+    if "economie_pct" in df_rl.columns:
+        df_rl["economie_pct"] = pd.to_numeric(df_rl["economie_pct"], errors="coerce")
+        df_rl = df_rl.sort_values("economie_pct", ascending=False).reset_index(drop=True)
+        fig = px.bar(
+            df_rl.head(10),
+            x="economie_pct",
+            y="Agent",
+            orientation="h",
+            labels={"economie_pct": "Economie %"},
+            title="Classement agents RL (NB3)",
+        )
+        fig.update_layout(
+            template=template,
+            height=max(240, 36 * min(10, len(df_rl))),
+            margin=dict(l=0, r=0, t=30, b=0),
+            showlegend=False,
+        )
+        st.plotly_chart(fig, width="stretch")
+    if len(df_rl) >= 3:
+        podium = [html.escape(str(df_rl.iloc[i]["Agent"])) for i in range(3)]
+        st.markdown(f"""
+<div class="podium">
+  <div class="podium-item silver"><div class="podium-rank">2e</div><div class="podium-name">{podium[1]}</div></div>
+  <div class="podium-item gold"><div class="podium-rank">1er</div><div class="podium-name">{podium[0]}</div></div>
+  <div class="podium-item bronze"><div class="podium-rank">3e</div><div class="podium-name">{podium[2]}</div></div>
+</div>""", unsafe_allow_html=True)
+    st.dataframe(df_rl, width="stretch", hide_index=True)
 
 
 def mode_explanation(row: pd.Series) -> str:

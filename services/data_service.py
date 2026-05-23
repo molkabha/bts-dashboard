@@ -955,30 +955,6 @@ def load_outputs() -> dict:
     return data
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def load_station_data(station: str, columns: tuple[str, ...] = tuple()) -> pd.DataFrame:
-    if not columns:
-        columns = tuple(settings.NB1_COLUMNS)
-    path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
-    if path is None:
-        return pd.DataFrame()
-    return read_parquet_fast(path, list(columns), filters=[("station_id", "=", station)])
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_station_anomalies(station: str, columns: tuple[str, ...] = tuple()) -> pd.DataFrame:
-    """
-    Load NB2 anomaly rows for a single station from the anomaly dataset.
-    UI pages can further filter by time using apply_time_filters().
-    """
-    if not columns:
-        columns = tuple(settings.ANOMALY_COLUMNS)
-    path = active_dataset_path() or artifact_path(settings.ANOMALY_DATASET)
-    if path is None or not path.exists():
-        return pd.DataFrame()
-    return read_parquet_fast(path, list(columns), filters=[("station_id", "=", station)])
-
-
 DASHBOARD_BASE_COLUMNS = list(
     dict.fromkeys(
         settings.TEMPORAL_COLUMNS
@@ -1170,16 +1146,6 @@ def load_top_anomalies(limit: int = 300) -> pd.DataFrame:
     if sort_cols:
         df = df.nlargest(min(limit, len(df)), sort_cols[0])
     return df.head(limit)
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def load_simulation_base(max_rows: int) -> pd.DataFrame:
-    path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
-    if path is None:
-        return pd.DataFrame()
-    cols = list(dict.fromkeys(settings.SIMULATION_COLUMNS + ["economie_estimee_kwh", "economie_kwh"]))
-    df = read_parquet_fast(path, cols).head(max_rows)
-    return enrich_dashboard_data(df, cols)
 
 
 def available_stations() -> list[str]:

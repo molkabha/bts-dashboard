@@ -74,7 +74,6 @@ def page_configuration():
     header(
         "Gestion des stations",
         "Activer ou desactiver les stations visibles dans tout le dashboard",
-        show_status=False,
     )
 
     inventory = _station_inventory()

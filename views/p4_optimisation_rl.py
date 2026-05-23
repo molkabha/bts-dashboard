@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import html
-
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config.settings import settings
-from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import (
     build_nb3_profil_horaire,
@@ -18,74 +14,13 @@ from services.data_service import (
     load_nb3_rapport,
 )
 from ui.components import context_badge, header, kpi_card, section
-from ui.page_helpers import load_dashboard_df, mode_explanation
+from ui.page_helpers import (
+    latest_per_station,
+    load_dashboard_df,
+    render_nb3_decision_cards,
+    render_nb3_rl_agents,
+)
 from ui.utils import active_filter_label, selected_station_filter, session_outputs
-
-AGENT_DESCRIPTIONS = {
-    "Q-Learning": "Apprend de ses erreurs passees sans les repeter",
-    "SARSA": "Plus prudent, tient compte de ce qu'il va faire ensuite",
-    "Double Q-Learning": "Evite de surestimer les bonnes actions",
-    "Expected SARSA": "Moyenne les actions futures pour plus de stabilite",
-    "Q-Learning Adaptatif": "Ajuste automatiquement son taux d'exploration",
-    "Q-Learning UCB": "Equilibre exploration et exploitation",
-    "SARSA Lambda": "Memorise les sequences d'actions reussies",
-    "SARSA(\u03bb)": "Traces d'eligibilite",
-    "Dyna-Q": "Simule des experiences pour apprendre plus vite",
-    "Monte Carlo": "Evalue les trajectoires completes",
-}
-
-
-def _render_rl_agents(nb3: dict, template: str) -> None:
-    rl_data = nb3.get("rl_resultats_tous_agents", {})
-    if not rl_data:
-        st.info("Comparaison agents : cle `rl_resultats_tous_agents` dans rapport_optimisation.json.")
-        return
-    df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
-    if "economie_pct" in df_rl.columns:
-        df_rl["economie_pct"] = pd.to_numeric(df_rl["economie_pct"], errors="coerce")
-        df_rl = df_rl.sort_values("economie_pct", ascending=False).reset_index(drop=True)
-        fig = px.bar(
-            df_rl.head(10),
-            x="economie_pct",
-            y="Agent",
-            orientation="h",
-            labels={"economie_pct": "Economie %"},
-            title="Classement agents RL (NB3)",
-        )
-        fig.update_layout(template=template, height=max(240, 36 * min(10, len(df_rl))),
-                          margin=dict(l=0, r=0, t=30, b=0), showlegend=False)
-        st.plotly_chart(fig, width="stretch")
-    if len(df_rl) >= 3 and "economie_pct" in df_rl.columns:
-        podium_agents = [html.escape(str(df_rl.iloc[i]["Agent"])) for i in range(3)]
-        st.markdown(f"""
-<div class="podium">
-  <div class="podium-item silver"><div class="podium-rank">2e</div><div class="podium-name">{podium_agents[1]}</div></div>
-  <div class="podium-item gold"><div class="podium-rank">1er</div><div class="podium-name">{podium_agents[0]}</div></div>
-  <div class="podium-item bronze"><div class="podium-rank">3e</div><div class="podium-name">{podium_agents[2]}</div></div>
-</div>""", unsafe_allow_html=True)
-    st.dataframe(df_rl, width="stretch", hide_index=True)
-
-
-def _render_decision_cards(latest: pd.DataFrame, limit: int = 20) -> None:
-    prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
-    work = latest.copy()
-    work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
-    work = work.sort_values("_prio").head(limit)
-    for _, row in work.iterrows():
-        mode = str(row.get("mode_operation", "NORMAL"))
-        color = MODE_COLORS.get(mode, "#64748b")
-        action = str(row.get("action_rl", row.get("action_proposee", row.get("action_principale", "Monitoring"))))
-        eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
-        eco_dt = eco_kwh * settings.PRIX_KWH_TN
-        expl = mode_explanation(row)
-        sid = str(row.get("station_id", ""))
-        st.markdown(f"""
-<div class="decision-card" style="border-left-color:{color};">
-  <div class="dc-mode" style="color:{color};">{sid} — {mode}</div>
-  <div class="dc-action">Action proposee : {html.escape(action)}</div>
-  <div class="dc-reason">{html.escape(expl)}</div>
-  <div class="dc-saving">Gain estime : {eco_dt:.2f} DT | {eco_kwh:.2f} kWh</div>
-</div>""", unsafe_allow_html=True)
 
 
 def page_optimisation_rl():
@@ -96,8 +31,7 @@ def page_optimisation_rl():
     )
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
-    outputs = session_outputs()
-    nb3 = outputs.get("nb3", {})
+    nb3 = session_outputs().get("nb3", {})
 
     df = load_dashboard_df([
         "timestamp", "station_id", "consommation_kwh", "economie_estimee_kwh",
@@ -149,15 +83,11 @@ def page_optimisation_rl():
             )
 
     if "station_id" in df.columns:
-        if "timestamp" in df.columns:
-            latest = df.sort_values("timestamp").groupby("station_id", as_index=False).last()
-        else:
-            latest = df.groupby("station_id", as_index=False).last()
         with section("Actions proposees par station (priorite)"):
-            _render_decision_cards(latest)
+            render_nb3_decision_cards(latest_per_station(df))
 
     with section("Comparaison des agents RL"):
-        _render_rl_agents(nb3, template)
+        render_nb3_rl_agents(nb3, template)
 
     with section("Profil horaire — baseline vs optimisation"):
         hourly = build_nb3_profil_horaire(df)

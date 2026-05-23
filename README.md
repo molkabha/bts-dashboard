@@ -68,13 +68,9 @@ L'application principale se lance depuis `app.py`.
 ### Fonctionnalités
 - Authentification et gestion des permissions
 - Chargement des artefacts NB1/NB2/NB3
-- Navigation multi-pages :
-  - `Accueil` : synthèse réseau, KPIs, alertes et rapport PDF
-  - `Vue Globale Réseau` : carte Folium, tableau récapitulatif, KPI spatiaux
-  - `Prediction de Consommation` : performances NB1, comparatif réel vs prédit, importance des variables
-  - `Detection d'Anomalies` : feed d'anomalies, heatmap, consensus détecteurs
-  - `Optimisation et RL` : simulateur d'économies, profils horaires, comparaison des agents RL
-  - pages supplémentaires : simulation, upload admin, configuration, utilisateurs
+- Navigation :
+  - **Admin** : Accueil, Carte, NB1 — Prediction, NB2 — Anomalies, NB3 — Decisions, Comparaison, Import / dataset, gestion stations et utilisateurs
+  - **Ingenieur** : NB1, NB2, NB3, Simulation (replay horaire)
 
 ### Structure du code
 - `app.py` : point d'entrée Streamlit
