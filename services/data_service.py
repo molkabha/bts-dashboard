@@ -81,6 +81,8 @@ COLUMN_ALIASES = {
     "score_qos": ["score_qos_moy"],
     "anomalie_score_ensemble": ["score_anom_moy", "score_moy_ensemble"],
     "consommation_kwh": ["conso_moy"],
+    "latitude": ["lat", "gps_lat", "station_lat", "latitude_station"],
+    "longitude": ["lon", "lng", "long", "gps_lon", "gps_lng", "station_lon"],
 }
 
 # --- SQL Security ---
@@ -1190,15 +1192,110 @@ def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.D
     return _plotly_safe_monthly_series(monthly)
 
 
+def _extract_station_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+    """One GPS point per station from the active hourly dataset."""
+    from utils.geo_tunisia import normalize_geo_columns, valid_coordinate_mask
+
+    if df.empty or "station_id" not in df.columns:
+        return pd.DataFrame()
+    work = normalize_geo_columns(df)
+    if not {"latitude", "longitude"}.issubset(work.columns):
+        return pd.DataFrame()
+
+    valid = work[valid_coordinate_mask(work)].copy()
+    if valid.empty:
+        return pd.DataFrame()
+
+    meta_cols = [c for c in ["gouvernorat", "technologie", "type_zone", "mode_operation"] if c in valid.columns]
+    agg: dict = {"latitude": "first", "longitude": "first"}
+    for col in meta_cols:
+        agg[col] = "first"
+    coords = valid.groupby("station_id", as_index=False).agg(agg)
+    coords["gps_source"] = "dataset_actif"
+    return coords
+
+
+def _merge_station_map_frames(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    """Merge station tables on station_id; fill missing metrics and coordinates from right."""
+    if right.empty:
+        return left
+    if left.empty:
+        return right.copy()
+
+    l = left.copy()
+    r = right.copy()
+    l["station_id"] = l["station_id"].astype(str)
+    r["station_id"] = r["station_id"].astype(str)
+    l = l.set_index("station_id")
+    r = r.set_index("station_id")
+    for col in r.columns:
+        if col not in l.columns:
+            l[col] = r[col]
+        else:
+            l[col] = l[col].combine_first(r[col])
+    return l.reset_index()
+
+
+def _fill_missing_coordinates(stations: pd.DataFrame) -> pd.DataFrame:
+    """Fill missing lat/lon using governorate centroids (deterministic jitter per station)."""
+    from utils.geo_tunisia import governorate_centroid, normalize_geo_columns, station_coordinate_jitter, valid_coordinate_mask
+
+    if stations.empty:
+        return stations
+    out = normalize_geo_columns(stations)
+    if "gouvernorat" not in out.columns:
+        return out
+
+    mask = ~valid_coordinate_mask(out)
+    if not mask.any():
+        return out
+
+    if "gps_source" not in out.columns:
+        out["gps_source"] = pd.NA
+
+    for idx in out.index[mask]:
+        gov = out.at[idx, "gouvernorat"]
+        centroid = governorate_centroid(str(gov) if pd.notna(gov) else "")
+        if centroid is None:
+            continue
+        station_id = str(out.at[idx, "station_id"])
+        dlat, dlon = station_coordinate_jitter(station_id)
+        out.at[idx, "latitude"] = centroid[0] + dlat
+        out.at[idx, "longitude"] = centroid[1] + dlon
+        out.at[idx, "gps_source"] = "centroide_gouvernorat"
+    return out
+
+
 def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Station map/scores: prefer NB3 streamlit_score_stations, else compute from df."""
-    carte = artifact_table_for_df("streamlit_score_stations.parquet", df)
-    if isinstance(carte, pd.DataFrame) and not carte.empty and "station_id" in carte.columns:
-        if df.empty or "station_id" not in df.columns:
-            return carte
-        keep = carte[carte["station_id"].astype(str).isin(df["station_id"].astype(str).unique())]
-        return keep if not keep.empty else carte
-    return station_summary_from_df(df)
+    """
+    Station map data: merge NB3 carte/score parquets, GPS from active dataset,
+    then governorate centroids for any remaining gaps.
+    """
+    from utils.geo_tunisia import normalize_geo_columns
+
+    summary = station_summary_from_df(df) if not df.empty else pd.DataFrame()
+
+    from utils.geo_tunisia import valid_coordinate_mask
+
+    for artifact_name in ("streamlit_carte_stations.parquet", "streamlit_score_stations.parquet"):
+        artefact = artifact_table_for_df(artifact_name, df)
+        if isinstance(artefact, pd.DataFrame) and not artefact.empty and "station_id" in artefact.columns:
+            artefact = normalize_geo_columns(artefact)
+            if valid_coordinate_mask(artefact).any() and "gps_source" not in artefact.columns:
+                artefact = artefact.copy()
+                artefact["gps_source"] = "carte_nb3"
+            if df.empty or "station_id" not in df.columns:
+                summary = _merge_station_map_frames(summary, artefact)
+            else:
+                keep = artefact[
+                    artefact["station_id"].astype(str).isin(df["station_id"].astype(str).unique())
+                ]
+                summary = _merge_station_map_frames(summary, keep if not keep.empty else artefact)
+
+    if not df.empty:
+        summary = _merge_station_map_frames(summary, _extract_station_coordinates(df))
+
+    return _fill_missing_coordinates(summary)
 
 
 def _dataset_month_count(df: pd.DataFrame) -> int:

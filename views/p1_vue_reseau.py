@@ -15,14 +15,35 @@ from ui.page_helpers import load_dashboard_df
 
 def _render_folium_map(scores: pd.DataFrame):
     if scores.empty or not {"latitude", "longitude"}.issubset(scores.columns):
-        st.warning("Coordonnees GPS indisponibles pour la carte.")
+        st.warning(
+            "Coordonnees GPS indisponibles pour la carte. "
+            "Verifiez que streamlit_carte_stations.parquet ou le dataset actif contient latitude/longitude."
+        )
         return
+
+    plot_scores = scores.copy()
+    plot_scores["latitude"] = pd.to_numeric(plot_scores["latitude"], errors="coerce")
+    plot_scores["longitude"] = pd.to_numeric(plot_scores["longitude"], errors="coerce")
+    plot_scores = plot_scores.dropna(subset=["latitude", "longitude"])
+    if plot_scores.empty:
+        st.warning("Aucune coordonnee GPS valide apres filtrage.")
+        return
+
+    if "gps_source" in plot_scores.columns:
+        nb_exact = int((plot_scores["gps_source"] == "dataset_actif").sum())
+        nb_centroid = int((plot_scores["gps_source"] == "centroide_gouvernorat").sum())
+        parts = [f"{len(plot_scores)} stations affichees"]
+        if nb_exact:
+            parts.append(f"{nb_exact} GPS reel (dataset / carte NB3)")
+        if nb_centroid:
+            parts.append(f"{nb_centroid} centroide gouvernorat (approx.)")
+        st.caption(" · ".join(parts))
 
     import folium
     from streamlit_folium import st_folium
 
-    center_lat = scores["latitude"].mean()
-    center_lon = scores["longitude"].mean()
+    center_lat = plot_scores["latitude"].mean()
+    center_lon = plot_scores["longitude"].mean()
     m = folium.Map(location=[center_lat, center_lon], zoom_start=7, tiles="OpenStreetMap")
 
     mode_col = "mode_operation" if "mode_operation" in scores.columns else "categorie"
@@ -32,7 +53,7 @@ def _render_folium_map(scores: pd.DataFrame):
     }
     conso_col = "conso_moy" if "conso_moy" in scores.columns else "consommation_kwh"
 
-    for _, row in scores.iterrows():
+    for _, row in plot_scores.iterrows():
         lat, lon = row.get("latitude"), row.get("longitude")
         if pd.isna(lat) or pd.isna(lon):
             continue
@@ -57,8 +78,8 @@ def _render_folium_map(scores: pd.DataFrame):
     map_data = st_folium(m, width=None, height=520, returned_objects=["last_object_clicked"])
     clicked = map_data.get("last_object_clicked") if map_data else None
     if clicked and clicked.get("lat"):
-        nearest = scores.iloc[
-            ((scores["latitude"] - clicked["lat"]) ** 2 + (scores["longitude"] - clicked["lng"]) ** 2).argsort()[:1]
+        nearest = plot_scores.iloc[
+            ((plot_scores["latitude"] - clicked["lat"]) ** 2 + (plot_scores["longitude"] - clicked["lng"]) ** 2).argsort()[:1]
         ]
         if not nearest.empty:
             st.session_state["selected_station_detail"] = str(nearest.iloc[0]["station_id"])
