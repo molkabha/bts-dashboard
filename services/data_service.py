@@ -377,6 +377,32 @@ def artifact_table(filename: str, columns: list[str] | None = None) -> pd.DataFr
     return pd.DataFrame()
 
 
+def _filter_artifact_by_df(table: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+    """Restrict NB3 export tables to the same stations/time window as the active filtered dataset."""
+    if table.empty or df.empty:
+        return table
+    out = table.copy()
+    if "station_id" in out.columns and "station_id" in df.columns:
+        stations = df["station_id"].astype(str).unique()
+        out = out[out["station_id"].astype(str).isin(stations)]
+    if "timestamp" in out.columns and "timestamp" in df.columns:
+        bounds = pd.to_datetime(df["timestamp"], errors="coerce")
+        ttab = pd.to_datetime(out["timestamp"], errors="coerce")
+        tmin, tmax = bounds.min(), bounds.max()
+        if pd.notna(tmin) and pd.notna(tmax):
+            out = out[(ttab >= tmin) & (ttab <= tmax)]
+    return out.reset_index(drop=True)
+
+
+def artifact_table_for_df(
+    filename: str,
+    df: pd.DataFrame,
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """Load a notebook export table and align it with the current filtered dashboard dataframe."""
+    return _filter_artifact_by_df(artifact_table(filename, columns), df)
+
+
 def first_existing_dataset(names: list[str]) -> Path | None:
     active = active_dataset_path()
     if active and active.exists():
@@ -914,6 +940,14 @@ def enrich_dashboard_data(df: pd.DataFrame, requested_columns: list[str]) -> pd.
         out = merge_business_columns(out, decisions, NB3_DECISION_COLUMNS, ["station_id", "heure"])
 
     out = harmonize_nb3_economies(normalize_dataframe_columns(out))
+    if "source_decision_nb3" not in out.columns:
+        out["source_decision_nb3"] = pd.NA
+    if "mode_operation" in out.columns:
+        from services.nb_metrics import blank_mask
+
+        nb3_mask = ~blank_mask(out["mode_operation"])
+        if nb3_mask.any():
+            out.loc[nb3_mask, "source_decision_nb3"] = "NB3"
     return out
 
 
@@ -993,10 +1027,62 @@ def load_nb1_production_metrics() -> dict:
     return {}
 
 
+def _extract_nb2_seuil_ensemble(nb2: dict) -> float | None:
+    """Read ensemble threshold from NB2 export (resultats_anomalie.json) when present."""
+    if not isinstance(nb2, dict) or not nb2:
+        return None
+
+    def _as_float(value) -> float | None:
+        try:
+            if value is None or value == "":
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    for key in (
+        "seuil_ensemble",
+        "threshold_ensemble",
+        "seuil",
+        "ensemble_threshold",
+        "optimal_threshold",
+    ):
+        parsed = _as_float(nb2.get(key))
+        if parsed is not None:
+            return parsed
+
+    ensemble = nb2.get("ensemble")
+    if isinstance(ensemble, dict):
+        for key in ("seuil", "seuil_ensemble", "threshold", "seuil_test"):
+            parsed = _as_float(ensemble.get(key))
+            if parsed is not None:
+                return parsed
+
+    for value in nb2.values():
+        if not isinstance(value, dict):
+            continue
+        for key in ("seuil_ensemble", "seuil", "threshold"):
+            parsed = _as_float(value.get(key))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def resolve_nb2_seuil_ensemble(nb2: dict | None = None) -> tuple[float, str]:
+    """Return (seuil, source_label) for anomaly detection."""
+    if nb2 is None:
+        nb2 = read_json(artifact_path("resultats_anomalie.json"))
+    extracted = _extract_nb2_seuil_ensemble(nb2 if isinstance(nb2, dict) else {})
+    if extracted is not None:
+        return extracted, "resultats_anomalie.json (NB2)"
+    return 0.25, "defaut_dashboard (0.25)"
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_nb2_network_stats() -> dict:
     """NB2 detector summary + network anomaly rate from NB3 KPI."""
     nb2 = read_json(artifact_path("resultats_anomalie.json"))
+    seuil, seuil_source = resolve_nb2_seuil_ensemble(nb2 if isinstance(nb2, dict) else {})
     kpi = load_nb3_network_kpi()
     pct = float(kpi.get("pct_anomalies")) if kpi and kpi.get("pct_anomalies") is not None else None
     if pct is None and isinstance(nb2, dict):
@@ -1007,7 +1093,8 @@ def load_nb2_network_stats() -> dict:
         ]
         pct = sum(test_pcts) / len(test_pcts) if test_pcts else None
     return {
-        "seuil_ensemble": 0.25,
+        "seuil_ensemble": seuil,
+        "seuil_ensemble_source": seuil_source,
         "pct_anomalies_reseau": pct,
         "detecteurs": nb2 if isinstance(nb2, dict) else {},
     }
@@ -1036,21 +1123,16 @@ def build_nb3_profil_horaire(df: pd.DataFrame) -> pd.DataFrame:
             hourly["conso_optimisee_rl_moy"] = hourly["conso_moy"] - rl_by_h.reindex(hourly["heure"]).fillna(0).to_numpy()
         return hourly
 
-    profil = artifact_table("streamlit_profil_horaire.parquet")
+    profil = artifact_table_for_df("streamlit_profil_horaire.parquet", df)
     return profil if isinstance(profil, pd.DataFrame) else pd.DataFrame()
 
 
 def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.DataFrame:
     """Monthly conso/eco series from NB3 streamlit_timeseries or filtered main data."""
-    ts = artifact_table("streamlit_timeseries.parquet")
+    ts = artifact_table_for_df("streamlit_timeseries.parquet", df)
     if isinstance(ts, pd.DataFrame) and not ts.empty and "timestamp" in ts.columns:
         ts = ts.copy()
         ts["timestamp"] = pd.to_datetime(ts["timestamp"], errors="coerce")
-        if not df.empty and "timestamp" in df.columns:
-            ts_bounds = pd.to_datetime(df["timestamp"], errors="coerce")
-            ts_min, ts_max = ts_bounds.min(), ts_bounds.max()
-            if pd.notna(ts_min) and pd.notna(ts_max):
-                ts = ts[(ts["timestamp"] >= ts_min) & (ts["timestamp"] <= ts_max)]
         conso_col = "conso_tot" if "conso_tot" in ts.columns else "consommation_kwh"
         agg_map = {conso_col: "sum"}
         if "economie_tot" in ts.columns:
@@ -1087,7 +1169,7 @@ def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.D
 
 def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
     """Station map/scores: prefer NB3 streamlit_score_stations, else compute from df."""
-    carte = artifact_table("streamlit_score_stations.parquet")
+    carte = artifact_table_for_df("streamlit_score_stations.parquet", df)
     if isinstance(carte, pd.DataFrame) and not carte.empty and "station_id" in carte.columns:
         if df.empty or "station_id" not in df.columns:
             return carte
@@ -1157,7 +1239,17 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
     conso = float(conso_values.sum()) if not conso_values.empty else None
 
     eco_combinee, eco_rl, eco_dt, co2_t = _nb3_economies_from_kpi(nb3_kpi, conso)
-    economie_periode_label = "Cumul reseau (NB3)"
+    economie_dt_reseau = float(nb3_kpi["economie_dt"]) if nb3_kpi and nb3_kpi.get("economie_dt") is not None else None
+    economie_kwh_reseau = (
+        float(nb3_kpi["economie_combinee_kwh"])
+        if nb3_kpi and nb3_kpi.get("economie_combinee_kwh") is not None
+        else None
+    )
+    base_conso_kpi = float(nb3_kpi["conso_totale_kwh"]) if nb3_kpi and nb3_kpi.get("conso_totale_kwh") else None
+    economie_scaled = bool(
+        base_conso_kpi and conso and abs(conso - base_conso_kpi) / base_conso_kpi >= 0.02
+    )
+    economie_periode_label = "Vue filtrees (scaling NB3)" if economie_scaled else "Cumul reseau (NB3)"
 
     score_qos_moyen = None
     if nb3_kpi and nb3_kpi.get("score_qos_moyen") is not None and conso and nb3_kpi.get("conso_totale_kwh"):
@@ -1189,7 +1281,8 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         if abs(conso - base_conso) / base_conso < 0.02:
             pct_anomalies = float(nb3_kpi["pct_anomalies"])
     if pct_anomalies is None and not anomaly_values.empty:
-        pct_anomalies = float(anomaly_values.gt(0.25).mean() * 100)
+        seuil_anom, _ = resolve_nb2_seuil_ensemble()
+        pct_anomalies = float(anomaly_values.gt(seuil_anom).mean() * 100)
 
     nb_stations = work["station_id"].nunique() if "station_id" in work.columns else 0
     if nb3_kpi and nb3_kpi.get("nb_stations") and conso and nb3_kpi.get("conso_totale_kwh"):
@@ -1222,6 +1315,9 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         "economie_dt": eco_dt,
         "economie_dt_mois": economie_dt_mois,
         "economie_periode_label": economie_periode_label,
+        "economie_dt_reseau": economie_dt_reseau,
+        "economie_kwh_reseau": economie_kwh_reseau,
+        "economie_scaled": economie_scaled,
         "nb_mois_periode": months,
     }
 

@@ -11,7 +11,7 @@ from security.middleware import security_middleware
 from services.data_service import (
     active_dataset_info, db_execute, log_event,
 )
-from services.dataset_publish import prepare_published_dataset
+from services.dataset_publish import PublishDatasetError, prepare_published_dataset
 from services.data_service import enrich_dashboard_data, load_filtered_main_data
 from config.settings import ROOT, settings
 from ui.components import header, kpi_card, section
@@ -57,7 +57,10 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     if "station_id" not in df.columns:
         return False, "Colonne station_id manquante."
     OUTPUTS.mkdir(exist_ok=True, parents=True)
-    processed = prepare_published_dataset(df)
+    try:
+        processed = prepare_published_dataset(df)
+    except PublishDatasetError as exc:
+        return False, str(exc)
     target = OUTPUTS / ACTIVE_UPLOAD_DATASET
     processed.to_parquet(target, index=False)
     rel = str(target.relative_to(ROOT))
@@ -69,8 +72,8 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     st.session_state.pop("data", None)
     log_event("admin_dataset_published", {"file": source_name, "rows": len(processed)})
     return True, (
-        f"Dataset publie : {len(processed):,} lignes enrichies depuis les artefacts NB1/NB2/NB3 "
-        "(fusion notebook + pipeline uniquement si colonnes manquantes)."
+        f"Dataset publie : {len(processed):,} lignes enrichies uniquement depuis les artefacts "
+        "NB1/NB2/NB3 (simulation dashboard desactivee)."
     )
 
 
@@ -124,11 +127,11 @@ def page_upload_admin():
                 kpi_card("Valeurs manquantes", f"{missing_pct:.1f}%", "moyenne")
 
             st.info(
-                "A la publication, ce fichier devient la source active pour les pages admin et ingenieur. "
-                "Le dashboard ajoute les sorties NB1/NB2/NB3 necessaires si elles ne sont pas deja presentes."
+                "A la publication, ce fichier devient la source active. Les colonnes NB1/NB2/NB3 "
+                "doivent provenir des notebooks (parquets/JSON). Le recalcul local est bloque si un artefact manque."
             )
 
-            if st.button("Executer NB1/NB2/NB3 et publier", type="primary", width="stretch"):
+            if st.button("Publier avec artefacts NB", type="primary", width="stretch"):
                 with st.spinner("Publication en cours..."):
                     ok, msg = _publish_dataset(df_source, uploaded.name)
                 if ok:
@@ -140,8 +143,8 @@ def page_upload_admin():
     # Section 2 - Pipeline rerun
     with st.expander("Relance avancee du pipeline", expanded=False):
         st.warning(
-            "Re-enrichit l'echantillon actif depuis streamlit_data.parquet et les artefacts NB "
-            "(sans regenerer de donnees synthetiques si les colonnes notebook sont deja presentes)."
+            "Re-enrichit l'echantillon actif depuis les parquets/JSON NB uniquement. "
+            "Echec si une colonne notebook reste vide apres fusion."
         )
         if st.button("Re-enrichir depuis artefacts NB", type="primary"):
             progress = st.progress(0)
@@ -156,7 +159,13 @@ def page_upload_admin():
 
             status.markdown("Fusion artefacts NB1/NB2/NB3...")
             progress.progress(60)
-            result = prepare_published_dataset(base) if not base.empty else base
+            try:
+                result = prepare_published_dataset(base) if not base.empty else base
+            except PublishDatasetError as exc:
+                progress.progress(100)
+                status.markdown("Enrichissement refuse.")
+                st.error(str(exc))
+                return
 
             status.markdown("Finalisation...")
             progress.progress(90)
@@ -164,7 +173,7 @@ def page_upload_admin():
 
             progress.progress(100)
             status.markdown("Enrichissement termine.")
-            st.success(f"Echantillon traite : {len(result):,} lignes (source notebook prioritaire).")
+            st.success(f"Echantillon traite : {len(result):,} lignes (100 % artefacts notebook).")
 
     # Section 3 - Pipeline result
     result = st.session_state.get("pipeline_result")

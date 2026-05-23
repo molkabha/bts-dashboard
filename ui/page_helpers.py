@@ -5,7 +5,14 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from services.data_service import compute_filtered_kpis, load_filtered_main_data
+from services.data_service import (
+    active_dataset_info,
+    compute_filtered_kpis,
+    load_filtered_main_data,
+    load_nb3_network_kpi,
+)
+from services.nb_metrics import blank_mask
+from ui.components import alert_banner
 from ui.utils import apply_current_admin_filters
 
 DEFAULT_COLS = [
@@ -23,6 +30,84 @@ def load_dashboard_df(extra_cols: list[str] | None = None) -> pd.DataFrame:
     cols = list(dict.fromkeys(DEFAULT_COLS + (extra_cols or [])))
     df_raw = load_filtered_main_data(cols)
     return apply_current_admin_filters(df_raw)
+
+
+def dataset_provenance_stats(df: pd.DataFrame) -> dict:
+    """Summarize how many rows come from notebook exports vs dashboard recalculation."""
+    if df.empty:
+        return {
+            "rows": 0,
+            "pct_nb3": 0.0,
+            "pct_pipeline": 0.0,
+            "pct_unknown": 100.0,
+            "dominant_source": "aucune_donnee",
+        }
+
+    if "source_decision_nb3" in df.columns:
+        sources = df["source_decision_nb3"].astype(str).str.strip().str.lower()
+        nb3 = sources.eq("nb3").sum()
+        pipeline = sources.str.contains("calcule_dashboard", na=False).sum()
+        unknown = len(df) - nb3 - pipeline
+    elif "mode_operation" in df.columns:
+        nb3 = int((~blank_mask(df["mode_operation"])).sum())
+        pipeline = 0
+        unknown = len(df) - nb3
+    else:
+        nb3 = pipeline = 0
+        unknown = len(df)
+
+    rows = len(df)
+    pct_nb3 = nb3 / rows * 100 if rows else 0.0
+    pct_pipeline = pipeline / rows * 100 if rows else 0.0
+    pct_unknown = unknown / rows * 100 if rows else 0.0
+    if pct_nb3 >= 80:
+        dominant = "notebook NB3"
+    elif pct_pipeline >= 20:
+        dominant = "recalcul dashboard"
+    else:
+        dominant = "mixte / inconnu"
+
+    return {
+        "rows": rows,
+        "pct_nb3": pct_nb3,
+        "pct_pipeline": pct_pipeline,
+        "pct_unknown": pct_unknown,
+        "dominant_source": dominant,
+    }
+
+
+def render_data_provenance_banner(df: pd.DataFrame | None = None) -> None:
+    """Show dataset + NB3 provenance for jury traceability."""
+    if df is None:
+        df = load_dashboard_df(["source_decision_nb3", "mode_operation", "conso_predite"])
+    stats = dataset_provenance_stats(df)
+    active = active_dataset_info()
+    active_name = active.get("name") or "Standard (artefacts HF / VF)"
+    published = active.get("published_at") or "non publie"
+
+    if stats["pct_pipeline"] >= 5:
+        style = "warning"
+    elif stats["pct_nb3"] >= 80:
+        style = "success"
+    else:
+        style = "info"
+
+    nb3_kpi = load_nb3_network_kpi()
+    kpi_hint = ""
+    if nb3_kpi.get("generated_at"):
+        kpi_hint = f" | kpi_reseau.json : {nb3_kpi.get('generated_at')}"
+
+    alert_banner(
+        "Traçabilite donnees",
+        (
+            f"Dataset actif : {active_name} ({published}). "
+            f"Lignes : {stats['rows']:,} | NB3 notebook : {stats['pct_nb3']:.1f}% | "
+            f"Recalcul dashboard : {stats['pct_pipeline']:.1f}% | "
+            f"Inconnu : {stats['pct_unknown']:.1f}% | Source dominante : {stats['dominant_source']}."
+        ),
+        style=style,
+        meta=f"Colonnes source_decision_nb3 : {'oui' if 'source_decision_nb3' in df.columns else 'non'}{kpi_hint}",
+    )
 
 
 def fleet_status_metrics(df: pd.DataFrame) -> dict:

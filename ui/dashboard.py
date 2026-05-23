@@ -18,6 +18,7 @@ from services.data_service import (
 from ui.layout import configure_page
 from ui.auth import login_page, force_password_change_page
 from ui.components import sidebar_global, page_footer
+from ui.page_helpers import render_data_provenance_banner
 
 from views.p0_accueil import page_accueil
 from views.p1_vue_reseau import page_vue_reseau
@@ -110,6 +111,8 @@ def main():
     st.session_state["global_filters"] = filters
 
     page_fn = PAGE_FUNCTIONS.get(page_index, PAGE_FUNCTIONS[_default_home_page(role)])
+    if page_index not in {13}:
+        render_data_provenance_banner()
     page_fn()
     page_footer()
 
