@@ -1225,6 +1225,30 @@ def load_nb1_production_metrics() -> dict:
     return {}
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def load_nb1_models_comparison() -> pd.DataFrame:
+    """All supervised models exported by NB1 (resultats_modeles.json)."""
+    nb1 = read_json(artifact_path("resultats_modeles.json"))
+    if not isinstance(nb1, dict) or not nb1:
+        return pd.DataFrame()
+    prod_name = str(load_nb1_production_metrics().get("model") or "")
+    rows: list[dict] = []
+    for name, block in nb1.items():
+        if not isinstance(block, dict) or block.get("r2") is None:
+            continue
+        rows.append({
+            "Modele": str(name),
+            "R2": float(block["r2"]),
+            "RMSE": block.get("rmse"),
+            "MAE": block.get("mae"),
+            "MAPE %": block.get("mape"),
+            "Production": str(name) == prod_name if prod_name else False,
+        })
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).sort_values("R2", ascending=False).reset_index(drop=True)
+
+
 def _extract_nb2_seuil_ensemble(nb2: dict) -> float | None:
     """Read ensemble threshold from NB2 export (resultats_anomalie.json) when present."""
     if not isinstance(nb2, dict) or not nb2:

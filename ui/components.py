@@ -240,18 +240,18 @@ def _data_freshness_label() -> str:
     return "Non disponible"
 
 
-ENGINEER_PAGE_LABELS = [
-    "Monitoring",
-    "Anomalies",
-    "Predictions",
-    "Decision",
-    "Simulation",
+NB_PAGE_LABELS = [
+    "NB1 — Prediction",
+    "NB2 — Anomalies",
+    "NB3 — Decisions",
 ]
+
+ENGINEER_PAGE_LABELS = [*NB_PAGE_LABELS, "Simulation"]
 
 ADMIN_PAGE_LABELS = [
     "Accueil",
     "Carte",
-    "Optimisation RL",
+    *NB_PAGE_LABELS,
     "Comparaison",
     "Import / dataset",
     "Gestion des stations",
@@ -259,17 +259,18 @@ ADMIN_PAGE_LABELS = [
 ]
 
 ENGINEER_PAGE_INDEX = {
-    "Monitoring": 7,
-    "Anomalies": 3,
-    "Predictions": 2,
-    "Decision": 4,
+    "NB1 — Prediction": 2,
+    "NB2 — Anomalies": 3,
+    "NB3 — Decisions": 14,
     "Simulation": 6,
 }
 
 ADMIN_PAGE_INDEX = {
     "Accueil": 0,
     "Carte": 1,
-    "Optimisation RL": 14,
+    "NB1 — Prediction": 2,
+    "NB2 — Anomalies": 3,
+    "NB3 — Decisions": 14,
     "Comparaison": 10,
     "Import / dataset": 11,
     "Gestion des stations": 12,
@@ -324,7 +325,7 @@ def sidebar_global(
     else:
         visible_pages = list(ENGINEER_PAGE_LABELS)
         page_map = ENGINEER_PAGE_INDEX
-        default_page = "Monitoring"
+        default_page = "NB1 — Prediction"
 
     st.sidebar.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
     nav_key = f"nav_page_{role}"

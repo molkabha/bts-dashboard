@@ -21,7 +21,7 @@ from services.data_service import (
 def page_accueil():
     security_middleware.enforce()
     if st.session_state.get("role") != "admin":
-        st.session_state["_nav_override"] = 7
+        st.session_state["_nav_override"] = 2
         st.rerun()
         return
 

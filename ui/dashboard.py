@@ -24,7 +24,6 @@ from views.p0_accueil import page_accueil
 from views.p1_vue_reseau import page_vue_reseau
 from views.p2_prediction import page_prediction
 from views.p3_anomalies import page_anomalies
-from views.p4_decision import page_decision
 from views.p4_optimisation_rl import page_optimisation_rl
 from views.p5_simulation import page_simulation
 from views.p7_monitoring import page_monitoring
@@ -39,7 +38,6 @@ PAGE_FUNCTIONS = {
     1: page_vue_reseau,
     2: page_prediction,
     3: page_anomalies,
-    4: page_decision,
     6: page_simulation,
     14: page_optimisation_rl,
     7: page_monitoring,
@@ -52,7 +50,7 @@ PAGE_FUNCTIONS = {
 
 
 def _default_home_page(role: str) -> int:
-    return 0 if role == "admin" else 7
+    return 0 if role == "admin" else 2
 
 
 def main():

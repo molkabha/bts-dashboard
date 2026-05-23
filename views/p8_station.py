@@ -49,8 +49,8 @@ def _station_alerts_table(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
 
 def page_station_detail():
     security_middleware.enforce()
-    back_index = 1 if st.session_state.get("role") == "admin" else 7
-    back_label = "Carte" if back_index == 1 else "Monitoring"
+    back_index = 1 if st.session_state.get("role") == "admin" else 2
+    back_label = "Carte" if back_index == 1 else "NB1 — Prediction"
     if st.button(f"Retour — {back_label}", key="station_back_nav"):
         st.session_state["_nav_override"] = back_index
         st.rerun()
