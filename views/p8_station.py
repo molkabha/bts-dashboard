@@ -6,12 +6,44 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import load_top_anomalies
+from services.data_service import apply_time_filters, load_nb2_network_stats
 from ui.components import header, section, status_badge
 from ui.page_helpers import load_dashboard_df
-from ui.utils import apply_current_admin_filters
+
+
+def _apply_station_date_filter(df: pd.DataFrame, date_from, date_to) -> pd.DataFrame:
+    if df.empty or not date_from or not date_to or "timestamp" not in df.columns:
+        return df
+    return apply_time_filters(df, {"date_range": (date_from, date_to)})
+
+
+def _station_alerts_table(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
+    """Build alert history from columns actually present in the station slice."""
+    if df.empty:
+        return df
+    work = df.copy()
+    if "anomalie_score_ensemble" in work.columns:
+        seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
+        scores = pd.to_numeric(work["anomalie_score_ensemble"], errors="coerce")
+        work = work[scores > seuil]
+    if "timestamp" in work.columns:
+        work = work.sort_values("timestamp", ascending=False)
+    work = work.head(limit)
+
+    display_map = {
+        "timestamp": "Horodatage",
+        "anomalie_score_ensemble": "Score",
+        "nb_votes_anomalie": "Votes",
+        "mode_operation": "Mode",
+        "score_qos": "QoS",
+        "consommation_kwh": "Conso kWh",
+    }
+    cols = [c for c in display_map if c in work.columns]
+    if not cols:
+        return work.head(limit)
+    return work[cols].rename(columns={c: display_map[c] for c in cols})
 
 
 def page_station_detail():
@@ -28,7 +60,7 @@ def page_station_detail():
 
     sdf = df[df["station_id"].astype(str) == str(station_id)]
     if sdf.empty:
-        st.warning(f"Station {station_id} introuvable.")
+        st.warning(f"Station {station_id} introuvable pour les filtres actifs.")
         return
 
     latest = sdf.sort_values("timestamp").iloc[-1] if "timestamp" in sdf.columns else sdf.iloc[-1]
@@ -39,13 +71,30 @@ def page_station_detail():
     header(f"Station {station_id}", f"{gov} | {tech}")
     status_badge(mode, "error" if mode == "CRITIQUE" else "warning" if mode == "ATTENTION" else "success")
 
+    with section("Periode d'analyse"):
+        c1, c2 = st.columns(2)
+        ts_series = pd.to_datetime(sdf["timestamp"], errors="coerce") if "timestamp" in sdf.columns else pd.Series(dtype="datetime64[ns]")
+        ts_min = ts_series.min().date() if not ts_series.dropna().empty else None
+        ts_max = ts_series.max().date() if not ts_series.dropna().empty else None
+        date_kw = {"min_value": ts_min, "max_value": ts_max} if ts_min and ts_max else {}
+        with c1:
+            date_from = st.date_input("Debut", value=ts_min, key="station_date_from", **date_kw)
+        with c2:
+            date_to = st.date_input("Fin", value=ts_max, key="station_date_to", **date_kw)
+        sdf_view = _apply_station_date_filter(sdf, date_from, date_to)
+        if sdf_view.empty:
+            st.warning("Aucune mesure sur la periode selectionnee.")
+            return
+        st.caption(f"{len(sdf_view):,} mesures · {date_from} → {date_to}")
+
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
 
     with section("Consommation 7 jours + prediction 24h"):
-        if "timestamp" in sdf.columns:
-            sdf = sdf.copy()
-            sdf["timestamp"] = pd.to_datetime(sdf["timestamp"], errors="coerce")
-            week = sdf[sdf["timestamp"] >= sdf["timestamp"].max() - pd.Timedelta(days=7)]
+        if "timestamp" in sdf_view.columns and "consommation_kwh" in sdf_view.columns:
+            chart_df = sdf_view.copy()
+            chart_df["timestamp"] = pd.to_datetime(chart_df["timestamp"], errors="coerce")
+            tmax = chart_df["timestamp"].max()
+            week = chart_df[chart_df["timestamp"] >= tmax - pd.Timedelta(days=7)] if pd.notna(tmax) else chart_df
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=week["timestamp"], y=week["consommation_kwh"], name="Reel"))
             if "conso_predite" in week.columns:
@@ -58,19 +107,11 @@ def page_station_detail():
             st.plotly_chart(fig, width="stretch")
 
     with section("Historique alertes (10 dernieres)"):
-        alerts = apply_current_admin_filters(load_top_anomalies(limit=500))
-        if not alerts.empty and "station_id" in alerts.columns:
-            sa = alerts[alerts["station_id"].astype(str) == str(station_id)].head(10)
-            if not sa.empty:
-                st.dataframe(
-                    sa[["timestamp", "anomalie_score_ensemble", "mode_operation", "score_qos"]].rename(
-                        columns={"anomalie_score_ensemble": "Score", "mode_operation": "Mode", "score_qos": "QoS"}),
-                    width="stretch", hide_index=True,
-                )
-            else:
-                st.info("Aucune alerte recente pour cette station.")
+        alert_tbl = _station_alerts_table(sdf_view, limit=10)
+        if not alert_tbl.empty:
+            st.dataframe(alert_tbl, width="stretch", hide_index=True)
         else:
-            st.info("Aucune alerte enregistree.")
+            st.info("Aucune alerte sur la periode (score anomalie sous le seuil NB2).")
 
     with section("Actions rapides"):
         a1, a2, a3 = st.columns(3)
