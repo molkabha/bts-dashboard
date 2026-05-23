@@ -50,41 +50,35 @@ def session_outputs() -> dict:
     return outputs
 
 
+def clear_dashboard_data_cache() -> None:
+    """Drop session caches so the next rerun reloads with new filters."""
+    for key in ("_df_session_key", "_df_session_val", "_map_data_key", "_map_data_val", "_fleet_metrics", "_dashboard_df"):
+        st.session_state.pop(key, None)
+
+
+def reset_global_filters() -> None:
+    """Clear sidebar filter widgets and cached dataframes."""
+    for key in list(st.session_state.keys()):
+        if key.startswith("sb_"):
+            del st.session_state[key]
+    st.session_state["global_filters"] = {}
+    clear_dashboard_data_cache()
+
+
+def merged_active_filters() -> dict:
+    """Active filters = sidebar global_filters only (single source)."""
+    return dict(st.session_state.get("global_filters") or {})
+
+
 def filters_cache_key() -> str:
     """Stable key for session-level filtered dataframe cache."""
-    gf = st.session_state.get("global_filters", {})
-    atf = st.session_state.get("admin_time_filters", {})
-    agf = st.session_state.get("admin_global_filters", {})
+    gf = merged_active_filters()
     role = st.session_state.get("role", "")
     user = st.session_state.get("username") or st.session_state.get("user", "")
     assigned: tuple[str, ...] = ()
     if role != "admin" and user:
         assigned = tuple(sorted(str(s) for s in get_user_stations(user)))
-    return json.dumps(
-        {"gf": gf, "atf": atf, "agf": agf, "role": role, "assigned": assigned},
-        sort_keys=True,
-        default=str,
-    )
-
-
-def merged_active_filters() -> dict:
-    """Combine sidebar, admin global and admin time filters (single source of truth)."""
-    filters: dict = {}
-    filters.update(st.session_state.get("admin_global_filters") or {})
-    filters.update(st.session_state.get("global_filters") or {})
-
-    atf = st.session_state.get("admin_time_filters") or {}
-    if atf.get("date_range") and not filters.get("date_range"):
-        filters["date_range"] = atf["date_range"]
-    if atf.get("hours") is not None and filters.get("hours") is None:
-        filters["hours"] = atf["hours"]
-    if atf.get("months") and not filters.get("months"):
-        filters["months"] = atf["months"]
-    if atf.get("day_type") and not filters.get("day_type"):
-        filters["day_type"] = atf["day_type"]
-    if atf.get("days") and not filters.get("days"):
-        filters["days"] = atf["days"]
-    return filters
+    return json.dumps({"gf": gf, "role": role, "assigned": assigned}, sort_keys=True, default=str)
 
 
 def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
@@ -94,7 +88,6 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
     filters = merged_active_filters()
     out = df
 
-    # RLS — ingenieur : stations assignees uniquement
     if st.session_state.get("role") != "admin":
         username = st.session_state.get("username") or st.session_state.get("user")
         assigned = get_user_stations(username) if username else []
@@ -113,42 +106,40 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def selected_station_filter() -> str | None:
-    stations = st.session_state.get("global_filters", {}).get("stations") or []
+    stations = merged_active_filters().get("stations") or []
     stations = [str(station) for station in stations if str(station).strip()]
     return stations[0] if len(stations) == 1 else None
 
 
 def active_filter_label() -> str:
     gf = merged_active_filters()
+    if not gf:
+        return "Filtres : vue globale (toutes les donnees)"
     parts = []
     station = selected_station_filter()
     if station:
-        parts.append(f"Station {station}")
+        parts.append(f"station {station}")
     elif gf.get("stations"):
         parts.append(f"{len(gf['stations'])} stations")
     if gf.get("gouvernorats"):
-        parts.append(f"{len(gf['gouvernorats'])} gouvernorats")
+        parts.append(", ".join(gf["gouvernorats"][:3]) + ("…" if len(gf["gouvernorats"]) > 3 else ""))
     if gf.get("technologies"):
-        parts.append(f"{len(gf['technologies'])} technologies")
-    if gf.get("zones"):
-        parts.append(f"{len(gf['zones'])} zones")
+        parts.append(f"{len(gf['technologies'])} techno")
     if gf.get("modes"):
-        parts.append(f"{len(gf['modes'])} modes")
+        parts.append("/".join(gf["modes"]))
     if gf.get("date_range"):
         start, end = gf["date_range"]
-        parts.append(f"{start} -> {end}")
-    return "Contexte filtre : " + " | ".join(parts) if parts else "Contexte filtre : vue globale"
+        parts.append(f"{start} → {end}")
+    return "Filtres actifs : " + " · ".join(parts)
 
 
 def filter_artifact_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Apply dashboard filters to notebook tables when matching columns exist."""
     if df.empty:
         return df
     return apply_current_admin_filters(df)
 
 
 def selected_ref_from_table_event(event, table: pd.DataFrame, ref_col: str) -> str | None:
-    """Extract the selected business reference from a selectable dataframe."""
     rows = None
     selection = getattr(event, "selection", None)
     if selection is not None:
@@ -173,7 +164,6 @@ def sync_selectbox_with_table_selection(
     options: list[str],
     state_key: str,
 ) -> int:
-    """Keep a selectbox key aligned with the last clicked dataframe row."""
     options = [str(option) for option in options]
     clicked_ref = selected_ref_from_table_event(event, table, ref_col)
     current = st.session_state.get(state_key)
@@ -188,18 +178,9 @@ def sync_selectbox_with_table_selection(
 
 
 def current_operational_mask(df: pd.DataFrame) -> pd.Series:
-    """
-    Mark rows that represent the current actionable automatic choice.
-
-    Historical rows remain visible for audit/analysis, but NB2/NB3 human
-    overrides are only allowed on the latest available timestamp per station.
-    If an aggregate table has no timestamp but has `heure`, only the current
-    hour is actionable.
-    """
     if df.empty:
         return pd.Series(dtype=bool)
 
-    mask = pd.Series(False, index=df.index)
     if "timestamp" in df.columns:
         ts = pd.to_datetime(df["timestamp"], errors="coerce")
         now = pd.Timestamp.now(tz=ts.dt.tz if getattr(ts.dt, "tz", None) else None)
@@ -214,7 +195,7 @@ def current_operational_mask(df: pd.DataFrame) -> pd.Series:
         hour = pd.to_numeric(df["heure"], errors="coerce")
         return hour == datetime.now().hour
 
-    return mask
+    return pd.Series(False, index=df.index)
 
 
 def artifact_notebook(label: str) -> str:

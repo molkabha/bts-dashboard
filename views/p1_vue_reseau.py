@@ -8,95 +8,16 @@ import pandas as pd
 import streamlit as st
 
 from security.middleware import security_middleware
-from services.data_service import apply_time_filters
 from ui.components import header, section
 from ui.page_helpers import get_station_map_data, load_dashboard_df
 from ui.utils import active_filter_label
-
-
-def _apply_parc_map_filters(df: pd.DataFrame) -> pd.DataFrame:
-    """Filtres locaux de la page carte (en plus des filtres globaux sidebar)."""
-    if df.empty:
-        return df
-    filtered = df
-
-    if "gouvernorat" in filtered.columns:
-        govs_avail = sorted(filtered["gouvernorat"].dropna().astype(str).unique())
-        global_govs = st.session_state.get("global_filters", {}).get("gouvernorats") or []
-        default_govs = [g for g in global_govs if g in govs_avail]
-        govs = st.multiselect(
-            "Gouvernorat",
-            govs_avail,
-            default=default_govs,
-            key="parc_filter_govs",
-            placeholder="Tous",
-        )
-        if govs:
-            filtered = filtered[filtered["gouvernorat"].astype(str).isin(govs)]
-
-    if "technologie" in filtered.columns:
-        techs_avail = sorted(filtered["technologie"].dropna().astype(str).unique())
-        global_techs = st.session_state.get("global_filters", {}).get("technologies") or []
-        default_techs = [t for t in global_techs if t in techs_avail]
-        techs = st.multiselect(
-            "Technologie",
-            techs_avail,
-            default=default_techs,
-            key="parc_filter_techs",
-            placeholder="Toutes",
-        )
-        if techs:
-            filtered = filtered[filtered["technologie"].astype(str).isin(techs)]
-
-    if "type_zone" in filtered.columns:
-        zones_avail = sorted(filtered["type_zone"].dropna().astype(str).unique())
-        global_zones = st.session_state.get("global_filters", {}).get("zones") or []
-        default_zones = [z for z in global_zones if z in zones_avail]
-        zones = st.multiselect(
-            "Type zone",
-            zones_avail,
-            default=default_zones,
-            key="parc_filter_zones",
-            placeholder="Toutes",
-        )
-        if zones:
-            filtered = filtered[filtered["type_zone"].astype(str).isin(zones)]
-
-    if "mode_operation" in filtered.columns:
-        modes_avail = sorted(filtered["mode_operation"].dropna().astype(str).unique())
-        global_modes = st.session_state.get("global_filters", {}).get("modes") or []
-        default_modes = [m for m in global_modes if m in modes_avail]
-        statuts = st.multiselect(
-            "Statut / mode",
-            modes_avail if modes_avail else ["ECO", "NORMAL", "ATTENTION", "CRITIQUE"],
-            default=default_modes,
-            key="parc_filter_modes",
-            placeholder="Tous",
-        )
-        if statuts:
-            filtered = filtered[filtered["mode_operation"].astype(str).isin(statuts)]
-
-    if "timestamp" in filtered.columns:
-        ts = pd.to_datetime(filtered["timestamp"], errors="coerce").dropna()
-        ts_min = ts.min().date() if not ts.empty else None
-        ts_max = ts.max().date() if not ts.empty else None
-        date_kw = {"min_value": ts_min, "max_value": ts_max} if ts_min and ts_max else {}
-        c1, c2 = st.columns(2)
-        with c1:
-            date_from = st.date_input("Debut periode", value=ts_min, key="parc_date_from", **date_kw)
-        with c2:
-            date_to = st.date_input("Fin periode", value=ts_max, key="parc_date_to", **date_kw)
-        if date_from and date_to:
-            filtered = apply_time_filters(filtered, {"date_range": (date_from, date_to)})
-
-    return filtered
 
 
 def _render_folium_map(scores: pd.DataFrame):
     if scores.empty or not {"latitude", "longitude"}.issubset(scores.columns):
         st.warning(
             "Coordonnees GPS indisponibles pour la carte. "
-            "Verifiez que streamlit_carte_stations.parquet ou le dataset actif contient latitude/longitude."
+            "Verifiez streamlit_carte_stations.parquet ou latitude/longitude dans le dataset."
         )
         return
 
@@ -105,25 +26,8 @@ def _render_folium_map(scores: pd.DataFrame):
     plot_scores["longitude"] = pd.to_numeric(plot_scores["longitude"], errors="coerce")
     plot_scores = plot_scores.dropna(subset=["latitude", "longitude"])
     if plot_scores.empty:
-        st.warning("Aucune coordonnee GPS valide apres filtrage.")
+        st.warning("Aucune coordonnee GPS valide.")
         return
-
-    if "gps_source" in plot_scores.columns:
-        src = plot_scores["gps_source"].astype(str)
-        nb_carte = int(src.str.contains("carte_nb3", na=False).sum())
-        nb_dataset = int((src == "dataset_actif").sum())
-        nb_swap = int(src.str.contains("swap", na=False).sum())
-        nb_bbox = int(src.str.contains("bbox_gouvernorat", na=False).sum())
-        parts = [f"{len(plot_scores)} stations affichees"]
-        if nb_carte:
-            parts.append(f"{nb_carte} GPS carte NB3")
-        if nb_dataset:
-            parts.append(f"{nb_dataset} GPS dataset")
-        if nb_swap:
-            parts.append(f"{nb_swap} lat/lon corriges")
-        if nb_bbox:
-            parts.append(f"{nb_bbox} repositionnees (bbox gouvernorat)")
-        st.caption(" · ".join(parts))
 
     import folium
     from streamlit_folium import st_folium
@@ -176,40 +80,34 @@ def _render_folium_map(scores: pd.DataFrame):
                 st.rerun()
 
 
-def _attach_station_modes(filtered: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFrame:
-    if filtered.empty or scores.empty or "station_id" not in scores.columns:
+def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or scores.empty or "station_id" not in scores.columns or "mode_operation" not in df.columns:
         return scores
-    if "mode_operation" not in filtered.columns:
-        return scores
-    if "timestamp" in filtered.columns:
-        modes = filtered.sort_values("timestamp").groupby("station_id")["mode_operation"].last()
+    if "timestamp" in df.columns:
+        modes = df.sort_values("timestamp").groupby("station_id")["mode_operation"].last()
     else:
-        modes = filtered.groupby("station_id")["mode_operation"].first()
+        modes = df.groupby("station_id")["mode_operation"].first()
     out = scores.merge(modes.rename("mode_actuel"), left_on="station_id", right_index=True, how="left")
-    station_ids = set(filtered["station_id"].astype(str).unique())
-    return out[out["station_id"].astype(str).isin(station_ids)]
+    keep = set(df["station_id"].astype(str).unique())
+    return out[out["station_id"].astype(str).isin(keep)]
 
 
 def page_vue_reseau():
     security_middleware.enforce()
-    header("Gestion du parc", "Carte interactive, filtres et inventaire stations")
+    header("Gestion du parc", "Carte interactive et inventaire stations")
 
-    df = load_dashboard_df(["mode_operation", "latitude", "longitude", "derniere_alerte"])
+    df = load_dashboard_df(["mode_operation", "latitude", "longitude"])
+    st.caption(active_filter_label())
+
     if df.empty:
-        st.warning("Aucune donnee disponible pour les filtres actifs.")
+        st.warning("Aucune donnee pour les filtres choisis. Cliquez « Reinitialiser filtres » dans la barre laterale.")
         return
 
-    st.caption(active_filter_label() + " · Filtres globaux dans la barre laterale.")
+    nb_stations = df["station_id"].nunique() if "station_id" in df.columns else 0
+    st.caption(f"{nb_stations} stations · {len(df):,} mesures")
 
-    with section("Filtres carte"):
-        filtered = _apply_parc_map_filters(df)
-        if filtered.empty:
-            st.warning("Aucune station ne correspond aux filtres carte.")
-            return
-        st.caption(f"{filtered['station_id'].nunique() if 'station_id' in filtered.columns else 0} stations · {len(filtered):,} mesures")
-
-    scores = get_station_map_data(filtered)
-    scores = _attach_station_modes(filtered, scores)
+    scores = get_station_map_data(df)
+    scores = _attach_station_modes(df, scores)
 
     with section("Carte du parc"):
         _render_folium_map(scores)
@@ -219,6 +117,9 @@ def page_vue_reseau():
         tbl_cols = [c for c in tbl_cols if c in scores.columns]
         if "mode_actuel" in scores.columns:
             tbl_cols.insert(3, "mode_actuel")
+        if scores.empty:
+            st.info("Aucune station a afficher.")
+            return
         page_size = 15
         total_pages = max(1, (len(scores) + page_size - 1) // page_size)
         page = st.number_input("Page", min_value=1, max_value=total_pages, value=1)

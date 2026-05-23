@@ -11,6 +11,7 @@ from security.middleware import security_middleware
 from services.data_service import apply_time_filters, load_nb2_network_stats
 from ui.components import header, section, status_badge
 from ui.page_helpers import load_dashboard_df
+from ui.utils import merged_active_filters
 
 
 def _apply_station_date_filter(df: pd.DataFrame, date_from, date_to) -> pd.DataFrame:
@@ -76,11 +77,19 @@ def page_station_detail():
         ts_series = pd.to_datetime(sdf["timestamp"], errors="coerce") if "timestamp" in sdf.columns else pd.Series(dtype="datetime64[ns]")
         ts_min = ts_series.min().date() if not ts_series.dropna().empty else None
         ts_max = ts_series.max().date() if not ts_series.dropna().empty else None
+        global_range = merged_active_filters().get("date_range")
+        if global_range and len(global_range) == 2:
+            ts_min = ts_min or global_range[0]
+            ts_max = ts_max or global_range[1]
+        if "station_date_from" not in st.session_state and ts_min:
+            st.session_state["station_date_from"] = ts_min
+        if "station_date_to" not in st.session_state and ts_max:
+            st.session_state["station_date_to"] = ts_max
         date_kw = {"min_value": ts_min, "max_value": ts_max} if ts_min and ts_max else {}
         with c1:
-            date_from = st.date_input("Debut", value=ts_min, key="station_date_from", **date_kw)
+            date_from = st.date_input("Debut", key="station_date_from", **date_kw)
         with c2:
-            date_to = st.date_input("Fin", value=ts_max, key="station_date_to", **date_kw)
+            date_to = st.date_input("Fin", key="station_date_to", **date_kw)
         sdf_view = _apply_station_date_filter(sdf, date_from, date_to)
         if sdf_view.empty:
             st.warning("Aucune mesure sur la periode selectionnee.")

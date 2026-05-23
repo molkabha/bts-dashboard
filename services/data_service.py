@@ -529,8 +529,11 @@ def apply_time_filters(df: pd.DataFrame, filters: dict | None = None) -> pd.Data
             start = pd.to_datetime(start, errors="coerce")
             end = pd.to_datetime(end, errors="coerce")
             if pd.notna(start) and pd.notna(end):
+                if start > end:
+                    start, end = end, start
+                end_inclusive = end + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
                 ts = pd.to_datetime(out["timestamp"], errors="coerce")
-                out = out[(ts.dt.date >= start.date()) & (ts.dt.date <= end.date())]
+                out = out[(ts >= start) & (ts <= end_inclusive)]
 
     months = filters.get("months")
     if months and "mois" in out.columns:
@@ -552,6 +555,20 @@ def apply_time_filters(df: pd.DataFrame, filters: dict | None = None) -> pd.Data
     return out
 
 
+def filter_by_station_latest_mode(df: pd.DataFrame, modes: list[str]) -> pd.DataFrame:
+    """Keep stations whose latest mode in the period is one of the selected modes."""
+    if df.empty or not modes or "station_id" not in df.columns or "mode_operation" not in df.columns:
+        return df
+    allowed = {str(m) for m in modes}
+    if "timestamp" in df.columns:
+        latest_idx = df.sort_values("timestamp").groupby("station_id", sort=False).tail(1).index
+        latest = df.loc[latest_idx, ["station_id", "mode_operation"]]
+    else:
+        latest = df.groupby("station_id", as_index=False).agg(mode_operation=("mode_operation", "last"))
+    station_ok = latest[latest["mode_operation"].astype(str).isin(allowed)]["station_id"].astype(str)
+    return df[df["station_id"].astype(str).isin(set(station_ok))]
+
+
 def apply_admin_dimension_filters(df: pd.DataFrame, filters: dict | None = None) -> pd.DataFrame:
     if df.empty:
         return df
@@ -564,12 +581,16 @@ def apply_admin_dimension_filters(df: pd.DataFrame, filters: dict | None = None)
         "gouvernorats": "gouvernorat",
         "technologies": "technologie",
         "zones": "type_zone",
-        "modes": "mode_operation",
     }
     for key, col in mapping.items():
         values = filters.get(key)
         if values and col in out.columns:
-            out = out[out[col].astype(str).isin(values)]
+            selected = {str(v) for v in values}
+            out = out[out[col].astype(str).isin(selected)]
+
+    modes = filters.get("modes")
+    if modes:
+        out = filter_by_station_latest_mode(out, modes)
 
     score_min = filters.get("score_min")
     if score_min is not None and "anomalie_score_ensemble" in out.columns:
@@ -955,6 +976,23 @@ def load_enriched_base_dataset(cache_key: str) -> pd.DataFrame:
         return pd.DataFrame()
     df = read_parquet_fast(path, read_cols)
     return enrich_dashboard_data(df, DASHBOARD_BASE_COLUMNS)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_dataset_date_bounds(cache_key: str) -> tuple[object, object]:
+    """Min/max dates in the active dataset for default filter widgets."""
+    if not cache_key:
+        return None, None
+    path = Path(cache_key.split("|")[0])
+    if not path.exists():
+        return None, None
+    df = read_parquet_fast(path, ["timestamp"])
+    if df.empty or "timestamp" not in df.columns:
+        return None, None
+    ts = pd.to_datetime(df["timestamp"], errors="coerce").dropna()
+    if ts.empty:
+        return None, None
+    return ts.min().date(), ts.max().date()
 
 
 @st.cache_data(ttl=300, show_spinner=False)

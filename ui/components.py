@@ -347,69 +347,67 @@ def sidebar_global(
 
     st.sidebar.divider()
 
-    # Global Filters
-    st.sidebar.markdown('<div class="sb-section">Filtres Globaux</div>', unsafe_allow_html=True)
+    # Filtres (unique barre laterale — toutes les pages)
+    st.sidebar.markdown('<div class="sb-section">Filtres</div>', unsafe_allow_html=True)
 
-    filters = {}
+    from services.data_service import dataset_cache_key, get_dataset_date_bounds, load_filter_dimension_options
+    from ui.utils import clear_dashboard_data_cache, reset_global_filters
+
+    cache_key = dataset_cache_key()
+    dim_opts = load_filter_dimension_options(cache_key)
+    dmin, dmax = get_dataset_date_bounds(cache_key)
+    if dmin and dmax and "sb_date_from" not in st.session_state:
+        st.session_state["sb_date_from"] = dmin
+        st.session_state["sb_date_to"] = dmax
+
+    filters: dict = {}
 
     if station_options:
-        stations = [str(station) for station in station_options]
-        default_stations = st.session_state.get("sb_stations", [])
-        default_stations = [s for s in default_stations if s in stations]
+        stations = [str(s) for s in station_options]
         sel_stations = st.sidebar.multiselect(
             "Station",
             stations,
-            default=default_stations,
             key="sb_stations",
-            placeholder="Toutes les stations",
+            placeholder="Toutes",
         )
         if sel_stations:
-            filters["stations"] = sel_stations
+            filters["stations"] = [str(s) for s in sel_stations]
 
-    with st.sidebar.expander("Filtres avances", expanded=False):
-        date_from = st.date_input("Debut periode", value=None, key="sb_date_from")
-        date_to = st.date_input("Fin periode", value=None, key="sb_date_to")
-        if date_from and date_to:
+    dc1, dc2 = st.sidebar.columns(2)
+    with dc1:
+        date_from = st.date_input("Debut", key="sb_date_from")
+    with dc2:
+        date_to = st.date_input("Fin", key="sb_date_to")
+    if date_from and date_to:
+        if date_from <= date_to:
             filters["date_range"] = (date_from, date_to)
+        else:
+            st.sidebar.warning("Date de debut doit etre avant la fin.")
 
-        from services.data_service import dataset_cache_key, load_filter_dimension_options
+    govs = dim_opts.get("gouvernorats") or []
+    if govs:
+        sel_govs = st.sidebar.multiselect("Gouvernorat", govs, key="sb_govs", placeholder="Tous")
+        if sel_govs:
+            filters["gouvernorats"] = sel_govs
 
-        dim_opts = load_filter_dimension_options(dataset_cache_key())
+    techs = dim_opts.get("technologies") or []
+    if techs:
+        sel_techs = st.sidebar.multiselect("Technologie", techs, key="sb_techs", placeholder="Toutes")
+        if sel_techs:
+            filters["technologies"] = sel_techs
 
-        govs = dim_opts.get("gouvernorats") or []
-        if govs:
-            sel_govs = st.multiselect(
-                "Gouvernorat", govs, default=[], key="sb_govs", placeholder="Tous les gouvernorats"
-            )
-            if sel_govs:
-                filters["gouvernorats"] = sel_govs
+    modes = dim_opts.get("modes") or ["ECO", "NORMAL", "ATTENTION", "CRITIQUE"]
+    sel_modes = st.sidebar.multiselect("Mode (dernier etat station)", modes, key="sb_modes", placeholder="Tous")
+    if sel_modes:
+        filters["modes"] = sel_modes
 
-        techs = dim_opts.get("technologies") or []
-        if techs:
-            sel_techs = st.multiselect(
-                "Technologie", techs, default=[], key="sb_techs", placeholder="Toutes les technologies"
-            )
-            if sel_techs:
-                filters["technologies"] = sel_techs
+    prev_filters = st.session_state.get("global_filters", {})
+    if prev_filters != filters:
+        clear_dashboard_data_cache()
 
-        zones = dim_opts.get("zones") or []
-        if zones:
-            sel_zones = st.multiselect(
-                "Type zone", zones, default=[], key="sb_zones", placeholder="Toutes les zones"
-            )
-            if sel_zones:
-                filters["zones"] = sel_zones
-
-        modes = dim_opts.get("modes") or ["ECO", "NORMAL", "ATTENTION", "CRITIQUE"]
-        sel_modes = st.multiselect(
-            "Mode operationnel",
-            modes,
-            default=[],
-            key="sb_modes",
-            placeholder="Tous les modes",
-        )
-        if sel_modes:
-            filters["modes"] = sel_modes
+    if st.sidebar.button("Reinitialiser filtres", width="stretch"):
+        reset_global_filters()
+        st.rerun()
 
     st.sidebar.divider()
 
