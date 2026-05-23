@@ -76,6 +76,13 @@ def page_optimisation_rl():
                 f"{float(ref_pct):.1f} % — affichée à titre indicatif uniquement."
             )
 
+    if kpis.get("economies_suspectes"):
+        st.warning(
+            "Les économies dépassent la consommation sur la période filtrée (> 100 %). "
+            "Rechargez les données après mise à jour (fusion NB3 corrigée) ou vérifiez les colonnes "
+            "`economie_*_kwh` dans `streamlit_data.parquet`."
+        )
+
     if is_admin():
         c1, c2, c3, c4 = st.columns(4)
         with c1:
@@ -107,6 +114,10 @@ def page_optimisation_rl():
 
     if "station_id" in df.columns:
         with section("Actions par station"):
+            st.caption(
+                "« Aucune action » = pas de levier opérationnel nommé par NB3 ; le potentiel mode "
+                "reflète l'écart conso optimisée sur la dernière mesure (colonnes `economie_*` du parquet NB3)."
+            )
             render_nb3_decision_cards(latest_per_station(df), limit=12, show_savings=is_admin())
 
     if is_admin():

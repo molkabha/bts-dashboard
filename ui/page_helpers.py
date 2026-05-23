@@ -17,7 +17,8 @@ from services.data_service import (
     load_filtered_main_data,
     load_station_map_data,
 )
-from ui.formatting import display_text, resolve_row_action
+from services.nb_metrics import effective_economie_kwh
+from ui.formatting import display_text, resolve_row_action, row_has_no_named_action
 from ui.utils import apply_current_admin_filters, filters_cache_key
 
 DEFAULT_COLS = [
@@ -199,6 +200,9 @@ def latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
 def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_savings: bool = True) -> None:
     prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
     work = latest.copy()
+    if "station_id" in work.columns:
+        sid = work["station_id"].astype(str).str.strip()
+        work = work[sid.notna() & sid.ne("") & sid.str.lower().ne("none") & sid.str.lower().ne("nan")]
     work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
     for _, row in work.sort_values("_prio").head(limit).iterrows():
         mode = display_text(row.get("mode_operation"), "NORMAL")
@@ -206,9 +210,16 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_sav
         action = resolve_row_action(row, prefer_rl=show_savings)
         saving_html = ""
         if show_savings:
-            eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
-            eco_dt = eco_kwh * settings.PRIX_KWH_TN
-            saving_html = f'<div class="dc-saving">{eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>'
+            eco_series = effective_economie_kwh(pd.DataFrame([row]))
+            eco_kwh = float(eco_series.iloc[0]) if not eco_series.empty else 0.0
+            if eco_kwh > 0:
+                eco_dt = eco_kwh * settings.PRIX_KWH_TN
+                if row_has_no_named_action(row):
+                    saving_html = (
+                        f'<div class="dc-saving">Potentiel mode : {eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>'
+                    )
+                else:
+                    saving_html = f'<div class="dc-saving">{eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>'
         sid = str(row.get("station_id", ""))
         st.markdown(f"""
 <div class="decision-card" style="border-left-color:{color};">

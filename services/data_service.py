@@ -1093,14 +1093,11 @@ NB3_BUSINESS_COLUMNS = [
     "score_qos",
     "meilleur_agent_rl",
 ]
-NB3_DECISION_COLUMNS = [
+# Profil station×heure : actions seulement (pas d'économies — sinon répétées sur toute l'année).
+NB3_DECISION_HEURE_COLUMNS = [
     "action_rl",
     "action_proposee",
     "action_principale",
-    "economie_rl_kwh",
-    "economie_estimee_kwh",
-    "mode_operation",
-    "score_qos",
 ]
 
 
@@ -1165,10 +1162,10 @@ def enrich_dashboard_data(df: pd.DataFrame, requested_columns: list[str]) -> pd.
         )
 
     if {"station_id", "heure"}.issubset(out.columns):
-        decision_cols = list(dict.fromkeys(["station_id", "heure", *NB3_DECISION_COLUMNS]))
+        decision_cols = list(dict.fromkeys(["station_id", "heure", *NB3_DECISION_HEURE_COLUMNS]))
         decisions = read_parquet_fast(artifact_path("decisions_par_station.parquet"), decision_cols)
         out = merge_business_columns(
-            out, decisions, NB3_DECISION_COLUMNS, ["station_id", "heure"], zero_as_missing=True,
+            out, decisions, NB3_DECISION_HEURE_COLUMNS, ["station_id", "heure"], zero_as_missing=True,
         )
 
     out = harmonize_nb3_economies(normalize_dataframe_columns(out))
@@ -1595,6 +1592,7 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
     combinee_pct = (eco_combinee / conso * 100) if conso > 0 else 0.0
     rl_pct = (eco_rl / conso * 100) if conso > 0 else 0.0
     expert_pct = (eco_expert / conso * 100) if conso > 0 else 0.0
+    economies_suspectes = combinee_pct > 100.0
 
     modes = _latest_per_station_modes(work)
     pct_mode_eco = float(modes.eq("ECO").mean() * 100) if not modes.empty else 0.0
@@ -1650,6 +1648,7 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         "nb3_ref_economie_combinee_pct": nb3_kpi.get("economie_combinee_pct"),
         "nb3_ref_economie_rl_pct": nb3_kpi.get("economie_rl_pct"),
         "economies_source": "somme_lignes_nb3",
+        "economies_suspectes": economies_suspectes,
     }
 
 

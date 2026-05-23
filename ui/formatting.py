@@ -50,6 +50,23 @@ def format_action_label(value: Any, default: str = "—") -> str:
     return raw.replace("_", " ").strip().capitalize()
 
 
+def is_no_named_action(value: Any) -> bool:
+    if is_missing(value):
+        return False
+    key = str(value).strip().lower().replace(" ", "_")
+    return key in {"aucune_action", "aucune", "none", "rien"}
+
+
+def row_has_no_named_action(row: Any) -> bool:
+    for col in ("action_proposee", "action_rl", "action_principale"):
+        try:
+            if is_no_named_action(row.get(col) if hasattr(row, "get") else None):
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def resolve_row_action(row: Any, *, prefer_rl: bool = True, default: str = "—") -> str:
     """Choisit la meilleure colonne d'action disponible sur une ligne enrichie NB3."""
     order = (

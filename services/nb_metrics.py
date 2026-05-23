@@ -99,19 +99,40 @@ def merge_business_columns(
     return merged
 
 
+def cap_economies_to_consumption(df: pd.DataFrame) -> pd.DataFrame:
+    """Une économie horaire ne peut pas dépasser la conso de la même ligne."""
+    if df.empty or "consommation_kwh" not in df.columns:
+        return df
+    out = df.copy()
+    conso = numeric_series(out, "consommation_kwh", np.nan)
+    valid_conso = conso > 0
+    for col in ("economie_estimee_kwh", "economie_rl_kwh"):
+        if col not in out.columns:
+            continue
+        eco = numeric_series(out, col, 0.0)
+        capped = eco.copy()
+        capped[valid_conso] = np.minimum(eco[valid_conso], conso[valid_conso])
+        out[col] = capped
+    return out
+
+
 def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
     """
     Align NB3 columns for display:
-    - economie_kwh = max(RL, expert) par ligne (sans copier l'expert dans RL)
+    - plafonne les économies à la conso horaire
+    - economie_kwh = max(RL, expert) par ligne
     - action_rl complété depuis action_proposee si vide
     """
     if df.empty:
         return df
 
-    out = df.copy()
+    out = cap_economies_to_consumption(df.copy())
     est = numeric_series(out, "economie_estimee_kwh", 0.0)
     rl = numeric_series(out, "economie_rl_kwh", 0.0)
     out["economie_kwh"] = np.maximum(est, rl)
+    if "consommation_kwh" in out.columns:
+        conso = numeric_series(out, "consommation_kwh", np.nan)
+        out["economie_kwh"] = np.where(conso > 0, np.minimum(out["economie_kwh"], conso), out["economie_kwh"])
 
     if "action_proposee" in out.columns:
         if "action_rl" not in out.columns:
