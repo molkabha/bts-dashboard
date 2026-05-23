@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-PAGE_PREDICTION = "Prediction"
+PAGE_PREDICTION = "Prédiction"
 PAGE_ANOMALIES = "Anomalies"
 PAGE_OPTIMISATION = "Optimisation"
 

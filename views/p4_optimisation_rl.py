@@ -28,9 +28,9 @@ from ui.utils import active_filter_label, is_admin, session_outputs
 def page_optimisation_rl():
     security_middleware.enforce()
 
-    subtitle = "Regles vs RL, courbe d'apprentissage et economies CO₂"
+    subtitle = "Règles vs RL, courbe d'apprentissage et economies CO₂"
     if not is_admin():
-        subtitle = "Modes et actions sur vos stations (sans metriques RL)"
+        subtitle = "Modes et actions sur vos stations (sans métriques RL)"
     header(PAGE_OPTIMISATION, subtitle)
     st.caption(active_filter_label())
 
@@ -42,7 +42,7 @@ def page_optimisation_rl():
         "mode_operation", "heure",
     ])
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     kpis = compute_filtered_kpis(df)
@@ -51,14 +51,14 @@ def page_optimisation_rl():
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             kpi_card(
-                "Economies",
+                "Économies",
                 f"{float(kpis.get('economie_dt') or 0):,.0f} DT",
-                kpis.get("economie_periode_label", "Periode filtree"),
+                kpis.get("economie_periode_label", "Période filtrée"),
                 "green",
             )
         with c2:
             kpi_card(
-                "kWh economises",
+                "kWh économisés",
                 f"{float(kpis.get('economie_kwh') or 0):,.0f}",
                 f"{float(kpis.get('economie_combinee_pct') or 0):.1f}%",
                 "eco",
@@ -83,13 +83,13 @@ def page_optimisation_rl():
     if is_admin():
         c1, c2 = st.columns(2)
         with c1:
-            with section("Regles vs RL (kWh)"):
+            with section("Règles vs RL (kWh)"):
                 eco_reg = float(kpis.get("economie_estimee_kwh") or 0)
                 eco_rl = float(kpis.get("economie_rl_kwh") or 0)
                 fig = go.Figure(
                     data=[
                         go.Bar(
-                            x=["Regles expertes", "RL"],
+                            x=["Règles expertes", "RL"],
                             y=[eco_reg, eco_rl],
                             marker_color=["#1e3a8a", "#059669"],
                         )
@@ -108,7 +108,12 @@ def page_optimisation_rl():
                     if rl_data:
                         df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
                         if "economie_pct" in df_rl.columns:
-                            fig = px.bar(df_rl.sort_values("economie_pct", ascending=False), x="Agent", y="economie_pct")
+                            fig = px.bar(
+                                df_rl.sort_values("economie_pct", ascending=False),
+                                x="Agent",
+                                y="economie_pct",
+                                labels={"economie_pct": "Économie %", "Agent": "Agent"},
+                            )
                             fig.update_layout(template=template, height=260, margin=dict(l=0, r=0, t=8, b=0))
                             st.plotly_chart(fig, width="stretch")
                     else:
@@ -125,14 +130,14 @@ def page_optimisation_rl():
                 st.info("Profil indisponible.")
             else:
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_moy"], name="Baseline"))
+                fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_moy"], name="Référence"))
                 if is_admin() and "conso_optimisee_rl_moy" in hourly.columns:
-                    fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_optimisee_rl_moy"], name="Apres RL"))
+                    fig.add_trace(go.Scatter(x=hourly["heure"], y=hourly["conso_optimisee_rl_moy"], name="Après RL"))
                 fig.update_layout(template=template, height=260, margin=dict(l=0, r=0, t=8, b=0))
                 st.plotly_chart(fig, width="stretch")
 
     with c2:
-        with section("Repartition des modes"):
+        with section("Répartition des modes"):
             if "mode_operation" in df.columns:
                 mode_counts = df["mode_operation"].value_counts().reset_index()
                 mode_counts.columns = ["Mode", "Nb"]

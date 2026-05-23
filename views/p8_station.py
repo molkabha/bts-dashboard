@@ -60,7 +60,7 @@ def page_station_detail():
         date_to = st.date_input("Fin", value=ts_max, key="station_date_to")
     sdf_view = _apply_station_date_filter(sdf, date_from, date_to)
     if sdf_view.empty:
-        st.warning("Aucune mesure sur cette periode.")
+        st.warning("Aucune mesure sur cette période.")
         return
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
@@ -70,9 +70,9 @@ def page_station_detail():
         tmax = chart_df["timestamp"].max()
         week = chart_df[chart_df["timestamp"] >= tmax - pd.Timedelta(days=7)] if pd.notna(tmax) else chart_df
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=week["timestamp"], y=week["consommation_kwh"], name="Reel"))
+        fig.add_trace(go.Scatter(x=week["timestamp"], y=week["consommation_kwh"], name="Réel"))
         if "conso_predite" in week.columns:
-            fig.add_trace(go.Scatter(x=week["timestamp"], y=week["conso_predite"], name="Predit", line=dict(dash="dot")))
+            fig.add_trace(go.Scatter(x=week["timestamp"], y=week["conso_predite"], name="Prédit", line=dict(dash="dot")))
         fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=8, b=0))
         st.plotly_chart(fig, width="stretch")
 
@@ -81,7 +81,7 @@ def page_station_detail():
         scores = pd.to_numeric(sdf_view["anomalie_score_ensemble"], errors="coerce")
         alerts = sdf_view[scores > seuil].sort_values("timestamp", ascending=False).head(8)
         if alerts.empty:
-            st.caption("Aucune alerte sur la periode.")
+            st.caption("Aucune alerte sur la période.")
         else:
             cols = [c for c in ["timestamp", "anomalie_score_ensemble", "mode_operation"] if c in alerts.columns]
             st.dataframe(format_dataframe_for_display(alerts[cols]), width="stretch", hide_index=True)

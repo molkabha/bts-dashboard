@@ -17,15 +17,15 @@ from ui.utils import active_filter_label, is_admin
 def page_accueil():
     security_middleware.enforce()
 
-    subtitle = "Synthese reseau sur la periode filtree"
+    subtitle = "Synthèse réseau sur la période filtrée"
     if not is_admin():
-        subtitle = "Vos stations assignees — vue operationnelle"
+        subtitle = "Vos stations assignées — vue opérationnelle"
     header("Accueil", subtitle)
     st.caption(active_filter_label())
 
     df = load_dashboard_df()
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     kpis = compute_filtered_kpis(df)
@@ -39,9 +39,9 @@ def page_accueil():
         scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
         with c1:
             eco_dt = kpis.get("economie_dt") or 0
-            kpi_card("Economies", f"{eco_dt:,.0f} DT", kpis.get("economie_periode_label", "Periode filtree"), "green")
+            kpi_card("Économies", f"{eco_dt:,.0f} DT", kpis.get("economie_periode_label", "Période filtrée"), "green")
         with c2:
-            kpi_card("CO2 evite", f"{float(kpis.get('co2_evite_t') or 0):.1f} t", "", "eco")
+            kpi_card("CO₂ évité", f"{float(kpis.get('co2_evite_t') or 0):.1f} t", "", "eco")
         with c3:
             kpi_card("Stations ECO", f"{float(kpis.get('pct_mode_eco') or 0):.1f}%", "", "eco")
         with c4:
@@ -51,17 +51,17 @@ def page_accueil():
         qos_raw = kpis.get("score_qos_moyen")
         qos_moy = float(qos_raw) * 100 if qos_raw is not None else 0
         with c1:
-            kpi_card("Stations", str(nb_stations), "Parc assigne", "blue")
+            kpi_card("Stations", str(nb_stations), "Parc assigné", "blue")
         with c2:
-            kpi_card("Conso moyenne", f"{conso_moy:.1f} kWh", "Periode filtree", "gray")
+            kpi_card("Conso moyenne", f"{conso_moy:.1f} kWh", "Période filtrée", "gray")
         with c3:
             kpi_card("Mode ECO", f"{float(kpis.get('pct_mode_eco') or 0):.1f}%", "", "eco")
         with c4:
-            kpi_card("QoS moyen", f"{qos_moy:.0f}%", "Indicateur reseau", "blue")
+            kpi_card("QoS moyen", f"{qos_moy:.0f}%", "Indicateur réseau", "blue")
 
     c1, c2 = st.columns(2)
     with c1:
-        with section("Repartition des modes"):
+        with section("Répartition des modes"):
             if "mode_operation" in df.columns:
                 mode_counts = df["mode_operation"].value_counts().reset_index()
                 mode_counts.columns = ["Mode", "Nb"]
@@ -82,7 +82,7 @@ def page_accueil():
         with section("Top 5 stations critiques"):
             scores_df = get_station_map_data(df)
             if scores_df.empty:
-                st.info("Aucune station a classer.")
+                st.info("Aucune station à classer.")
             else:
                 if is_admin() and "score_criticite" in scores_df.columns:
                     sort_col = "score_criticite"

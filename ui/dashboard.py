@@ -67,7 +67,7 @@ def main():
         return
 
     if "data" not in st.session_state:
-        with st.spinner("Chargement des artefacts NB1/NB2/NB3..."):
+        with st.spinner("Chargement des artefacts NB1/NB2/NB3…"):
             st.session_state["data"] = load_outputs()
 
     role = st.session_state.get("role")

@@ -19,7 +19,7 @@ def page_comparaison():
 
     df = load_dashboard_df()
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT

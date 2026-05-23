@@ -431,7 +431,7 @@ def active_dataset_path() -> Optional[Path]:
 
 def active_dataset_info() -> dict:
     return {
-        "name": db_scalar("get_setting", ("active_dataset_name",), "Standard"),
+        "name": db_scalar("get_setting", ("active_dataset_name",), "Par défaut"),
         "published_at": db_scalar("get_setting", ("active_dataset_published_at",), ""),
     }
 
@@ -1203,7 +1203,7 @@ def load_nb1_models_comparison() -> pd.DataFrame:
         if not isinstance(block, dict) or block.get("r2") is None:
             continue
         rows.append({
-            "Modele": str(name),
+            "Modèle": str(name),
             "R2": float(block["r2"]),
             "RMSE": block.get("rmse"),
             "MAE": block.get("mae"),
@@ -1617,7 +1617,7 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         "co2_evite_t": co2_t,
         "economie_dt": eco_dt,
         "economie_dt_mois": economie_dt_mois,
-        "economie_periode_label": "Periode filtree",
+        "economie_periode_label": "Période filtrée",
         "nb_mois_periode": months,
     }
 

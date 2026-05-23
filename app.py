@@ -29,7 +29,7 @@ except ImportError:
 
 
 st.set_page_config(
-    page_title="BTS EMS - Tunisie Telecom",
+    page_title="BTS EMS — Tunisie Telecom",
     page_icon="TT",
     layout="wide",
     initial_sidebar_state="expanded",

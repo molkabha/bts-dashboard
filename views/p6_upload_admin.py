@@ -36,7 +36,7 @@ def _read_uploaded(uploaded) -> pd.DataFrame:
         return pd.read_csv(uploaded)
     elif name.endswith(".parquet"):
         return pd.read_parquet(uploaded)
-    raise ValueError("Format non supporte. Utilisez CSV ou Parquet.")
+    raise ValueError("Format non pris en charge. Utilisez CSV ou Parquet.")
 
 
 def _validate_schema(df: pd.DataFrame) -> list[dict]:
@@ -44,16 +44,19 @@ def _validate_schema(df: pd.DataFrame) -> list[dict]:
     results = []
     for col in REQUIRED_COLUMNS:
         if col in df.columns:
-            results.append({"Colonne": col, "Statut": "Presente", "Note": ""})
+            results.append({"Colonne": col, "Statut": "Présente", "Note": ""})
         else:
-            results.append({"Colonne": col, "Statut": "ABSENTE",
-                            "Note": f"Le modele utilisera une valeur de substitution (impact estime : -1 a 3% de precision)"})
+            results.append({
+                "Colonne": col,
+                "Statut": "ABSENTE",
+                "Note": "Le modèle utilisera une valeur de substitution (impact estimé : -1 à 3 % de précision).",
+            })
     return results
 
 
 def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     if df.empty:
-        return False, "Dataset vide."
+        return False, "Jeu de données vide."
     if "station_id" not in df.columns:
         return False, "Colonne station_id manquante."
     OUTPUTS.mkdir(exist_ok=True, parents=True)
@@ -72,8 +75,8 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     st.session_state.pop("data", None)
     log_event("admin_dataset_published", {"file": source_name, "rows": len(processed)})
     return True, (
-        f"Dataset publie : {len(processed):,} lignes enrichies uniquement depuis les artefacts "
-        "NB1/NB2/NB3 (simulation dashboard desactivee)."
+        f"Jeu de données publié : {len(processed):,} lignes enrichies uniquement depuis les artefacts "
+        "NB1/NB2/NB3 (simulation du tableau de bord désactivée)."
     )
 
 
@@ -81,7 +84,7 @@ def render_upload_panel():
     """Contenu import dataset (sans en-tete de page)."""
     info = active_dataset_info()
     if info:
-        st.info(f"Dataset actif : {info.get('name', 'Standard')} ({info.get('published_at', '')})")
+        st.info(f"Jeu de données actif : {info.get('name', 'Par défaut')} ({info.get('published_at', '')})")
 
     # Section 1 - Upload
     with section("Importer et Publier"):
@@ -97,7 +100,7 @@ def render_upload_panel():
             # Schema validation
             validation = _validate_schema(df_source)
             val_df = pd.DataFrame(validation)
-            with st.expander("Schema attendu et impact des colonnes manquantes", expanded=False):
+            with st.expander("Schéma attendu et impact des colonnes manquantes", expanded=False):
                 st.dataframe(val_df, width="stretch", hide_index=True)
 
             missing_critical = [v["Colonne"] for v in validation
@@ -107,12 +110,12 @@ def render_upload_panel():
                 return
 
             # Preview
-            with st.expander("Apercu du fichier source", expanded=False):
+            with st.expander("Aperçu du fichier source", expanded=False):
                 st.dataframe(df_source.head(10), width="stretch", hide_index=True)
 
             c1, c2, c3 = st.columns(3)
             with c1:
-                kpi_card("Lignes", f"{len(df_source):,}", "dataset")
+                kpi_card("Lignes", f"{len(df_source):,}", "jeu de données")
             with c2:
                 stations_n = df_source["station_id"].nunique() if "station_id" in df_source.columns else 0
                 kpi_card("Stations", str(stations_n), "uniques")
@@ -121,8 +124,8 @@ def render_upload_panel():
                 kpi_card("Valeurs manquantes", f"{missing_pct:.1f}%", "moyenne")
 
             st.info(
-                "A la publication, ce fichier devient la source active. Les colonnes NB1/NB2/NB3 "
-                "doivent provenir des notebooks (parquets/JSON). Le recalcul local est bloque si un artefact manque."
+                "À la publication, ce fichier devient la source active. Les colonnes NB1/NB2/NB3 "
+                "doivent provenir des notebooks (parquets/JSON). Le recalcul local est bloqué si un artefact manque."
             )
 
             if st.button("Publier avec artefacts NB", type="primary", width="stretch"):
@@ -130,21 +133,23 @@ def render_upload_panel():
                     ok, msg = _publish_dataset(df_source, uploaded.name)
                 if ok:
                     st.success(msg)
-                    st.info("Les filtres, cartes, alertes, predictions et optimisations utilisent maintenant ce dataset.")
+                    st.info(
+                        "Les filtres, cartes, alertes, prédictions et optimisations utilisent maintenant ce jeu de données."
+                    )
                 else:
                     st.error(msg)
 
     # Section 2 - Pipeline rerun
-    with st.expander("Relance avancee du pipeline", expanded=False):
+    with st.expander("Relance avancée du pipeline", expanded=False):
         st.warning(
-            "Re-enrichit l'echantillon actif depuis les parquets/JSON NB uniquement. "
-            "Echec si une colonne notebook reste vide apres fusion."
+            "Ré-enrichit l'échantillon actif depuis les parquets/JSON NB uniquement. "
+            "Échec si une colonne notebook reste vide après fusion."
         )
         if st.button("Re-enrichir depuis artefacts NB", type="primary"):
             progress = st.progress(0)
             status = st.empty()
 
-            status.markdown("Chargement streamlit_data / dataset actif...")
+            status.markdown("Chargement des données / jeu actif…")
             progress.progress(25)
             base = load_filtered_main_data(list(dict.fromkeys(REQUIRED_COLUMNS + [
                 "conso_predite", "anomalie_score_ensemble", "mode_operation",
@@ -166,18 +171,18 @@ def render_upload_panel():
             st.session_state["pipeline_result"] = result
 
             progress.progress(100)
-            status.markdown("Enrichissement termine.")
-            st.success(f"Echantillon traite : {len(result):,} lignes (100 % artefacts notebook).")
+            status.markdown("Enrichissement terminé.")
+            st.success(f"Échantillon traité : {len(result):,} lignes (100 % artefacts notebook).")
 
     # Section 3 - Pipeline result
     result = st.session_state.get("pipeline_result")
     if isinstance(result, pd.DataFrame) and not result.empty:
-        with st.expander("Resultat du Pipeline", expanded=False):
+        with st.expander("Résultat du pipeline", expanded=False):
             st.dataframe(result.head(500), width="stretch", hide_index=True)
-            download_df_button(result, "pipeline_result.csv", "Exporter resultat")
+            download_df_button(result, "pipeline_result.csv", "Exporter le résultat")
 
 
 def page_upload_admin():
     security_middleware.enforce(role="admin")
-    header("Import", "Publier un nouveau jeu de donnees")
+    header("Import", "Publier un nouveau jeu de données")
     render_upload_panel()

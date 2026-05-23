@@ -22,7 +22,7 @@ class RapportPDF(FPDF):
         date_str = datetime.now().strftime('%d/%m/%Y a %H:%M')
         self.cell(
             0, 5,
-            f"Rapport genere le {date_str}",
+            f"Rapport généré le {date_str}",
             align="C",
             new_x="LMARGIN",
             new_y="NEXT")
@@ -99,8 +99,8 @@ def generate_report_pdf(kpis: dict, top_anomalies: list[dict] | None = None) -> 
     anomalies = f"{kpis.get('pct_anomalies', 0):.1f}%" if pd.notna(kpis.get("pct_anomalies")) else "0.0%"
 
     pdf.kpi_row([("Stations", nb_stations), ("Consommation", conso),
-                ("Economies", eco_pct), ("Economies (DT)", eco_dt)])
-    pdf.kpi_row([("CO2 evite", co2), ("QoS moyen", qos), ("Anomalies", anomalies)])
+                ("Économies", eco_pct), ("Économies (DT)", eco_dt)])
+    pdf.kpi_row([("CO₂ évité", co2), ("QoS moyen", qos), ("Anomalies", anomalies)])
 
     if top_anomalies:
         pdf.section_title("Top Anomalies Detectees")

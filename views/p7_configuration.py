@@ -75,7 +75,7 @@ def _render_stations_tab():
     inventory = _station_inventory()
     if inventory.empty:
         st.warning(
-            "Aucune station dans le dataset actif. Publiez un jeu de donnees (onglet Import) "
+            "Aucune station dans le jeu de données actif. Publiez un jeu de données (onglet Import) "
             "ou verifiez les artefacts NB sur Hugging Face."
         )
         return
@@ -87,15 +87,15 @@ def _render_stations_tab():
 
     k1, k2, k3 = st.columns(3)
     with k1:
-        kpi_card("Stations dataset", str(total), "Parc reference", "blue")
+        kpi_card("Stations (jeu de données)", str(total), "Parc de référence", "blue")
     with k2:
-        kpi_card("Actives", str(active_count), "Visibles dashboard", "green")
+        kpi_card("Actives", str(active_count), "Visibles dans le tableau de bord", "green")
     with k3:
-        kpi_card("Desactivees", str(inactive_count), "Exclues filtres / cartes", "orange")
+        kpi_card("Désactivées", str(inactive_count), "Exclues des filtres et cartes", "orange")
 
     st.caption(
-        "Les stations desactivees sont masquees pour tous les utilisateurs. "
-        "Les acces par ingenieur se gerent dans l'onglet Utilisateurs."
+        "Les stations désactivées sont masquées pour tous les utilisateurs. "
+        "Les accès par ingénieur se gèrent dans l'onglet Utilisateurs."
     )
 
     with section("Parc stations"):
@@ -116,11 +116,11 @@ def _render_stations_tab():
                 st.session_state["cfg_station_table"] = inventory.assign(Actif=True)
                 st.rerun()
         with bc2:
-            if st.button("Tout desactiver", use_container_width=True):
+            if st.button("Tout désactiver", use_container_width=True):
                 st.session_state["cfg_station_table"] = inventory.assign(Actif=False)
                 st.rerun()
         with bc3:
-            show_inactive_only = st.checkbox("Voir seulement desactivees", value=False, key="cfg_inactive_only")
+            show_inactive_only = st.checkbox("Voir seulement désactivées", value=False, key="cfg_inactive_only")
 
         table_data = st.session_state.get("cfg_station_table", filtered)
         if not isinstance(table_data, pd.DataFrame) or table_data.empty:
@@ -129,7 +129,7 @@ def _render_stations_tab():
             table_data = table_data[~table_data["Actif"]]
 
         column_config = {
-            "Actif": st.column_config.CheckboxColumn("Active", help="Decoche pour masquer la station"),
+            "Actif": st.column_config.CheckboxColumn("Activée", help="Décochez pour masquer la station"),
             "Station": st.column_config.TextColumn("Station", disabled=True),
         }
         for col in ("Gouvernorat", "Technologie", "Zone", "Mode"):
@@ -159,15 +159,15 @@ def _render_stations_tab():
             st.session_state.pop("_df_session_key", None)
             st.session_state.pop("_df_session_val", None)
             log_event("station_parc_saved", {"inactive": len(load_inactive_stations())})
-            st.success("Parc stations enregistre. Les vues du dashboard sont a jour.")
+            st.success("Parc stations enregistré. Les vues du tableau de bord sont à jour.")
             st.rerun()
 
 
 def page_configuration():
     security_middleware.enforce(role="admin")
-    header("Configuration", "Stations, utilisateurs et import de dataset")
+    header("Configuration", "Stations, utilisateurs et import de données")
 
-    tab_stations, tab_users, tab_import = st.tabs(["Stations", "Utilisateurs", "Import dataset"])
+    tab_stations, tab_users, tab_import = st.tabs(["Stations", "Utilisateurs", "Import de données"])
 
     with tab_stations:
         _render_stations_tab()

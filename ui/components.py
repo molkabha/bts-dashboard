@@ -103,7 +103,7 @@ def page_footer():
     from services.data_service import active_dataset_info
 
     info = active_dataset_info()
-    ds_label = info.get("name", "Dataset actif") if info else "Dataset actif"
+    ds_label = info.get("name", "Jeu de données actif") if info else "Jeu de données actif"
     st.markdown(
         f'<div class="page-footer">{html.escape(ds_label)} · Tunisie Telecom</div>',
         unsafe_allow_html=True,
@@ -124,7 +124,7 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
 <div class="topbar">
   {logo_html}
   <div class="topbar-content">
-    <div class="brand">Tunisie Telecom — BTS Energy Management</div>
+    <div class="brand">Tunisie Telecom — Gestion énergétique BTS</div>
     <div class="title">{html.escape(title)}</div>
     <div class="subtitle">{html.escape(subtitle)}</div>
   </div>
@@ -146,7 +146,7 @@ def sidebar_global(
     initials = "".join([n[0] for n in display.split()[:2]]).upper() if display else "?"
     is_admin = role == "admin"
     badge_cls = "role-badge-admin" if is_admin else "role-badge-engineer"
-    badge_text = "ADMIN" if is_admin else "INGENIEUR RESEAU"
+    badge_text = "ADMINISTRATEUR" if is_admin else "INGÉNIEUR RÉSEAU"
 
     st.sidebar.markdown(
         f"""
@@ -223,14 +223,14 @@ def sidebar_global(
 
     dc1, dc2 = st.sidebar.columns(2)
     with dc1:
-        date_from = st.date_input("Debut", key="sb_date_from")
+        date_from = st.date_input("Début", key="sb_date_from")
     with dc2:
         date_to = st.date_input("Fin", key="sb_date_to")
     if date_from and date_to:
         if date_from <= date_to:
             filters["date_range"] = (date_from, date_to)
         else:
-            st.sidebar.warning("Date de debut doit etre avant la fin.")
+            st.sidebar.warning("La date de début doit être antérieure à la date de fin.")
 
     govs = dim_opts.get("gouvernorats") or []
     if govs:
@@ -245,7 +245,7 @@ def sidebar_global(
             filters["technologies"] = sel_techs
 
     modes = dim_opts.get("modes") or ["ECO", "NORMAL", "ATTENTION", "CRITIQUE"]
-    sel_modes = st.sidebar.multiselect("Mode (dernier etat station)", modes, key="sb_modes", placeholder="Tous")
+    sel_modes = st.sidebar.multiselect("Mode (dernier état station)", modes, key="sb_modes", placeholder="Tous")
     if sel_modes:
         filters["modes"] = sel_modes
 
@@ -253,14 +253,14 @@ def sidebar_global(
     if prev_filters != filters:
         clear_dashboard_data_cache()
 
-    if st.sidebar.button("Reinitialiser filtres", width="stretch"):
+    if st.sidebar.button("Réinitialiser les filtres", width="stretch"):
         reset_global_filters()
         st.rerun()
 
     st.sidebar.divider()
 
     # Logout
-    if st.sidebar.button("Deconnexion", width="stretch"):
+    if st.sidebar.button("Déconnexion", width="stretch"):
         try:
             from services.data_service import db_execute
             session_id = st.session_state.get("session_id")

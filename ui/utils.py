@@ -120,7 +120,7 @@ def selected_station_filter() -> str | None:
 def active_filter_label() -> str:
     gf = merged_active_filters()
     if not gf:
-        return "Periode et stations : tout le parc"
+        return "Période et stations : tout le parc"
     parts = []
     station = selected_station_filter()
     if station:

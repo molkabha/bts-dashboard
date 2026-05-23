@@ -71,7 +71,7 @@ def render_conso_gouvernorat_par_periode(
     from ui.utils import active_filter_label, merged_active_filters
 
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     st.caption(active_filter_label())
@@ -82,13 +82,13 @@ def render_conso_gouvernorat_par_periode(
         c1, c2 = st.columns([2, 1])
         with c1:
             picked = st.multiselect(
-                "Gouvernorats a comparer",
+                "Gouvernorats à comparer",
                 avail,
                 key="cmp_chart_govs",
                 placeholder="Tous (top par consommation)",
             )
         with c2:
-            top_n = st.number_input("Max gouvernorats", min_value=3, max_value=24, value=10, key="cmp_chart_top_n")
+            top_n = st.number_input("Max. gouvernorats", min_value=3, max_value=24, value=10, key="cmp_chart_top_n")
         top_govs = picked if picked else None
         if not top_govs:
             top_govs = (
@@ -121,7 +121,7 @@ def render_conso_gouvernorat_par_periode(
     if top_govs:
         work = work[work["gouvernorat"].astype(str).isin(top_govs)]
     if work.empty:
-        st.warning("Aucune ligne apres filtrage gouvernorat.")
+        st.warning("Aucune ligne après filtrage gouvernorat.")
         return
 
     work["periode"] = work["timestamp"].dt.to_period("M").astype(str)
@@ -150,7 +150,7 @@ def render_conso_gouvernorat_par_periode(
         barmode="group",
         template=template,
         labels={
-            "periode": "Periode (mois)",
+            "periode": "Période (mois)",
             "conso_moy_kwh": "Consommation moyenne (kWh)",
             "gouvernorat": "Gouvernorat",
         },
@@ -162,7 +162,7 @@ def render_conso_gouvernorat_par_periode(
     gf = merged_active_filters()
     if gf.get("date_range"):
         start, end = gf["date_range"]
-        period_label = f"Periode filtree : {start} → {end}"
+        period_label = f"Période filtrée : {start} → {end}"
     elif not chart_df.empty:
         period_label = f"Periodes : {chart_df['periode'].min()} → {chart_df['periode'].max()}"
     else:
@@ -181,8 +181,8 @@ def render_conso_gouvernorat_par_periode(
         y="gouvernorat",
         orientation="h",
         template=template,
-        labels={"conso_moy_kwh": "Conso moyenne (kWh)", "gouvernorat": "Gouvernorat"},
-        title="Moyenne sur la periode selectionnee",
+        labels={"conso_moy_kwh": "Conso. moyenne (kWh)", "gouvernorat": "Gouvernorat"},
+        title="Moyenne sur la période sélectionnée",
     )
     fig_gov.update_layout(height=300, margin=dict(l=0, r=0, t=40, b=0))
     st.plotly_chart(fig_gov, width="stretch")
@@ -226,7 +226,7 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_sav
 def render_nb3_rl_agents(nb3: dict, template: str) -> None:
     rl_data = nb3.get("rl_resultats_tous_agents", {})
     if not rl_data:
-        st.caption("Donnees agents non disponibles.")
+        st.caption("Données agents non disponibles.")
         return
     df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
     if "economie_pct" in df_rl.columns:
@@ -274,10 +274,10 @@ def render_executive_report_export(kpis: dict) -> None:
                         else "FAIBLE"
                     ),
                 })
-        if st.button("Generer rapport PDF", type="primary", key="exec_report_pdf"):
+        if st.button("Générer le rapport PDF", type="primary", key="exec_report_pdf"):
             pdf_bytes = generate_report_pdf(kpis, anomaly_items)
             st.download_button(
-                "Telecharger le rapport PDF",
+                "Télécharger le rapport PDF",
                 data=pdf_bytes,
                 file_name=f"rapport_bts_{datetime.now().strftime('%Y%m%d')}.pdf",
                 mime="application/pdf",

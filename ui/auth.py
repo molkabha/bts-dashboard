@@ -19,7 +19,7 @@ def login_page(logo_path: Path):
 <div class="login-panel brand-panel">
   {logo_html}
   <div class="login-kicker">Tunisie Telecom</div>
-  <div class="login-heading">BTS Energy Management</div>
+  <div class="login-heading">Gestion énergétique BTS</div>
 </div>
 """,
             unsafe_allow_html=True,
@@ -35,7 +35,7 @@ def login_page(logo_path: Path):
             )
 
             with st.form("login_unique"):
-                user = st.text_input("Identifiant", key="login_user", placeholder="Email ou nom utilisateur")
+                user = st.text_input("Identifiant", key="login_user", placeholder="Courriel ou nom d'utilisateur")
                 pwd = st.text_input("Mot de passe", type="password", key="login_pwd", placeholder="Mot de passe")
                 submitted = st.form_submit_button("Se connecter", type="primary", width="stretch")
 
@@ -46,7 +46,7 @@ def login_page(logo_path: Path):
                     st.session_state.update(session_data)
                     st.session_state["_goto_home"] = True
                     role = session_data.get("role", "")
-                    role_label = "Administrateur" if role == "admin" else "Ingenieur reseau"
+                    role_label = "Administrateur" if role == "admin" else "Ingénieur réseau"
                     st.session_state["_login_role_hint"] = role_label
                     from services.data_service import log_event
                     log_event("login", {"role": session_data["role"]})
@@ -56,13 +56,13 @@ def login_page(logo_path: Path):
 
             with st.expander("Mot de passe oublié", expanded=False):
                 with st.form("forgot_password"):
-                    reset_login = st.text_input("Email ou identifiant", key="reset_login")
+                    reset_login = st.text_input("Courriel ou identifiant", key="reset_login")
                     reset_submitted = st.form_submit_button("Recevoir un mot de passe temporaire", width="stretch")
 
                 if reset_submitted:
                     reset_login = UserInputValidator.sanitize_string(reset_login, 120)
                     if not reset_login:
-                        st.error("Saisissez votre email ou identifiant.")
+                        st.error("Saisissez votre courriel ou identifiant.")
                     else:
                         ok, message = reset_user_password(reset_login)
                         if ok:
@@ -72,14 +72,14 @@ def login_page(logo_path: Path):
 
             role_hint = st.session_state.pop("_login_role_hint", None)
             if role_hint:
-                st.success(f"Connexion reussie — acces {role_hint}. Redirection vers votre espace...")
+                st.success(f"Connexion réussie — accès {role_hint}. Redirection vers votre espace…")
 
             st.markdown(
                 """
 <div class="login-footer">
-  <strong>Tunisie Telecom</strong> — BTS Energy Management System<br>
-  Acces reserve : <span style="color:#059669;font-weight:800;">ADMIN</span> et
-  <span style="color:#2563eb;font-weight:800;">INGENIEUR RESEAU</span>
+  <strong>Tunisie Telecom</strong> — Gestion énergétique BTS<br>
+  Accès réservé : <span style="color:#059669;font-weight:800;">ADMINISTRATEUR</span> et
+  <span style="color:#2563eb;font-weight:800;">INGÉNIEUR RÉSEAU</span>
 </div>
 """,
                 unsafe_allow_html=True,
@@ -87,7 +87,7 @@ def login_page(logo_path: Path):
 
 
 def force_password_change_page():
-    header("Modifier le mot de passe", "Creation d'un mot de passe personnel obligatoire")
+    header("Modifier le mot de passe", "Création d'un mot de passe personnel obligatoire")
     st.info("Votre mot de passe actuel est temporaire. Choisissez un nouveau mot de passe pour continuer.")
 
     # Generate CSRF token in session state (internal)
@@ -121,11 +121,11 @@ def force_password_change_page():
         st.error("La confirmation ne correspond pas.")
         return
     if new_password == current:
-        st.error("Choisissez un mot de passe different du mot de passe temporaire.")
+        st.error("Choisissez un mot de passe différent du mot de passe temporaire.")
         return
 
     update_user_password(user, new_password, 0)
     st.session_state["must_change_password"] = False
     # log_event("password_changed", {"user": user})
-    st.success("Mot de passe modifie. Acces au tableau de bord.")
+    st.success("Mot de passe modifié. Accès au tableau de bord.")
     st.rerun()

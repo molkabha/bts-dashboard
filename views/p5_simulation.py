@@ -105,14 +105,14 @@ def _primary_row(latest_all: pd.DataFrame) -> pd.Series:
 
 def page_simulation():
     security_middleware.enforce()
-    header("Simulation", "Avancez pas a pas sur vos stations assignees")
+    header("Simulation", "Avancez pas à pas sur vos stations assignées")
     st.caption(active_filter_label())
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     role = st.session_state.get("role", "")
     stations = _station_options(role)
     if not stations:
-        st.warning("Aucune station assignee.")
+        st.warning("Aucune station assignée.")
         return
 
     col_ctrl, col_main = st.columns([1, 2.5])
@@ -132,7 +132,7 @@ def page_simulation():
             start_hour = st.slider("Heure debut", 0, 23, 0, key="sim_start_hour")
         st.select_slider("Pas", options=[1, 2, 5], value=2, key="sim_speed")
         c1, c2, c3 = st.columns(3)
-        if c1.button("Go", type="primary", use_container_width=True):
+        if c1.button("Lancer", type="primary", use_container_width=True):
             source_df = load_replay_source()
             st.session_state.update({
                 "sim_running": True, "sim_tick": 0, "sim_data": pd.DataFrame(),
@@ -143,9 +143,9 @@ def page_simulation():
                 source_df, selected_stations, start_dt,
                 on_date=on_date if sim_mode == "Une journee" else None,
             ))
-        if c2.button("Pas", use_container_width=True) and st.session_state.get("sim_running"):
+        if c2.button("Avancer", use_container_width=True) and st.session_state.get("sim_running"):
             st.session_state["sim_advance"] = True
-        if c3.button("Reset", use_container_width=True):
+        if c3.button("Réinitialiser", use_container_width=True):
             for key in ("sim_data", "sim_running", "sim_tick", "sim_source_df", "sim_total_ticks"):
                 st.session_state.pop(key, None)
             st.rerun()
@@ -155,7 +155,7 @@ def page_simulation():
             st.progress(min(1.0, tick / total), text=f"{tick}/{total}")
         sim_export = st.session_state.get("sim_data")
         if isinstance(sim_export, pd.DataFrame) and not sim_export.empty:
-            download_df_button(sim_export, "simulation.csv", "Export")
+            download_df_button(sim_export, "simulation.csv", "Exporter")
 
     with col_main:
         if not selected_stations:
@@ -171,7 +171,7 @@ def page_simulation():
 
         sim_data = st.session_state.get("sim_data")
         if not isinstance(sim_data, pd.DataFrame) or sim_data.empty:
-            st.info("Lancez le replay avec Go.")
+            st.info("Lancez la simulation avec le bouton Lancer.")
             return
 
         sim_data = harmonize_nb3_economies(sim_data)
@@ -209,7 +209,7 @@ def page_simulation():
         hist["eco"] = effective_economie_kwh(hist)
         agg = hist.groupby("timestamp", as_index=False).agg(conso=("conso", "sum"), eco=("eco", "sum")).tail(36)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"], name="Mesuree", line=dict(color="#94a3b8")))
-        fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"] - agg["eco"], name="Optimisee", line=dict(color="#059669")))
+        fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"], name="Mesurée", line=dict(color="#94a3b8")))
+        fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"] - agg["eco"], name="Optimisée", line=dict(color="#059669")))
         fig.update_layout(template=template, height=260, margin=dict(l=0, r=0, t=8, b=0))
         st.plotly_chart(fig, width="stretch")

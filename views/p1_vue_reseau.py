@@ -29,7 +29,7 @@ def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFram
 def _render_mapbox(scores: pd.DataFrame, template: str):
     if scores.empty or not {"latitude", "longitude"}.issubset(scores.columns):
         st.warning(
-            "Coordonnees GPS indisponibles. Verifiez latitude/longitude dans le dataset."
+            "Coordonnées GPS indisponibles. Vérifiez latitude/longitude dans le jeu de données."
         )
         return
 
@@ -38,7 +38,7 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
     plot_scores["longitude"] = pd.to_numeric(plot_scores["longitude"], errors="coerce")
     plot_scores = plot_scores.dropna(subset=["latitude", "longitude"])
     if plot_scores.empty:
-        st.warning("Aucune coordonnee GPS valide.")
+        st.warning("Aucune coordonnée GPS valide.")
         return
 
     color_col = "score_criticite" if is_admin() and "score_criticite" in plot_scores.columns else "mode_actuel"
@@ -99,15 +99,15 @@ def _render_comparison(df: pd.DataFrame, template: str):
 def page_vue_reseau():
     security_middleware.enforce()
 
-    subtitle = "Localisation et criticite (Mapbox)"
+    subtitle = "Localisation et criticité (Mapbox)"
     if not is_admin():
-        subtitle = "Vos stations — etat operationnel"
+        subtitle = "Vos stations — état opérationnel"
     header("Carte", subtitle)
     st.caption(active_filter_label())
 
     df = load_dashboard_df(["mode_operation", "latitude", "longitude"])
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     nb_stations = df["station_id"].nunique() if "station_id" in df.columns else 0
@@ -128,7 +128,7 @@ def page_vue_reseau():
             tbl_cols.insert(3, "mode_actuel")
         tbl_cols = [c for c in tbl_cols if c in scores.columns]
         if scores.empty:
-            st.info("Aucune station a afficher.")
+            st.info("Aucune station à afficher.")
             return
         sort_col = "score_criticite" if is_admin() and "score_criticite" in scores.columns else "conso_moy"
         if sort_col not in scores.columns:

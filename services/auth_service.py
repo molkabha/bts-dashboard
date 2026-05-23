@@ -54,7 +54,7 @@ def authenticate_user(
 
     limited, remaining = is_rate_limited(username)
     if limited:
-        return False, None, f"Trop de tentatives echouees. Reessayez dans {remaining} secondes."
+        return False, None, f"Trop de tentatives échouées. Réessayez dans {remaining} secondes."
 
     rec = get_user_record(username)
     if not rec:
@@ -62,17 +62,17 @@ def authenticate_user(
         return False, None, "Identifiant ou mot de passe incorrect."
 
     if expected_role and rec["role"] != expected_role:
-        return False, None, "Acces non autorise pour ce role."
+        return False, None, "Accès non autorisé pour ce rôle."
 
     if not rec.get("is_active"):
-        return False, None, "Compte desactive."
+        return False, None, "Compte désactivé."
 
     if not password_matches(password, rec["password_hash"]):
         record_failed_attempt(username)
         return False, None, "Identifiant ou mot de passe incorrect."
 
     clear_login_attempts(username)
-    return True, rec, "Authentification reussie."
+    return True, rec, "Authentification réussie."
 
 
 def create_user_session(user_record: dict) -> dict:
@@ -103,13 +103,13 @@ def reset_user_password(username_or_email: str) -> tuple[bool, str]:
     """Send a temporary password to an active user and force password change."""
     rec = get_user_record(username_or_email)
     if not rec:
-        return False, "Aucun compte actif ne correspond a cet email ou identifiant."
+        return False, "Aucun compte actif ne correspond à ce courriel ou identifiant."
     if not rec.get("is_active"):
-        return False, "Compte desactive."
+        return False, "Compte désactivé."
 
     email = str(rec.get("email") or "").strip()
     if not email:
-        return False, "Aucun email n'est associe a ce compte."
+        return False, "Aucun courriel n'est associé à ce compte."
 
     temp_password = generate_temp_password()
     from services.notification_service import send_account_password_email
@@ -130,7 +130,7 @@ def reset_user_password(username_or_email: str) -> tuple[bool, str]:
         return False, message
 
     log_event("password_reset_requested", {"user": username})
-    return True, "Un mot de passe temporaire a ete envoye par email."
+    return True, "Un mot de passe temporaire a été envoyé par courriel."
 
 
 def generate_temp_password(length: int = 12) -> str:

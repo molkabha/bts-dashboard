@@ -49,7 +49,7 @@ def _series_for_chart(df: pd.DataFrame, station: str, horizon: str) -> pd.DataFr
         return sdf
     sdf["timestamp"] = pd.to_datetime(sdf["timestamp"], errors="coerce")
     sdf = sdf.dropna(subset=["timestamp"]).sort_values("timestamp")
-    if sdf.empty or horizon == "Periode filtree":
+    if sdf.empty or horizon == "Période filtrée":
         return sdf
     hours = {"6h": 6, "12h": 12, "24h": 24}.get(horizon)
     if hours is None:
@@ -64,7 +64,7 @@ def _render_reel_vs_predit(sdf: pd.DataFrame, template: str):
         go.Scatter(
             x=sdf["timestamp"],
             y=sdf["consommation_kwh"],
-            name="Reel",
+            name="Réel",
             line=dict(color="#1e3a8a"),
         )
     )
@@ -74,7 +74,7 @@ def _render_reel_vs_predit(sdf: pd.DataFrame, template: str):
                 go.Scatter(
                     x=sdf["timestamp"],
                     y=sdf["conso_predite"],
-                    name="Predit",
+                    name="Prédit",
                     line=dict(dash="dot", color="#c8102e"),
                 )
             )
@@ -103,7 +103,7 @@ def _render_reel_vs_predit(sdf: pd.DataFrame, template: str):
 
 
 def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name: str) -> None:
-    with section("Comparaison des modeles"):
+    with section("Comparaison des modèles"):
         if models_df.empty:
             st.info("Artefact resultats_modeles.json manquant.")
             return
@@ -117,7 +117,7 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
 
         with tab_table:
             if prod_name:
-                st.caption(f"Modele retenu en production : {prod_name}")
+                st.caption(f"Modèle retenu en production : {prod_name}")
             show = display.copy()
             if "Production" in show.columns:
                 show["Retenu"] = show["Production"].map({True: "Oui", False: ""})
@@ -135,11 +135,11 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
 
         with tab_r2:
             chart_df = display.sort_values("R2", ascending=True)
-            colors = ["#059669" if str(m) == prod_name else "#1e3a8a" for m in chart_df["Modele"]]
+            colors = ["#059669" if str(m) == prod_name else "#1e3a8a" for m in chart_df["Modèle"]]
             fig = go.Figure(
                 go.Bar(
                     x=chart_df["R2"],
-                    y=chart_df["Modele"],
+                    y=chart_df["Modèle"],
                     orientation="h",
                     marker_color=colors,
                     text=[f"{v:.3f}" for v in chart_df["R2"]],
@@ -161,15 +161,15 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
                 st.info("RMSE / MAE non disponibles dans l'artefact NB1.")
             else:
                 melt = display.melt(
-                    id_vars=["Modele"],
+                    id_vars=["Modèle"],
                     value_vars=err_cols,
-                    var_name="Metrique",
+                    var_name="Métrique",
                     value_name="Valeur",
                 )
                 fig = px.bar(
                     melt,
                     x="Valeur",
-                    y="Modele",
+                    y="Modèle",
                     color="Metrique",
                     orientation="h",
                     barmode="group",
@@ -187,9 +187,9 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
 def page_prediction():
     security_middleware.enforce()
 
-    subtitle = "Reel vs predit, bande Q10/Q90 et metriques R²"
+    subtitle = "Réel vs prédit, bande Q10/Q90 et métriques R²"
     if not is_admin():
-        subtitle = "Consommation reelle de vos stations (sans modele ML)"
+        subtitle = "Consommation réelle de vos stations (sans modèle ML)"
     header(PAGE_PREDICTION, subtitle)
     st.caption(active_filter_label())
 
@@ -202,7 +202,7 @@ def page_prediction():
         rmse = prod.get("rmse")
         c1, c2, c3 = st.columns(3)
         with c1:
-            kpi_card("Modele", prod_name, "", "green")
+            kpi_card("Modèle", prod_name, "", "green")
         with c2:
             kpi_card("R²", f"{float(r2):.3f}" if r2 is not None else "—", "Jeu test", "blue")
         with c3:
@@ -210,16 +210,16 @@ def page_prediction():
 
     df = load_dashboard_df()
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     stations = sorted(df["station_id"].dropna().unique().astype(str).tolist()) if "station_id" in df.columns else []
     if not stations:
-        st.warning("Aucune station dans la selection des filtres globaux.")
+        st.warning("Aucune station dans la sélection des filtres globaux.")
         return
 
     default_station = _default_station(stations)
-    horizon_options = ["Periode filtree", "6h", "12h", "24h"]
+    horizon_options = ["Période filtrée", "6h", "12h", "24h"]
     c1, c2 = st.columns([2, 1])
     with c1:
         station = st.selectbox(
@@ -234,13 +234,13 @@ def page_prediction():
             horizon_options,
             index=0,
             key="pred_horizon",
-            help="Periode filtree = toutes les mesures dans la plage Debut/Fin de la barre laterale.",
+            help="Période filtrée = toutes les mesures dans la plage Début/Fin de la barre latérale.",
         )
 
     with section("Courbe consommation"):
         sdf = _series_for_chart(df, station, horizon)
         if sdf.empty:
-            st.info("Aucune mesure pour cette station sur la periode filtree.")
+            st.info("Aucune mesure pour cette station sur la période filtrée.")
         else:
             n_pts = len(sdf)
             t0 = sdf["timestamp"].min()

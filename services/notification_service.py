@@ -74,9 +74,9 @@ def _send_email(
                 server.login(smtp_user, smtp_password)
             server.send_message(msg)
     except Exception as exc:
-        return False, f"Email non envoye: {exc}"
+        return False, f"Courriel non envoyé : {exc}"
 
-    return True, "Email envoye."
+    return True, "Courriel envoyé."
 
 
 def send_account_password_email(
@@ -88,19 +88,19 @@ def send_account_password_email(
     body = [
         f"Bonjour {display_name or username},",
         "",
-        "Voici vos informations d'acces BTS Energy Management.",
-        f"Identifiant: {username}",
-        f"Mot de passe temporaire: {temp_password}",
+        "Voici vos informations d'accès à la gestion énergétique BTS.",
+        f"Identifiant : {username}",
+        f"Mot de passe temporaire : {temp_password}",
         "",
-        "A la prochaine connexion, l'application vous demandera de modifier ce mot de passe.",
+        "À la prochaine connexion, l'application vous demandera de modifier ce mot de passe.",
         "",
-        "Tunisie Telecom - BTS Energy Management System",
+        "Tunisie Telecom — Gestion énergétique BTS",
     ]
     return _send_email(
         email,
-        "Votre compte BTS Energy Management",
+        "Votre compte — gestion énergétique BTS",
         body,
-        "Service email non configure cote serveur.",
+        "Service de courriel non configuré côté serveur.",
     )
 
 
@@ -110,29 +110,29 @@ def send_account_status_email(
     username: str,
     is_active: bool,
 ) -> tuple[bool, str]:
-    status_text = "active" if is_active else "desactive"
+    status_text = "actif" if is_active else "désactivé"
     body = [
         f"Bonjour {display_name or username},",
         "",
-        f"Le statut de votre compte BTS Energy Management (identifiant: {username}) a ete mis a jour.",
-        f"Votre compte est desormais : {status_text.upper()}.",
+        f"Le statut de votre compte (identifiant : {username}) a été mis à jour.",
+        f"Votre compte est désormais : {status_text.upper()}.",
         "",
     ]
 
     if is_active:
-        body.append("Vous pouvez desormais vous connecter au tableau de bord.")
+        body.append("Vous pouvez désormais vous connecter au tableau de bord.")
     else:
         body.append(
-            "Votre acces a l'application a ete suspendu. "
+            "Votre accès à l'application a été suspendu. "
             "Veuillez contacter un administrateur pour plus d'informations."
         )
 
-    body.extend(["", "Tunisie Telecom - BTS Energy Management System"])
+    body.extend(["", "Tunisie Telecom — Gestion énergétique BTS"])
     return _send_email(
         email,
         f"Statut de votre compte BTS EMS : {status_text.capitalize()}",
         body,
-        "Service email non configure.",
+        "Service de courriel non configuré.",
     )
 
 
@@ -140,9 +140,9 @@ def send_account_deletion_email(email: str, display_name: str, username: str) ->
     body = [
         f"Bonjour {display_name or username},",
         "",
-        f"Votre compte BTS Energy Management (identifiant: {username}) a ete supprime par un administrateur.",
-        "Vous n'avez plus acces au systeme.",
+        f"Votre compte (identifiant : {username}) a été supprimé par un administrateur.",
+        "Vous n'avez plus accès au système.",
         "",
-        "Tunisie Telecom - BTS Energy Management System",
+        "Tunisie Telecom — Gestion énergétique BTS",
     ]
-    return _send_email(email, "Suppression de votre compte BTS EMS", body, "Service email non configure.")
+    return _send_email(email, "Suppression de votre compte BTS EMS", body, "Service de courriel non configuré.")

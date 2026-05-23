@@ -206,17 +206,17 @@ class SecurityMiddleware:
         # 1. Rate limiting check (general protection)
         user = st.session_state.get("username", "anonymous")
         if not self.check_rate_limit(user, max_requests=200, window=60):
-            st.error("Trop de requetes. Veuillez patienter.")
+            st.error("Trop de requêtes. Veuillez patienter.")
             st.stop()
 
         # 2. Session validation (timeout)
         if not self.validate_session():
-            st.warning("Votre session a expire. Veuillez vous reconnecter.")
+            st.warning("Votre session a expiré. Veuillez vous reconnecter.")
             st.rerun()
 
         # 3. RBAC
         if role and st.session_state.get("role") != role:
-            st.error(f"Acces refuse. Role {role} requis.")
+            st.error(f"Accès refusé. Rôle {role} requis.")
             st.stop()
 
 

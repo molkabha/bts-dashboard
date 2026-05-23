@@ -28,7 +28,7 @@ def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
         if not any(k in stats for k in ("pct_test", "pct_anomalies", "seuil")):
             continue
         rows.append({
-            "Detecteur": str(name),
+            "Détecteur": str(name),
             "Anomalies %": stats.get("pct_test", stats.get("pct_anomalies")),
             "Seuil": stats.get("seuil", stats.get("seuil_test")),
         })
@@ -62,7 +62,7 @@ def page_anomalies():
 
     df = load_dashboard_df(["ecart_pct", "score_qos", "gouvernorat", "heure"])
     if df.empty:
-        st.warning("Aucune donnee pour les filtres actifs.")
+        st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
@@ -81,11 +81,11 @@ def page_anomalies():
         with c2:
             kpi_card("Alertes", str(len(anom_df)), f"> {seuil:.2f}", "red")
         with c3:
-            kpi_card("Stations touchees", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
+            kpi_card("Stations touchées", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
 
         det_df = _detector_rows(nb2_stats)
         if not det_df.empty:
-            with section("Detecteurs NB2"):
+            with section("Détecteurs NB2"):
                 st.dataframe(det_df, width="stretch", hide_index=True)
 
         with section("Stations prioritaires"):
@@ -123,7 +123,7 @@ def page_anomalies():
         with c3:
             kpi_card("Stations", str(work["station_id"].nunique()) if "station_id" in work.columns else "0", "", "gray")
 
-        with section("Stations a surveiller"):
+        with section("Stations à surveiller"):
             if "station_id" in work.columns:
                 prio = (
                     work.groupby("station_id", as_index=False)
