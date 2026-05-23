@@ -16,7 +16,6 @@ from services.data_service import (
     build_nb3_monthly_series,
     compute_filtered_kpis,
     load_nb2_network_stats,
-    load_nb3_network_kpi,
 )
 
 
@@ -38,10 +37,8 @@ def page_accueil():
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
 
     eco_dt = kpis.get("economie_dt") or 0
-    eco_dt_reseau = kpis.get("economie_dt_reseau")
     eco_mois = kpis.get("economie_dt_mois") or 0
     eco_label = kpis.get("economie_periode_label") or "Reseau NB3"
-    economie_scaled = bool(kpis.get("economie_scaled"))
     co2 = kpis.get("co2_evite_t") or 0
     pct_eco = kpis.get("pct_mode_eco") or 0
     nb_stations = kpis.get("nb_stations", 0)
@@ -74,24 +71,6 @@ def page_accueil():
             kpi_card("Incidents", str(nb_incidents), "Anomalies majeures", "orange")
         with c6:
             kpi_card("Disponibilite", f"{dispo:.1f}%", "Systeme", "gray")
-
-    nb3_kpi = load_nb3_network_kpi()
-    with st.expander("Detail economies DT (traçabilite kpi_reseau.json)", expanded=economie_scaled):
-        c_a, c_b, c_c = st.columns(3)
-        reseau_dt = float(nb3_kpi.get("economie_dt") or eco_dt_reseau or 0)
-        reseau_kwh = float(nb3_kpi.get("economie_combinee_kwh") or kpis.get("economie_kwh_reseau") or 0)
-        reseau_pct = float(nb3_kpi.get("economie_combinee_pct") or kpis.get("economie_combinee_pct") or 0)
-        with c_a:
-            st.metric("Reseau integral (NB3)", f"{reseau_dt:,.0f} DT", help="Valeur brute kpi_reseau.json")
-        with c_b:
-            st.metric("Vue filtrees", f"{eco_dt:,.0f} DT", help=eco_label)
-        with c_c:
-            st.metric("Economie combinee", f"{reseau_kwh:,.0f} kWh ({reseau_pct:.2f}%)", help="NB3 officiel")
-        if economie_scaled:
-            st.caption(
-                "Les filtres admin reduisent la periode ou le parc : les KPI € ci-dessus sont scales "
-                "proportionnellement a la consommation filtree (methode NB3, pas somme horaire brute)."
-            )
 
     c1, c2 = st.columns(2)
     with c1:
