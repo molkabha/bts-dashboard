@@ -76,9 +76,8 @@ def page_agents_rl():
         summary.columns = ["Agent", "Economie %", "Violations QoS %"][:len(cols_show)]
         st.dataframe(summary, width="stretch", hide_index=True)
 
-    if st.button("Simuler 24h avec cet agent", type="primary", width="stretch"):
+    if st.button("Replay 24h NB3", type="primary", width="stretch"):
         st.session_state["nav_page_ingenieur"] = "Simulation"
-        st.session_state["nav_page_admin"] = st.session_state.get("nav_page_admin", "Vue executive")
         st.session_state["_nav_override"] = 6
         st.rerun()
 

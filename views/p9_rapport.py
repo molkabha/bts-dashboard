@@ -7,7 +7,7 @@ from datetime import datetime
 import streamlit as st
 
 from security.middleware import security_middleware
-from services.data_service import compute_filtered_kpis, load_top_anomalies
+from services.data_service import compute_filtered_kpis, load_nb2_network_stats, load_top_anomalies
 from ui.components import header, section
 from ui.page_helpers import load_dashboard_df
 from ui.utils import apply_current_admin_filters
@@ -24,13 +24,18 @@ def page_rapport():
     with section("Generer le rapport"):
         top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
         anomaly_items = []
+        seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
         if not top.empty:
             for _, row in top.iterrows():
                 score = float(row.get("anomalie_score_ensemble", 0) or 0)
                 anomaly_items.append({
                     "station_id": str(row.get("station_id", "")),
                     "detail": f"Score {score:.2f}",
-                    "severity": "CRITIQUE" if score > 0.6 else "ATTENTION" if score > 0.3 else "FAIBLE",
+                    "severity": (
+                        "CRITIQUE" if score > seuil * 2.4
+                        else "ATTENTION" if score > seuil
+                        else "FAIBLE"
+                    ),
                 })
         if st.button("Generer rapport PDF", type="primary", width="stretch"):
             pdf_bytes = generate_report_pdf(kpis, anomaly_items)

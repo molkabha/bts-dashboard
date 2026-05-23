@@ -10,8 +10,12 @@ import streamlit as st
 from security.middleware import security_middleware
 from services.data_service import (
     artifact_inventory,
-    available_stations, db_execute, db_scalar, log_event,
+    available_stations,
+    db_execute,
+    db_scalar,
     load_filtered_main_data,
+    load_nb2_network_stats,
+    log_event,
 )
 from ui.components import header, section
 
@@ -91,8 +95,12 @@ def page_configuration():
                         0,
                         index=df.index)),
                 errors="coerce").fillna(0)
-            pct_eco = ((qos_vals >= qos_min) & (cpu_vals < cpu_eco) & (anom_vals < 0.25)).mean() * 100
-            st.info(f"Avec ces seuils, {pct_eco:.1f}% des observations seraient eligibles au mode ECO.")
+            seuil_nb2 = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
+            pct_eco = ((qos_vals >= qos_min) & (cpu_vals < cpu_eco) & (anom_vals < seuil_nb2)).mean() * 100
+            st.info(
+                f"Avec ces seuils, {pct_eco:.1f}% des observations seraient eligibles au mode ECO "
+                f"(seuil anomalie NB2 : {seuil_nb2:.2f})."
+            )
 
     # Section 2 - Optimization strategies
     with section("Parametres des Strategies d'Optimisation"):

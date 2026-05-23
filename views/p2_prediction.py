@@ -94,11 +94,18 @@ def page_prediction():
             st.info("Importance des variables disponible dans resultats_modeles.json (NB1) ou via les graphiques SHAP ci-dessous.")
 
     with st.expander("SHAP — explication locale (station selectionnee)"):
-        wf = artifact_image_path("shap_waterfall.png")
-        if wf:
-            st.image(str(wf), caption=f"Waterfall SHAP — {station or 'vue globale'}")
-        else:
-            st.info("Artefact shap_waterfall.png non disponible.")
+        for img_name, caption in [
+            ("shap_waterfall.png", "Waterfall SHAP"),
+            ("shap_beeswarm.png", "Beeswarm SHAP"),
+            ("shap_bar.png", "Importance globale SHAP"),
+        ]:
+            path = artifact_image_path(img_name)
+            if path:
+                st.image(str(path), caption=f"{caption} — {station or 'vue globale'}")
+        if not any(artifact_image_path(n) for n, _ in [
+            ("shap_waterfall.png", ""), ("shap_beeswarm.png", ""), ("shap_bar.png", ""),
+        ]):
+            st.info("Artefacts SHAP NB1 non disponibles (shap_*.png).")
 
     with st.expander("Analyse technique (notebook)"):
         models = nb1.get("comparaison_modeles", nb1.get("resultats_par_modele", {}))

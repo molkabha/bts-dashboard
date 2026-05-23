@@ -24,8 +24,9 @@ from views.p1_vue_reseau import page_vue_reseau
 from views.p2_prediction import page_prediction
 from views.p3_anomalies import page_anomalies
 from views.p4_decision import page_decision
+from views.p4_optimisation_rl import page_optimisation_rl
 from views.p5_agents_rl import page_agents_rl
-from views.p6_sandbox import page_sandbox
+from views.p5_simulation import page_simulation
 from views.p7_monitoring import page_monitoring
 from views.p8_station import page_station_detail
 from views.p9_rapport import page_rapport
@@ -41,7 +42,8 @@ PAGE_FUNCTIONS = {
     3: page_anomalies,
     4: page_decision,
     5: page_agents_rl,
-    6: page_sandbox,
+    6: page_simulation,
+    14: page_optimisation_rl,
     7: page_monitoring,
     8: page_station_detail,
     9: page_rapport,

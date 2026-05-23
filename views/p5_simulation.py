@@ -14,10 +14,9 @@ import streamlit as st
 from config.settings import settings
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import available_stations, engineer_assigned_stations
+from services.data_service import available_stations, engineer_assigned_stations, load_nb2_network_stats
 from services.nb_metrics import effective_economie_kwh
-from services.pipeline_service import simulate_nb_pipeline
-from services.realtime_generator import generate_realtime_station_data
+from services.nb_replay import load_replay_source, replay_batch
 from ui.components import header, kpi_card, section, live_indicator
 from ui.utils import download_df_button
 
@@ -67,8 +66,11 @@ def _session_summary(sim_data: pd.DataFrame, selected_stations: list[str]):
     total_dt = total_eco * settings.PRIX_KWH_TN
     co2_evite_kg = total_eco * settings.FACTEUR_CO2_TN  # kg
     nb_heures = sim_data["timestamp"].nunique() if "timestamp" in sim_data.columns else len(sim_data)
-    nb_anomalies = int((_numeric_series(sim_data, "anomalie_score_ensemble", 0) > 0.25).sum())
-    qos_moy = _numeric_series(sim_data, "score_qos", 0.82).mean()
+    seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
+    nb_anomalies = int((_numeric_series(sim_data, "anomalie_score_ensemble", 0) > seuil).sum())
+    qos_moy = _numeric_series(sim_data, "score_qos", 0).mean()
+    if pd.isna(qos_moy):
+        qos_moy = 0.0
 
     with section("Bilan de la Session"):
         k1, k2, k3, k4 = st.columns(4)
@@ -103,7 +105,7 @@ def _session_summary(sim_data: pd.DataFrame, selected_stations: list[str]):
 def page_simulation():
     security_middleware.enforce()
     role = st.session_state.get("role")
-    header("Simulation Temps Reel", "Flux BTS simule, decisions et economies en direct")
+    header("Simulation Temps Reel", "Replay horaire des mesures NB1/NB2/NB3 (artefacts notebook)")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     stations = available_stations()
@@ -154,6 +156,8 @@ def page_simulation():
 
         if btn_start:
             st.session_state["sim_running"] = True
+            if "sim_source_df" not in st.session_state:
+                st.session_state["sim_source_df"] = load_replay_source()
             if "sim_data" not in st.session_state:
                 st.session_state["sim_tick"] = 0
                 st.session_state["sim_data"] = pd.DataFrame()
@@ -180,43 +184,49 @@ def page_simulation():
                 download_df_button(sim_data, "session_simulation.csv", "Exporter CSV")
 
     with col_cockpit:
-        # Generate simulation tick
         if st.session_state.get("sim_running") and selected_stations:
             tick = st.session_state.get("sim_tick", 0)
+            source_df = st.session_state.get("sim_source_df")
+            if not isinstance(source_df, pd.DataFrame) or source_df.empty:
+                source_df = load_replay_source()
+                st.session_state["sim_source_df"] = source_df
+
             start_dt = datetime.combine(sim_base_date, datetime.min.time()).replace(hour=start_hour)
-            sim_time = start_dt + timedelta(hours=tick)
+            processed, sim_time = replay_batch(source_df, selected_stations, tick, start_dt)
 
-            new_data = pd.DataFrame()
-            for station in selected_stations:
-                st_data = generate_realtime_station_data(
-                    station=station, periods=1, anomaly_rate=0.01,
-                    seed=int(time.time()) + tick + hash(station) % 1000,
-                    start_time=sim_time, freq_minutes=60,
-                )
-                new_data = pd.concat([new_data, st_data], ignore_index=True)
-
-            # Apply injection
-            injection = st.session_state.pop("sim_injection", None)
-            if injection and not new_data.empty:
-                if injection == "heat":
-                    new_data["temperature_ambiante"] += 15
-                    new_data["consommation_kwh"] *= 1.4
-                elif injection == "traffic":
-                    new_data["taux_charge_data"] = np.clip(new_data["taux_charge_data"] * 3, 0, 0.99)
-                    new_data["charge_cpu_pct"] = np.clip(new_data["charge_cpu_pct"] * 1.8, 0, 99)
-                elif injection == "cpu_stuck":
-                    new_data["charge_cpu_pct"] = 95.0
-                elif injection == "power_cut":
-                    new_data["consommation_kwh"] *= 0.2
-
-            processed = simulate_nb_pipeline(new_data, source="flux_temps_reel_genere")
-            existing = st.session_state.get("sim_data", pd.DataFrame())
-            if isinstance(existing, pd.DataFrame) and not existing.empty:
-                max_rows = 48 * len(selected_stations)
-                st.session_state["sim_data"] = pd.concat([existing, processed], ignore_index=True).tail(max_rows)
+            if processed.empty:
+                st.session_state["sim_running"] = False
+                st.warning("Fin du replay NB3 ou aucune donnee pour ces stations / cette date.")
             else:
-                st.session_state["sim_data"] = processed
-            st.session_state["sim_tick"] = tick + 1
+                injection = st.session_state.pop("sim_injection", None)
+                if injection and not processed.empty:
+                    if injection == "heat" and "temperature_ambiante" in processed.columns:
+                        processed["temperature_ambiante"] = pd.to_numeric(
+                            processed["temperature_ambiante"], errors="coerce") + 15
+                        processed["consommation_kwh"] = pd.to_numeric(
+                            processed["consommation_kwh"], errors="coerce") * 1.4
+                    elif injection == "traffic":
+                        if "taux_charge_data" in processed.columns:
+                            processed["taux_charge_data"] = (
+                                pd.to_numeric(processed["taux_charge_data"], errors="coerce") * 3
+                            ).clip(0, 0.99)
+                        if "charge_cpu_pct" in processed.columns:
+                            processed["charge_cpu_pct"] = (
+                                pd.to_numeric(processed["charge_cpu_pct"], errors="coerce") * 1.8
+                            ).clip(0, 99)
+                    elif injection == "cpu_stuck" and "charge_cpu_pct" in processed.columns:
+                        processed["charge_cpu_pct"] = 95.0
+                    elif injection == "power_cut":
+                        processed["consommation_kwh"] = pd.to_numeric(
+                            processed["consommation_kwh"], errors="coerce") * 0.2
+
+                existing = st.session_state.get("sim_data", pd.DataFrame())
+                if isinstance(existing, pd.DataFrame) and not existing.empty:
+                    max_rows = 48 * len(selected_stations)
+                    st.session_state["sim_data"] = pd.concat([existing, processed], ignore_index=True).tail(max_rows)
+                else:
+                    st.session_state["sim_data"] = processed
+                st.session_state["sim_tick"] = tick + 1
 
         sim_data = st.session_state.get("sim_data")
         if isinstance(sim_data, pd.DataFrame) and not sim_data.empty:
@@ -313,4 +323,4 @@ def page_simulation():
                 time.sleep(min(delay, 1.0))
                 st.rerun()
         else:
-            st.info("Appuyez sur Demarrer pour lancer la simulation.")
+            st.info("Appuyez sur Demarrer pour rejouer les pas horaires NB3 (streamlit_data.parquet).")

@@ -821,11 +821,15 @@ def set_user_stations(username: str, stations: list[str]):
 
 @st.cache_data(ttl=300, show_spinner=False)
 def load_outputs() -> dict:
+    rapport = read_json(artifact_path("rapport_optimisation.json"))
+    kpi = read_json(artifact_path("kpi_reseau.json"))
+    if not kpi and isinstance(rapport, dict):
+        kpi = rapport.get("kpi_reseau", {})
     data: dict = {
         "nb1": read_json(artifact_path("resultats_modeles.json")),
         "nb2": read_json(artifact_path("resultats_anomalie.json")),
-        "nb3": read_json(artifact_path("rapport_optimisation.json")),
-        "kpi": read_json(artifact_path("kpi_reseau.json")),
+        "nb3": rapport if isinstance(rapport, dict) else {},
+        "kpi": kpi if isinstance(kpi, dict) else {},
     }
     data["scores"] = read_parquet_fast(artifact_path("score_stations.parquet"))
     data["decisions"] = read_parquet_fast(artifact_path("decisions_par_station.parquet"))

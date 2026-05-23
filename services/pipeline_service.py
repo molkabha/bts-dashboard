@@ -56,7 +56,10 @@ def _simulate_nb1_prediction(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     conso = pd.to_numeric(df["consommation_kwh"], errors="coerce")
-    if "conso_predite" not in df.columns or _blank_mask(df["conso_predite"]).any():
+    pred_complete = (
+        "conso_predite" in df.columns and not _blank_mask(df["conso_predite"]).any()
+    )
+    if not pred_complete:
         pred = conso.copy()
         if {"station_id", "heure"}.issubset(df.columns):
             profile = (
@@ -71,7 +74,7 @@ def _simulate_nb1_prediction(df: pd.DataFrame) -> pd.DataFrame:
             pred = conso.rolling(24, min_periods=1).median().fillna(conso.median())
         df["conso_predite"] = pred.round(3)
 
-    pred = pd.to_numeric(df["conso_predite"], errors="coerce").fillna(conso)
+    pred = pd.to_numeric(df.get("conso_predite", conso), errors="coerce").fillna(conso)
     if "pred_q10" not in df.columns:
         df["pred_q10"] = (pred * 0.90).round(3)
     if "pred_q90" not in df.columns:

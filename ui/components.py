@@ -119,10 +119,17 @@ def global_status_bar(metrics: dict | None = None):
 
 
 def page_footer():
-    st.markdown(
-        '<div class="page-footer">Simulation dataset — 3 ans Tunisie Telecom</div>',
-        unsafe_allow_html=True,
-    )
+    from services.data_service import active_dataset_info, load_nb3_network_kpi
+
+    info = active_dataset_info()
+    kpi = load_nb3_network_kpi()
+    ds_label = info.get("name", "streamlit_data (NB3)") if info else "streamlit_data (NB3)"
+    gen = kpi.get("generated_at", "") if kpi else ""
+    footer = f"Source active : {ds_label}"
+    if gen:
+        footer += f" | Artefacts NB generes : {str(gen)[:19]}"
+    footer += " | Tunisie Telecom"
+    st.markdown(f'<div class="page-footer">{footer}</div>', unsafe_allow_html=True)
 
 
 def header(title: str, subtitle: str, logo_path: Path | None = None, *, show_status: bool = True):
@@ -243,6 +250,7 @@ ENGINEER_PAGE_LABELS = [
 ADMIN_PAGE_LABELS = [
     "Vue executive",
     "Parc",
+    "Optimisation",
     "Rapport",
     "Comparaison",
     "Donnees",
@@ -262,6 +270,7 @@ ENGINEER_PAGE_INDEX = {
 ADMIN_PAGE_INDEX = {
     "Vue executive": 0,
     "Parc": 1,
+    "Optimisation": 14,
     "Rapport": 9,
     "Comparaison": 10,
     "Donnees": 11,

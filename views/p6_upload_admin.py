@@ -10,9 +10,9 @@ import streamlit as st
 from security.middleware import security_middleware
 from services.data_service import (
     active_dataset_info, db_execute, log_event,
-    load_simulation_base,
 )
-from services.pipeline_service import simulate_nb_pipeline
+from services.dataset_publish import prepare_published_dataset
+from services.data_service import enrich_dashboard_data, load_filtered_main_data
 from config.settings import ROOT, settings
 from ui.components import header, kpi_card, section
 from ui.utils import download_df_button
@@ -57,7 +57,7 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     if "station_id" not in df.columns:
         return False, "Colonne station_id manquante."
     OUTPUTS.mkdir(exist_ok=True, parents=True)
-    processed = simulate_nb_pipeline(df, source="import_admin_publie")
+    processed = prepare_published_dataset(df)
     target = OUTPUTS / ACTIVE_UPLOAD_DATASET
     processed.to_parquet(target, index=False)
     rel = str(target.relative_to(ROOT))
@@ -69,8 +69,8 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
     st.session_state.pop("data", None)
     log_event("admin_dataset_published", {"file": source_name, "rows": len(processed)})
     return True, (
-        f"Dataset publie : {len(processed):,} lignes traitees par le pipeline dashboard "
-        "NB1 prediction -> NB2 anomalies -> NB3 decisions/optimisation."
+        f"Dataset publie : {len(processed):,} lignes enrichies depuis les artefacts NB1/NB2/NB3 "
+        "(fusion notebook + pipeline uniquement si colonnes manquantes)."
     )
 
 
@@ -139,26 +139,32 @@ def page_upload_admin():
 
     # Section 2 - Pipeline rerun
     with st.expander("Relance avancee du pipeline", expanded=False):
-        st.warning("Cette operation retraite un echantillon du dataset actif avec le pipeline NB1/NB2/NB3 du dashboard.")
-        if st.button("Relancer le pipeline complet", type="primary"):
+        st.warning(
+            "Re-enrichit l'echantillon actif depuis streamlit_data.parquet et les artefacts NB "
+            "(sans regenerer de donnees synthetiques si les colonnes notebook sont deja presentes)."
+        )
+        if st.button("Re-enrichir depuis artefacts NB", type="primary"):
             progress = st.progress(0)
             status = st.empty()
 
-            status.markdown("Chargement des donnees...")
-            progress.progress(20)
-            base = load_simulation_base(50000)
+            status.markdown("Chargement streamlit_data / dataset actif...")
+            progress.progress(25)
+            base = load_filtered_main_data(list(dict.fromkeys(REQUIRED_COLUMNS + [
+                "conso_predite", "anomalie_score_ensemble", "mode_operation",
+                "economie_estimee_kwh", "economie_rl_kwh", "action_proposee",
+            ]))).head(50000)
 
-            status.markdown("Traitement NB1/NB2/NB3...")
+            status.markdown("Fusion artefacts NB1/NB2/NB3...")
             progress.progress(60)
-            result = simulate_nb_pipeline(base, source="notebook_outputs")
+            result = prepare_published_dataset(base) if not base.empty else base
 
             status.markdown("Finalisation...")
             progress.progress(90)
             st.session_state["pipeline_result"] = result
 
             progress.progress(100)
-            status.markdown("Pipeline termine.")
-            st.success(f"Pipeline termine : {len(result):,} lignes traitees.")
+            status.markdown("Enrichissement termine.")
+            st.success(f"Echantillon traite : {len(result):,} lignes (source notebook prioritaire).")
 
     # Section 3 - Pipeline result
     result = st.session_state.get("pipeline_result")
