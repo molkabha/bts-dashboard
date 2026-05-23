@@ -1420,16 +1420,6 @@ def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.D
         "economie_estimee_kwh": "eco_expert",
         "economie_rl_kwh": "eco_rl",
     })
-    if "eco_expert" not in monthly.columns and "conso" in monthly.columns:
-        kpis = kpis or {}
-        pct = float(kpis.get("economie_combinee_pct") or 0) / 100
-        if pct > 0:
-            monthly["eco_expert"] = monthly["conso"] * pct
-    if "eco_rl" not in monthly.columns and "conso" in monthly.columns:
-        kpis = kpis or {}
-        pct = float(kpis.get("economie_rl_pct") or 0) / 100
-        if pct > 0:
-            monthly["eco_rl"] = monthly["conso"] * pct
     monthly["periode"] = monthly["timestamp"].astype(str)
     return _plotly_safe_monthly_series(monthly)
 
@@ -1580,7 +1570,7 @@ def _latest_per_station_modes(work: pd.DataFrame) -> pd.Series:
 
 
 def compute_filtered_kpis(df: pd.DataFrame) -> dict:
-    """KPIs calcules sur le dataframe filtre (dynamique), pas seulement kpi_reseau.json."""
+    """KPIs sur le dataframe filtre — sommes NB3 ligne à ligne, sans extrapolation kpi_reseau.json."""
     if df.empty:
         return {}
 
@@ -1594,26 +1584,17 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
     )
     conso = float(conso_values.sum()) if not conso_values.empty else 0.0
 
-    eco_combinee = _sum_numeric_col(work, "economie_kwh")
-    eco_rl = _sum_numeric_col(work, "economie_rl_kwh")
+    # Sommes brutes depuis les colonnes NB3 (pas de % réseau appliqué sur la conso filtrée).
     eco_expert = _sum_numeric_col(work, "economie_estimee_kwh")
-
-    if eco_combinee <= 0 and conso > 0:
-        if eco_rl > 0 or eco_expert > 0:
-            eco_combinee = max(eco_rl, eco_expert)
-        else:
-            pct = float(nb3_kpi.get("economie_combinee_pct") or 0)
-            if pct > 0:
-                eco_combinee = conso * pct / 100
-                if eco_rl <= 0:
-                    rl_pct = float(nb3_kpi.get("economie_rl_pct") or 0)
-                    eco_rl = conso * rl_pct / 100 if rl_pct > 0 else 0.0
+    eco_rl = _sum_numeric_col(work, "economie_rl_kwh")
+    eco_combinee = _sum_numeric_col(work, "economie_kwh")
 
     eco_dt = eco_combinee * settings.PRIX_KWH_TN
     co2_t = eco_combinee * settings.FACTEUR_CO2_TN / 1000
 
     combinee_pct = (eco_combinee / conso * 100) if conso > 0 else 0.0
     rl_pct = (eco_rl / conso * 100) if conso > 0 else 0.0
+    expert_pct = (eco_expert / conso * 100) if conso > 0 else 0.0
 
     modes = _latest_per_station_modes(work)
     pct_mode_eco = float(modes.eq("ECO").mean() * 100) if not modes.empty else 0.0
@@ -1655,16 +1636,20 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         "pct_anomalies": pct_anomalies,
         "pct_mode_eco": pct_mode_eco,
         "economie_kwh": eco_combinee,
-        "economie_estimee_kwh": eco_expert if eco_expert > 0 else eco_combinee,
+        "economie_estimee_kwh": eco_expert,
         "economie_rl_kwh": eco_rl,
         "economie_combinee_pct": combinee_pct,
         "economie_rl_pct": rl_pct,
+        "economie_expert_pct": expert_pct,
         "meilleur_agent_rl": meilleur_agent,
         "co2_evite_t": co2_t,
         "economie_dt": eco_dt,
         "economie_dt_mois": economie_dt_mois,
         "economie_periode_label": "Période filtrée",
         "nb_mois_periode": months,
+        "nb3_ref_economie_combinee_pct": nb3_kpi.get("economie_combinee_pct"),
+        "nb3_ref_economie_rl_pct": nb3_kpi.get("economie_rl_pct"),
+        "economies_source": "somme_lignes_nb3",
     }
 
 

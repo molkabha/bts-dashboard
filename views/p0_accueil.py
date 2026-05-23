@@ -10,7 +10,7 @@ from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import compute_filtered_kpis, load_nb2_network_stats
 from ui.components import header, kpi_card, section
-from ui.page_helpers import get_station_map_data, load_dashboard_df, render_executive_report_export
+from ui.page_helpers import get_station_map_data, latest_per_station, load_dashboard_df, render_executive_report_export
 from ui.utils import active_filter_label, is_admin
 
 
@@ -37,15 +37,24 @@ def page_accueil():
         nb2_stats = load_nb2_network_stats()
         seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
         scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
+        if "station_id" in df.columns:
+            alert_stations = int(
+                df.assign(_s=scores).groupby("station_id")["_s"].max().gt(seuil).sum()
+            )
+        else:
+            alert_stations = int((scores > seuil).sum())
         with c1:
             eco_dt = kpis.get("economie_dt") or 0
-            kpi_card("Économies", f"{eco_dt:,.0f} DT", kpis.get("economie_periode_label", "Période filtrée"), "green")
+            eco_help = kpis.get("economie_periode_label", "Période filtrée")
+            if float(kpis.get("economie_kwh") or 0) <= 0:
+                eco_help = "Sommes NB3 vides sur la période"
+            kpi_card("Économies", f"{eco_dt:,.0f} DT", eco_help, "green")
         with c2:
             kpi_card("CO₂ évité", f"{float(kpis.get('co2_evite_t') or 0):.1f} t", "", "eco")
         with c3:
-            kpi_card("Stations ECO", f"{float(kpis.get('pct_mode_eco') or 0):.1f}%", "", "eco")
+            kpi_card("Stations ECO", f"{float(kpis.get('pct_mode_eco') or 0):.1f}%", "Dernier mode / station", "eco")
         with c4:
-            kpi_card("Alertes ML", str(int((scores > seuil).sum())), f"Score > {seuil:.2f}", "orange")
+            kpi_card("Stations en alerte", str(alert_stations), f"Score max > {seuil:.2f}", "orange")
     else:
         conso_moy = float(kpis.get("conso_moyenne_kwh") or 0)
         qos_raw = kpis.get("score_qos_moyen")
@@ -62,8 +71,9 @@ def page_accueil():
     c1, c2 = st.columns(2)
     with c1:
         with section("Répartition des modes"):
-            if "mode_operation" in df.columns:
-                mode_counts = df["mode_operation"].value_counts().reset_index()
+            if "mode_operation" in df.columns and "station_id" in df.columns:
+                mode_df = latest_per_station(df)
+                mode_counts = mode_df["mode_operation"].value_counts().reset_index()
                 mode_counts.columns = ["Mode", "Nb"]
                 fig = px.pie(
                     mode_counts,

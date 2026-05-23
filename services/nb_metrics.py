@@ -101,23 +101,17 @@ def merge_business_columns(
 
 def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Align NB3 economy columns with notebook logic:
-    - fill RL / action gaps from expert columns when RL is empty or zero
-    - expose economie_kwh = max(RL, expert) for KPIs and charts
+    Align NB3 columns for display:
+    - economie_kwh = max(RL, expert) par ligne (sans copier l'expert dans RL)
+    - action_rl complété depuis action_proposee si vide
     """
     if df.empty:
         return df
 
     out = df.copy()
     est = numeric_series(out, "economie_estimee_kwh", 0.0)
-    rl = numeric_series(out, "economie_rl_kwh", np.nan)
-
-    if "economie_estimee_kwh" in out.columns:
-        rl_missing = rl.isna() | ((rl <= 0) & (est > 0))
-        if "economie_rl_kwh" not in out.columns:
-            out["economie_rl_kwh"] = est
-        elif rl_missing.any():
-            out.loc[rl_missing, "economie_rl_kwh"] = est.loc[rl_missing]
+    rl = numeric_series(out, "economie_rl_kwh", 0.0)
+    out["economie_kwh"] = np.maximum(est, rl)
 
     if "action_proposee" in out.columns:
         if "action_rl" not in out.columns:
@@ -127,9 +121,6 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
             if missing_action.any():
                 out.loc[missing_action, "action_rl"] = out.loc[missing_action, "action_proposee"]
 
-    rl_final = numeric_series(out, "economie_rl_kwh", 0.0)
-    est_final = numeric_series(out, "economie_estimee_kwh", 0.0)
-    out["economie_kwh"] = np.maximum(rl_final, est_final)
     return out
 
 

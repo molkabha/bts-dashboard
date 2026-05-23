@@ -82,9 +82,10 @@ def page_anomalies():
         with c1:
             kpi_card("Score moyen", f"{work['_score'].mean():.2f}", "", "orange")
         with c2:
-            kpi_card("Alertes", str(len(anom_df)), f"> {seuil:.2f}", "red")
+            kpi_card("Mesures en alerte", str(len(anom_df)), f"Score > {seuil:.2f}", "red")
         with c3:
-            kpi_card("Stations touchées", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
+            n_st = int(anom_df["station_id"].nunique()) if not anom_df.empty and "station_id" in anom_df.columns else 0
+            kpi_card("Stations touchées", str(n_st), "Au moins une alerte", "blue")
 
         det_df = _detector_rows(nb2_stats)
         if not det_df.empty:

@@ -49,10 +49,12 @@ def page_optimisation_rl():
         st.warning("Aucune donnée pour les filtres actifs.")
         return
 
+    kpis = compute_filtered_kpis(df)
+
     with st.expander("Provenance des données (période filtrée)", expanded=False):
         st.caption(
-            "Les métriques sont fusionnées depuis les parquets/JSON NB1, NB2 et NB3 "
-            "(voir `enrich_dashboard_data`). Aucune action n'est inventée par le dashboard."
+            "KPI = sommes des colonnes NB3 sur les lignes filtrées (pas de % réseau extrapolé). "
+            "Fusion : `enrich_dashboard_data` (parquets NB1/NB2/NB3)."
         )
         cov = dashboard_data_coverage(df)
         if not cov.empty:
@@ -67,8 +69,12 @@ def page_optimisation_rl():
         if "source_decision_nb3" in df.columns:
             nb3_rows = df["source_decision_nb3"].astype(str).eq("NB3").sum()
             st.caption(f"Lignes avec décision NB3 fusionnée : {nb3_rows:,} / {len(df):,}")
-
-    kpis = compute_filtered_kpis(df)
+        ref_pct = kpis.get("nb3_ref_economie_combinee_pct")
+        if ref_pct is not None and float(kpis.get("economie_kwh") or 0) <= 0:
+            st.warning(
+                f"Économies à 0 sur la période filtrée. Référence réseau NB3 (kpi_reseau.json) : "
+                f"{float(ref_pct):.1f} % — affichée à titre indicatif uniquement."
+            )
 
     if is_admin():
         c1, c2, c3, c4 = st.columns(4)
@@ -107,6 +113,10 @@ def page_optimisation_rl():
         c1, c2 = st.columns(2)
         with c1:
             with section("Règles vs RL (kWh)"):
+                st.caption(
+                    f"Combiné (max/ligne) : {float(kpis.get('economie_kwh') or 0):,.0f} kWh "
+                    f"({float(kpis.get('economie_combinee_pct') or 0):.2f} % de la conso filtrée)"
+                )
                 eco_reg = float(kpis.get("economie_estimee_kwh") or 0)
                 eco_rl = float(kpis.get("economie_rl_kwh") or 0)
                 fig = go.Figure(
@@ -161,8 +171,8 @@ def page_optimisation_rl():
 
     with c2:
         with section("Répartition des modes"):
-            if "mode_operation" in df.columns:
-                mode_counts = df["mode_operation"].value_counts().reset_index()
+            if "mode_operation" in df.columns and "station_id" in df.columns:
+                mode_counts = latest_per_station(df)["mode_operation"].value_counts().reset_index()
                 mode_counts.columns = ["Mode", "Nb"]
                 fig_d = px.pie(
                     mode_counts, names="Mode", values="Nb", hole=0.5,
