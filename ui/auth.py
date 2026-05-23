@@ -20,12 +20,6 @@ def login_page(logo_path: Path):
   {logo_html}
   <div class="login-kicker">Tunisie Telecom</div>
   <div class="login-heading">BTS Energy Management</div>
-  <div class="login-subtitle">Supervision énergétique des stations radio, alertes et optimisation.</div>
-  <div class="login-points">
-    <span>Prédiction</span>
-    <span>Anomalies</span>
-    <span>Optimisation</span>
-  </div>
 </div>
 """,
             unsafe_allow_html=True,
