@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import (
+    MODE_COLORS,
+    MODE_ORDER,
+    PLOTLY_DARK,
+    PLOTLY_LIGHT,
+    mode_category_order,
+    mode_color_discrete_map,
+    normalize_mode_key,
+)
 from security.middleware import security_middleware
 from ui.components import header, section
-from ui.formatting import display_text
 from ui.page_helpers import get_station_map_data, load_dashboard_df
 from ui.utils import active_filter_label, is_admin
 
@@ -24,6 +33,33 @@ def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFram
     out = scores.merge(modes.rename("mode_actuel"), left_on="station_id", right_index=True, how="left")
     keep = set(df["station_id"].astype(str).unique())
     return out[out["station_id"].astype(str).isin(keep)]
+
+
+def _normalize_mode_column(plot_scores: pd.DataFrame, column: str) -> pd.DataFrame:
+    out = plot_scores.copy()
+    if column not in out.columns:
+        return out
+
+    def _clean(value) -> str:
+        if pd.isna(value) or str(value).strip().lower() in {"", "none", "nan"}:
+            return "NORMAL"
+        return normalize_mode_key(value) or "NORMAL"
+
+    out[column] = out[column].map(_clean)
+    return out
+
+
+def _render_mode_legend() -> None:
+    items = "".join(
+        f'<span style="margin-right:14px;">'
+        f'<span style="color:{html.escape(MODE_COLORS[m])};font-size:16px;font-weight:900;">●</span> '
+        f'<span style="font-size:12px;font-weight:700;color:#64748b;">{html.escape(m)}</span></span>'
+        for m in MODE_ORDER
+    )
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 10px 0;">{items}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _render_mapbox(scores: pd.DataFrame, template: str):
@@ -41,35 +77,58 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
         st.warning("Aucune coordonnée GPS valide.")
         return
 
-    color_col = "score_criticite" if is_admin() and "score_criticite" in plot_scores.columns else "mode_actuel"
-    if color_col not in plot_scores.columns:
-        color_col = "categorie" if "categorie" in plot_scores.columns else None
+    color_col = None
+    if "mode_actuel" in plot_scores.columns:
+        color_col = "mode_actuel"
+        plot_scores = _normalize_mode_column(plot_scores, "mode_actuel")
+    elif "categorie" in plot_scores.columns:
+        color_col = "categorie"
+        plot_scores = _normalize_mode_column(plot_scores, "categorie")
 
     size_col = "conso_moy" if "conso_moy" in plot_scores.columns else None
-    hover_cols = [c for c in ["station_id", "gouvernorat", "technologie", "conso_moy", "categorie"] if c in plot_scores.columns]
+    hover_cols = [
+        c for c in ["station_id", "gouvernorat", "technologie", "conso_moy", "mode_actuel", "categorie"]
+        if c in plot_scores.columns
+    ]
+    if is_admin() and "score_criticite" in plot_scores.columns and "score_criticite" not in hover_cols:
+        hover_cols.append("score_criticite")
 
-    fig = px.scatter_mapbox(
-        plot_scores,
+    base_kwargs = dict(
         lat="latitude",
         lon="longitude",
-        color=color_col,
         size=size_col,
         hover_name="station_id" if "station_id" in plot_scores.columns else None,
         hover_data=hover_cols,
-        color_continuous_scale="Reds" if color_col == "score_criticite" else None,
-        color_discrete_map=MODE_COLORS if color_col == "mode_actuel" else None,
         zoom=6,
         height=520,
         mapbox_style="open-street-map",
     )
+
+    if color_col:
+        _render_mode_legend()
+        fig = px.scatter_mapbox(
+            plot_scores,
+            color=color_col,
+            color_discrete_map=mode_color_discrete_map(plot_scores[color_col]),
+            category_orders={color_col: mode_category_order(plot_scores[color_col])},
+            labels={color_col: "Mode"},
+            **base_kwargs,
+        )
+    else:
+        fig = px.scatter_mapbox(plot_scores, **base_kwargs)
+
     center_lat = plot_scores["latitude"].mean()
     center_lon = plot_scores["longitude"].mean()
     fig.update_layout(
         template=template,
         mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=6),
         margin=dict(l=0, r=0, t=8, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, title_text="Mode"),
     )
+    if color_col and size_col is None:
+        fig.update_traces(marker=dict(opacity=0.88, size=11))
+    elif color_col:
+        fig.update_traces(marker=dict(opacity=0.88))
     st.plotly_chart(fig, width="stretch")
 
 
@@ -99,9 +158,9 @@ def _render_comparison(df: pd.DataFrame, template: str):
 def page_vue_reseau():
     security_middleware.enforce()
 
-    subtitle = "Localisation et criticité (Mapbox)"
+    subtitle = "Localisation par mode opérationnel (Mapbox)"
     if not is_admin():
-        subtitle = "Vos stations — état opérationnel"
+        subtitle = "Vos stations — couleur = dernier mode NB3"
     header("Carte", subtitle)
     st.caption(active_filter_label())
 
@@ -111,7 +170,7 @@ def page_vue_reseau():
         return
 
     nb_stations = df["station_id"].nunique() if "station_id" in df.columns else 0
-    st.caption(f"{nb_stations} stations")
+    st.caption(f"{nb_stations} stations · CRITIQUE rouge · ATTENTION jaune · NORMAL vert · ECO bleu-vert")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     scores = get_station_map_data(df)

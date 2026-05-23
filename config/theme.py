@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Iterable
+
+import pandas as pd
+
 COLOR_PRIMARY = "#c8102e"
 COLOR_SECONDARY = "#1e3a8a"
 COLOR_ACCENT = "#1e40af"
@@ -48,6 +52,8 @@ MODE_COLORS = {
     "NORMAL": "#16a34a",
     "ECO": "#0891b2",
 }
+
+MODE_ORDER = ["CRITIQUE", "ATTENTION", "NORMAL", "ECO"]
 
 SEVERITY_COLORS = {
     "CRITIQUE": MODE_COLORS["CRITIQUE"],
@@ -101,6 +107,26 @@ def mode_badge_css(mode: str | None) -> str:
         "NORMAL": "badge-normal",
         "ECO": "badge-eco",
     }.get(normalize_mode_key(mode), "badge-muted")
+
+
+def mode_color_discrete_map(values: Iterable | pd.Series | None = None) -> dict[str, str]:
+    """Carte Plotly : palette complète + gris pour valeurs hors enum."""
+    cmap = dict(MODE_COLORS)
+    if values is not None:
+        for raw in pd.Series(values).dropna().astype(str).unique():
+            key = normalize_mode_key(raw)
+            if key and key not in cmap:
+                cmap[key] = "#64748b"
+    return cmap
+
+
+def mode_category_order(values: Iterable | pd.Series | None = None) -> list[str]:
+    if values is None:
+        return list(MODE_ORDER)
+    present = {normalize_mode_key(v) for v in pd.Series(values).dropna()}
+    ordered = [m for m in MODE_ORDER if m in present]
+    ordered.extend(sorted(present - set(ordered)))
+    return ordered
 
 APP_CSS = """
 <style>
