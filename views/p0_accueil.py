@@ -12,6 +12,7 @@ from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
+from ui.utils import merged_active_filters
 from services.data_service import (
     build_nb3_monthly_series,
     compute_filtered_kpis,
@@ -96,11 +97,79 @@ def page_accueil():
                 fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
                 st.plotly_chart(fig, width="stretch")
 
-    with section("Consommation moyenne par gouvernorat (EEI proxy)"):
-        if "gouvernorat" in df.columns:
+    with section("Consommation moyenne par gouvernorat (par periode)"):
+        if "gouvernorat" not in df.columns or "consommation_kwh" not in df.columns:
+            st.info("Donnees gouvernorat / consommation indisponibles.")
+        elif "timestamp" in df.columns:
+            work = df.copy()
+            work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
+            work = work.dropna(subset=["timestamp", "gouvernorat"])
+            work["periode"] = work["timestamp"].dt.to_period("M").astype(str)
+
+            by_period = (
+                work.groupby(["periode", "gouvernorat"], as_index=False)["consommation_kwh"]
+                .mean()
+                .rename(columns={"consommation_kwh": "conso_moy_kwh"})
+            )
+            top_govs = (
+                work.groupby("gouvernorat")["consommation_kwh"]
+                .sum()
+                .sort_values(ascending=False)
+                .head(10)
+                .index.astype(str)
+                .tolist()
+            )
+            chart_df = by_period[by_period["gouvernorat"].astype(str).isin(top_govs)].sort_values("periode")
+
+            fig_period = px.bar(
+                chart_df,
+                x="periode",
+                y="conso_moy_kwh",
+                color="gouvernorat",
+                barmode="group",
+                labels={
+                    "periode": "Periode (mois)",
+                    "conso_moy_kwh": "Consommation moyenne (kWh)",
+                    "gouvernorat": "Gouvernorat",
+                },
+                title="Moyenne horaire par mois et par gouvernorat",
+            )
+            fig_period.update_layout(template=template, height=340, margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig_period, width="stretch")
+
+            period_label = ""
+            gf = merged_active_filters()
+            if gf.get("date_range"):
+                start, end = gf["date_range"]
+                period_label = f"Periode filtree : {start} → {end}"
+            else:
+                period_label = f"Periodes : {chart_df['periode'].min()} → {chart_df['periode'].max()}"
+            st.caption(f"{period_label} · Top {len(top_govs)} gouvernorats (conso totale)")
+
+            by_gov = (
+                work.groupby("gouvernorat", as_index=False)["consommation_kwh"]
+                .mean()
+                .rename(columns={"consommation_kwh": "conso_moy_kwh"})
+                .sort_values("conso_moy_kwh", ascending=True)
+            )
+            fig_gov = px.bar(
+                by_gov,
+                x="conso_moy_kwh",
+                y="gouvernorat",
+                orientation="h",
+                labels={"conso_moy_kwh": "Conso moyenne (kWh)", "gouvernorat": "Gouvernorat"},
+                title="Moyenne sur toute la periode selectionnee",
+            )
+            fig_gov.update_layout(template=template, height=300, margin=dict(l=0, r=0, t=40, b=0))
+            st.plotly_chart(fig_gov, width="stretch")
+        else:
             by_gov = df.groupby("gouvernorat")["consommation_kwh"].mean().reset_index()
-            by_gov.columns = ["Gouvernorat", "EEI proxy (kWh moy)"]
-            fig = px.bar(by_gov.sort_values("EEI proxy (kWh moy)", ascending=True),
-                         x="EEI proxy (kWh moy)", y="Gouvernorat", orientation="h")
+            by_gov.columns = ["Gouvernorat", "Conso moyenne (kWh)"]
+            fig = px.bar(
+                by_gov.sort_values("Conso moyenne (kWh)", ascending=True),
+                x="Conso moyenne (kWh)",
+                y="Gouvernorat",
+                orientation="h",
+            )
             fig.update_layout(template=template, height=300, margin=dict(l=0, r=0, t=20, b=0))
             st.plotly_chart(fig, width="stretch")
