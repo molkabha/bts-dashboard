@@ -49,7 +49,14 @@ def session_outputs() -> dict:
 
 
 def clear_dashboard_data_cache() -> None:
-    for key in ("_df_session_key", "_df_session_val", "_map_data_key", "_map_data_val", "_dashboard_df"):
+    for key in (
+        "_df_session_key",
+        "_df_session_val",
+        "_map_data_key",
+        "_map_data_val",
+        "_dashboard_df",
+        "pred_station",
+    ):
         st.session_state.pop(key, None)
 
 

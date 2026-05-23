@@ -14,7 +14,7 @@ from ui.components import header, kpi_card, section
 from ui.display import PAGE_PREDICTION
 from ui.formatting import display_text
 from ui.page_helpers import load_dashboard_df
-from ui.utils import active_filter_label, is_admin, session_outputs
+from ui.utils import active_filter_label, is_admin, merged_active_filters, session_outputs
 
 FEATURE_LABELS_FR = {
     "heure": "Heure",
@@ -25,6 +25,37 @@ FEATURE_LABELS_FR = {
     "mois": "Mois",
     "jour_semaine": "Jour semaine",
 }
+
+
+def _default_station(stations: list[str]) -> str | None:
+    if not stations:
+        return None
+    gf = merged_active_filters()
+    gf_stations = [str(s) for s in (gf.get("stations") or []) if str(s) in stations]
+    if len(gf_stations) == 1:
+        return gf_stations[0]
+    current = st.session_state.get("pred_station")
+    if current in stations:
+        return str(current)
+    return stations[0]
+
+
+def _series_for_chart(df: pd.DataFrame, station: str, horizon: str) -> pd.DataFrame:
+    """Build chart series from globally filtered df, scoped to station and horizon."""
+    if "timestamp" not in df.columns or "station_id" not in df.columns:
+        return pd.DataFrame()
+    sdf = df[df["station_id"].astype(str) == str(station)].copy()
+    if sdf.empty:
+        return sdf
+    sdf["timestamp"] = pd.to_datetime(sdf["timestamp"], errors="coerce")
+    sdf = sdf.dropna(subset=["timestamp"]).sort_values("timestamp")
+    if sdf.empty or horizon == "Periode filtree":
+        return sdf
+    hours = {"6h": 6, "12h": 12, "24h": 24}.get(horizon)
+    if hours is None:
+        return sdf
+    end = sdf["timestamp"].max()
+    return sdf[sdf["timestamp"] >= (end - pd.Timedelta(hours=hours))]
 
 
 def _render_reel_vs_predit(sdf: pd.DataFrame, template: str):
@@ -123,20 +154,39 @@ def page_prediction():
         return
 
     stations = sorted(df["station_id"].dropna().unique().astype(str).tolist()) if "station_id" in df.columns else []
+    if not stations:
+        st.warning("Aucune station dans la selection des filtres globaux.")
+        return
+
+    default_station = _default_station(stations)
+    horizon_options = ["Periode filtree", "6h", "12h", "24h"]
     c1, c2 = st.columns([2, 1])
     with c1:
-        station = st.selectbox("Station", stations, key="pred_station") if stations else None
+        station = st.selectbox(
+            "Station",
+            stations,
+            index=stations.index(default_station) if default_station in stations else 0,
+            key="pred_station",
+        )
     with c2:
-        horizon_h = {"6h": 6, "12h": 12, "24h": 24}[
-            st.selectbox("Horizon", ["6h", "12h", "24h"], index=2, key="pred_horizon")
-        ]
+        horizon = st.selectbox(
+            "Fenetre",
+            horizon_options,
+            index=0,
+            key="pred_horizon",
+            help="Periode filtree = toutes les mesures dans la plage Debut/Fin de la barre laterale.",
+        )
 
     with section("Courbe consommation"):
-        if station and "timestamp" in df.columns:
-            sdf = df[df["station_id"].astype(str) == station].sort_values("timestamp").tail(horizon_h * 4)
-            _render_reel_vs_predit(sdf, template)
+        sdf = _series_for_chart(df, station, horizon)
+        if sdf.empty:
+            st.info("Aucune mesure pour cette station sur la periode filtree.")
         else:
-            st.info("Choisissez une station.")
+            n_pts = len(sdf)
+            t0 = sdf["timestamp"].min()
+            t1 = sdf["timestamp"].max()
+            st.caption(f"{n_pts} points · {t0:%Y-%m-%d %H:%M} → {t1:%Y-%m-%d %H:%M}")
+            _render_reel_vs_predit(sdf, template)
 
     if is_admin():
         nb1 = session_outputs().get("nb1", {})
