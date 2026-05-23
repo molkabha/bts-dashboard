@@ -47,12 +47,13 @@ PAGE_FUNCTIONS = {
     14: page_optimisation_rl,
 }
 
-ADMIN_ONLY_INDICES = {0, 1, 10, 11, 12, 13}
+ADMIN_ONLY_INDICES = {0, 1, 2, 3, 8, 10, 11, 12, 13, 14}
+ENGINEER_PAGE_INDICES = {6}
 NO_DATASET_PRELOAD = {11, 12, 13}
 
 
 def _default_home_page(role: str) -> int:
-    return 0 if role == "admin" else 2
+    return 0 if role == "admin" else 6
 
 
 def main():
@@ -103,8 +104,9 @@ def main():
     if st.session_state.pop("_goto_home", False):
         page_index = _default_home_page(role)
 
-    if role != "admin" and page_index in ADMIN_ONLY_INDICES:
-        page_index = _default_home_page(role)
+    if role != "admin":
+        if page_index not in ENGINEER_PAGE_INDICES:
+            page_index = _default_home_page(role)
 
     st.session_state["global_filters"] = filters
 

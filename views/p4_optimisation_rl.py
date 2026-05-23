@@ -24,7 +24,7 @@ from ui.utils import active_filter_label, selected_station_filter, session_outpu
 
 
 def page_optimisation_rl():
-    security_middleware.enforce()
+    security_middleware.enforce(role="admin")
     header(
         "NB3 — Decisions",
         "Actions RL, modes operationnels, economies et comparaison des agents",

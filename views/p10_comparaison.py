@@ -11,7 +11,7 @@ from ui.page_helpers import load_dashboard_df, render_conso_gouvernorat_par_peri
 
 
 def page_comparaison():
-    security_middleware.enforce()
+    security_middleware.enforce(role="admin")
     header("Comparaison", "Benchmark gouvernorats et technologies")
 
     df = load_dashboard_df()

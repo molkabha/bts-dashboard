@@ -133,7 +133,7 @@ NB_PAGE_LABELS = [
     "NB3 — Decisions",
 ]
 
-ENGINEER_PAGE_LABELS = [*NB_PAGE_LABELS, "Simulation"]
+ENGINEER_PAGE_LABELS = ["Simulation"]
 
 ADMIN_PAGE_LABELS = [
     "Accueil",
@@ -146,9 +146,6 @@ ADMIN_PAGE_LABELS = [
 ]
 
 ENGINEER_PAGE_INDEX = {
-    "NB1 — Prediction": 2,
-    "NB2 — Anomalies": 3,
-    "NB3 — Decisions": 14,
     "Simulation": 6,
 }
 
@@ -207,7 +204,7 @@ def sidebar_global(
     else:
         visible_pages = list(ENGINEER_PAGE_LABELS)
         page_map = ENGINEER_PAGE_INDEX
-        default_page = "NB1 — Prediction"
+        default_page = "Simulation"
 
     st.sidebar.markdown('<div class="sb-section">Navigation</div>', unsafe_allow_html=True)
     nav_key = f"nav_page_{role}"

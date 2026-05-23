@@ -93,7 +93,7 @@ def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFram
 
 
 def page_vue_reseau():
-    security_middleware.enforce()
+    security_middleware.enforce(role="admin")
     header("Carte", "Carte interactive et inventaire stations")
 
     df = load_dashboard_df(["mode_operation", "latitude", "longitude"])

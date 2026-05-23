@@ -46,7 +46,7 @@ def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
 
 
 def page_anomalies():
-    security_middleware.enforce()
+    security_middleware.enforce(role="admin")
     header(
         "NB2 — Anomalies",
         "Comparaison des detecteurs non supervises et anomalies detectees sur le filtre actif",

@@ -108,7 +108,7 @@ def _primary_row(latest_all: pd.DataFrame) -> pd.Series:
 def page_simulation():
     security_middleware.enforce()
     role = st.session_state.get("role", "")
-    header("Simulation", "Replay horaire — artefacts NB1 / NB2 / NB3")
+    header("Simulation", "Replay horaire sur vos stations — decisions et economies")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     st.caption(active_filter_label())

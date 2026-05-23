@@ -31,7 +31,7 @@ FEATURE_LABELS_FR = {
 
 
 def page_prediction():
-    security_middleware.enforce()
+    security_middleware.enforce(role="admin")
     header(
         "NB1 — Prediction",
         "Comparaison des modeles supervises et prevision horaire de consommation",

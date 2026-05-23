@@ -78,12 +78,7 @@ def _publish_dataset(df: pd.DataFrame, source_name: str) -> tuple[bool, str]:
 
 
 def page_upload_admin():
-    security_middleware.enforce()
-    role = st.session_state.get("role")
-    if role != "admin":
-        st.error("Acces refuse. Cette page est reservee aux administrateurs.")
-        return
-
+    security_middleware.enforce(role="admin")
     header("Import / dataset", "Importer un dataset et le publier dans tout le dashboard")
     info = active_dataset_info()
     if info:

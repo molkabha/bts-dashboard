@@ -30,6 +30,16 @@ def download_df_button(df: pd.DataFrame, name: str, label: str = "Exporter CSV")
     )
 
 
+def is_admin() -> bool:
+    return st.session_state.get("role") == "admin"
+
+
+def redirect_engineer_home() -> None:
+    """Send non-admin users to their default page (Simulation)."""
+    st.session_state["_nav_override"] = 6
+    st.rerun()
+
+
 def session_outputs() -> dict:
     outputs = st.session_state.get("data")
     if outputs is None:
