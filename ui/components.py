@@ -54,14 +54,22 @@ def kpi_card(label: str, value: str, help_text: str = "", color: str = "", delta
 
 
 def status_badge(label: str, status_type: str = "info"):
-    """Render a status badge."""
-    colors = {"info": "blue", "success": "green", "warning": "orange", "error": "red"}
-    color = colors.get(status_type, "grey")
+    """Render a status badge (couleurs alignées sur config.theme)."""
+    from config.theme import MODE_COLORS, mode_badge_css, normalize_mode_key
+
+    css_map = {
+        "success": "badge-normal",
+        "warning": "badge-warning",
+        "error": "badge-critical",
+        "eco": "badge-eco",
+        "info": "badge-info",
+    }
+    if normalize_mode_key(label) in MODE_COLORS:
+        css_class = mode_badge_css(label)
+    else:
+        css_class = css_map.get(status_type, "badge-muted")
     st.markdown(
-        (
-            f'<span style="background-color:{color}; color:white; padding:2px 8px; '
-            f'border-radius:4px; font-size:0.85em; font-weight:600;">{html.escape(label)}</span>'
-        ),
+        f'<span class="badge {css_class}">{html.escape(label)}</span>',
         unsafe_allow_html=True,
     )
 

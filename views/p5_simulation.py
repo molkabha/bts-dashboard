@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config.settings import settings
-from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import PLOTLY_DARK, PLOTLY_LIGHT, mode_color, mode_kpi_class
 from security.middleware import security_middleware
 from services.data_service import engineer_assigned_stations
 from services.nb_metrics import effective_economie_kwh, harmonize_nb3_economies
@@ -191,9 +191,9 @@ def page_simulation():
         with c2:
             kpi_card("Economie", f"{eco * settings.PRIX_KWH_TN:.2f} DT", f"{eco:.2f} kWh", "green" if eco > 0 else "gray")
         with c3:
-            kpi_card("Mode", mode, "", "eco" if mode == "ECO" else "orange")
+            kpi_card("Mode", mode, "", mode_kpi_class(mode))
 
-        color = MODE_COLORS.get(mode, "#64748b")
+        color = mode_color(mode)
         st.markdown(
             f"""
 <div class="decision-card" style="border-left-color:{color};">

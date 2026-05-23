@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from config.settings import settings
-from config.theme import MODE_COLORS
+from config.theme import mode_color
 
 from services.data_service import (
     compute_filtered_kpis,
@@ -206,7 +206,7 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_sav
     work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
     for _, row in work.sort_values("_prio").head(limit).iterrows():
         mode = display_text(row.get("mode_operation"), "NORMAL")
-        color = MODE_COLORS.get(mode, "#64748b")
+        color = mode_color(mode)
         action = resolve_row_action(row, prefer_rl=show_savings)
         saving_html = ""
         if show_savings:

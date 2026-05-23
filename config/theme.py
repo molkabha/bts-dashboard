@@ -8,9 +8,9 @@ COLOR_ACCENT = "#1e40af"
 COLOR_BG = "#f8fafc"
 COLOR_TEXT = "#0f172a"
 COLOR_MUTED = "#64748b"
-COLOR_SUCCESS = "#059669"
-COLOR_WARNING = "#d97706"
-COLOR_DANGER = "#c8102e"
+COLOR_SUCCESS = "#16a34a"
+COLOR_WARNING = "#ca8a04"
+COLOR_DANGER = "#dc2626"
 COLOR_INFO = "#3b82f6"
 COLOR_ECO = "#0ea5e9"
 COLOR_LIVE = "#22c55e"
@@ -41,12 +41,66 @@ PLOTLY_DARK = {
     }
 }
 
+# Modes opérationnels NB3 (palette unique pour tout le dashboard)
 MODE_COLORS = {
-    "ECO": "#059669",
-    "NORMAL": "#2563eb",
-    "ATTENTION": "#d97706",
-    "CRITIQUE": "#c8102e",
+    "CRITIQUE": "#dc2626",
+    "ATTENTION": "#eab308",
+    "NORMAL": "#16a34a",
+    "ECO": "#0891b2",
 }
+
+SEVERITY_COLORS = {
+    "CRITIQUE": MODE_COLORS["CRITIQUE"],
+    "ATTENTION": MODE_COLORS["ATTENTION"],
+    "FAIBLE": "#64748b",
+}
+
+STATUS_BADGE_COLORS = {
+    "success": MODE_COLORS["NORMAL"],
+    "warning": MODE_COLORS["ATTENTION"],
+    "error": MODE_COLORS["CRITIQUE"],
+    "eco": MODE_COLORS["ECO"],
+    "info": COLOR_INFO,
+}
+
+
+def normalize_mode_key(mode: str | None) -> str:
+    return str(mode or "").strip().upper()
+
+
+def mode_color(mode: str | None, default: str = "#64748b") -> str:
+    return MODE_COLORS.get(normalize_mode_key(mode), default)
+
+
+def mode_status_type(mode: str | None) -> str:
+    key = normalize_mode_key(mode)
+    if key == "CRITIQUE":
+        return "error"
+    if key == "ATTENTION":
+        return "warning"
+    if key == "NORMAL":
+        return "success"
+    if key == "ECO":
+        return "eco"
+    return "info"
+
+
+def mode_kpi_class(mode: str | None) -> str:
+    return {
+        "CRITIQUE": "red",
+        "ATTENTION": "orange",
+        "NORMAL": "green",
+        "ECO": "eco",
+    }.get(normalize_mode_key(mode), "gray")
+
+
+def mode_badge_css(mode: str | None) -> str:
+    return {
+        "CRITIQUE": "badge-critical",
+        "ATTENTION": "badge-warning",
+        "NORMAL": "badge-normal",
+        "ECO": "badge-eco",
+    }.get(normalize_mode_key(mode), "badge-muted")
 
 APP_CSS = """
 <style>
@@ -56,7 +110,8 @@ APP_CSS = """
   --tt-blue:#1e3a8a; --tt-blue-soft:#1e40af;
   --tt-bg:#f7f9fc; --tt-card:#ffffff; --tt-border:#dbe3ee;
   --tt-text:#0f172a; --tt-muted:#64748b;
-  --tt-success:#059669; --tt-warning:#d97706; --tt-danger:#c8102e;
+  --tt-success:#16a34a; --tt-warning:#eab308; --tt-danger:#dc2626;
+  --tt-mode-critique:#dc2626; --tt-mode-attention:#eab308; --tt-mode-normal:#16a34a; --tt-mode-eco:#0891b2;
   --tt-info:#3b82f6; --tt-eco:#0ea5e9; --tt-live:#22c55e;
 }
 html, body, [data-testid="stAppViewContainer"] { background:var(--tt-bg); font-family:'Inter','Segoe UI',Arial,sans-serif; }
@@ -102,10 +157,10 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 
 /* Badges */
 .badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; border:1px solid transparent; }
-.badge-normal { background:#ecfdf5; color:#047857; border-color:#a7f3d0; }
-.badge-eco { background:#e0f2fe; color:#0369a1; border-color:#bae6fd; }
-.badge-warning { background:#fef3c7; color:#92400e; border-color:#fde68a; }
-.badge-critical { background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+.badge-normal { background:#ecfdf5; color:#15803d; border-color:#86efac; }
+.badge-eco { background:#ecfeff; color:#0e7490; border-color:#67e8f9; }
+.badge-warning { background:#fefce8; color:#a16207; border-color:#fde047; }
+.badge-critical { background:#fef2f2; color:#b91c1c; border-color:#fca5a5; }
 .badge-info { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
 .badge-muted { background:#f1f5f9; color:#475569; border-color:#e2e8f0; }
 .badge-live { background:#022c22; color:#bbf7d0; border-color:#16a34a; animation:live-pulse 1.6s ease-in-out infinite; }
@@ -116,7 +171,7 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .kpi { border:1px solid var(--tt-border); border-left:3px solid var(--tt-blue-soft); border-radius:6px; padding:12px 14px; background:var(--tt-card); min-height:84px; box-shadow:0 1px 2px rgba(15,23,42,0.035); transition:border-color .12s ease,box-shadow .12s ease; }
 .kpi:hover { box-shadow:0 4px 10px rgba(15,23,42,0.055); border-color:#cbd5e1; }
 .kpi.green { border-left-color:var(--tt-success); }
-.kpi.orange { border-left-color:var(--tt-warning); }
+.kpi.orange { border-left-color:var(--tt-mode-attention); }
 .kpi.red { border-left-color:var(--tt-danger); }
 .kpi.blue { border-left-color:var(--tt-blue-soft); }
 .kpi.eco { border-left-color:var(--tt-eco); }
@@ -178,7 +233,7 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .anomaly-card .ac-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
 .anomaly-card .ac-badge { font-size:11px; font-weight:800; text-transform:uppercase; padding:2px 8px; border-radius:4px; }
 .anomaly-card .ac-badge.critique { background:#fee2e2; color:#991b1b; }
-.anomaly-card .ac-badge.attention { background:#fef3c7; color:#92400e; }
+.anomaly-card .ac-badge.attention { background:#fefce8; color:#a16207; }
 .anomaly-card .ac-badge.faible { background:#f1f5f9; color:#475569; }
 .anomaly-card .ac-station { font-weight:800; font-size:14px; color:var(--tt-text); }
 .anomaly-card .ac-detail { font-size:12.5px; color:var(--tt-muted); line-height:1.5; }
@@ -186,11 +241,11 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 
 /* Cockpit (Page 5) */
 .cockpit-clock { font-family:'Courier New',monospace; font-size:28px; font-weight:850; color:var(--tt-text); text-align:center; padding:10px; background:var(--tt-card); border:1px solid var(--tt-border); border-radius:6px; letter-spacing:2px; }
-.decision-card { border:1px solid var(--tt-border); border-left:3px solid var(--tt-success); border-radius:6px; padding:13px 14px; background:var(--tt-card); margin-bottom:8px; }
+.decision-card { border:1px solid var(--tt-border); border-left:3px solid var(--tt-mode-normal); border-radius:6px; padding:13px 14px; background:var(--tt-card); margin-bottom:8px; }
 .decision-card .dc-mode { font-size:16px; font-weight:850; margin-bottom:6px; }
 .decision-card .dc-action { font-size:13px; font-weight:700; color:var(--tt-text); margin-bottom:4px; }
 .decision-card .dc-reason { font-size:12px; color:var(--tt-muted); line-height:1.5; }
-.decision-card .dc-saving { font-size:13px; font-weight:800; color:var(--tt-success); margin-top:8px; }
+.decision-card .dc-saving { font-size:13px; font-weight:800; color:var(--tt-mode-normal); margin-top:8px; }
 
 /* Live indicator */
 .live-indicator { display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:#022c22; color:#bbf7d0; font-weight:800; font-size:12px; letter-spacing:1px; text-transform:uppercase; border:1px solid #14532d; }

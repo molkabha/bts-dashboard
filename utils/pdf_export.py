@@ -69,7 +69,7 @@ class RapportPDF(FPDF):
         self.ln(3)
 
     def anomaly_item(self, station: str, detail: str, severity: str):
-        color_map = {"CRITIQUE": (200, 16, 46), "ATTENTION": (217, 119, 6), "FAIBLE": (100, 116, 139)}
+        color_map = {"CRITIQUE": (220, 38, 38), "ATTENTION": (234, 179, 8), "FAIBLE": (100, 116, 139)}
         r, g, b = color_map.get(severity, (100, 100, 100))
         self.set_font("Helvetica", "B", 10)
         self.set_text_color(r, g, b)

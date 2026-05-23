@@ -48,7 +48,7 @@ def page_station_detail():
         f"Station {station_id}",
         f"{display_text(latest.get('gouvernorat'), '')} · {display_text(latest.get('technologie'), '')}".strip(" · "),
     )
-    status_badge(mode, "error" if mode == "CRITIQUE" else "warning" if mode == "ATTENTION" else "success")
+    status_badge(mode)
 
     ts_series = pd.to_datetime(sdf["timestamp"], errors="coerce") if "timestamp" in sdf.columns else pd.Series(dtype="datetime64[ns]")
     ts_min = ts_series.min().date() if not ts_series.dropna().empty else None
