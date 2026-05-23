@@ -116,11 +116,7 @@ def header(title: str, subtitle: str, logo_path: Path | None = None):
             info = active_dataset_info()
             dataset = str(info.get("name") or "Standard")
             filters = active_filter_label().replace("Contexte filtre : ", "")
-            meta_html = f"""
-        <div class="topbar-meta">
-          <span>Dataset : <strong>{html.escape(dataset)}</strong></span>
-          <span>Filtres : <strong>{html.escape(filters)}</strong></span>
-        </div>"""
+            
         except Exception:
             meta_html = ""
 
