@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import html
-
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from config.theme import (
-    MODE_COLORS,
-    MODE_ORDER,
     PLOTLY_DARK,
     PLOTLY_LIGHT,
     mode_category_order,
@@ -47,19 +43,6 @@ def _normalize_mode_column(plot_scores: pd.DataFrame, column: str) -> pd.DataFra
 
     out[column] = out[column].map(_clean)
     return out
-
-
-def _render_mode_legend() -> None:
-    items = "".join(
-        f'<span style="margin-right:14px;">'
-        f'<span style="color:{html.escape(MODE_COLORS[m])};font-size:16px;font-weight:900;">●</span> '
-        f'<span style="font-size:12px;font-weight:700;color:#64748b;">{html.escape(m)}</span></span>'
-        for m in MODE_ORDER
-    )
-    st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 10px 0;">{items}</div>',
-        unsafe_allow_html=True,
-    )
 
 
 def _render_mapbox(scores: pd.DataFrame, template: str):
@@ -105,7 +88,6 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
     )
 
     if color_col:
-        _render_mode_legend()
         fig = px.scatter_mapbox(
             plot_scores,
             color=color_col,
@@ -123,7 +105,7 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
         template=template,
         mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=6),
         margin=dict(l=0, r=0, t=8, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, title_text="Mode"),
+        showlegend=False,
     )
     if color_col and size_col is None:
         fig.update_traces(marker=dict(opacity=0.88, size=11))
@@ -168,9 +150,6 @@ def page_vue_reseau():
     if df.empty:
         st.warning("Aucune donnée pour les filtres actifs.")
         return
-
-    nb_stations = df["station_id"].nunique() if "station_id" in df.columns else 0
-    st.caption(f"{nb_stations} stations · CRITIQUE rouge · ATTENTION jaune · NORMAL vert · ECO bleu-vert")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     scores = get_station_map_data(df)
