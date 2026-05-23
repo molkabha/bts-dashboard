@@ -33,11 +33,14 @@ def page_accueil():
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
 
     eco_dt = kpis.get("economie_dt") or 0
+    eco_mois = kpis.get("economie_dt_mois") or 0
+    eco_label = kpis.get("economie_periode_label") or "Reseau NB3"
     co2 = kpis.get("co2_evite_t") or 0
     pct_eco = kpis.get("pct_mode_eco") or 0
     nb_stations = kpis.get("nb_stations", 0)
     conso = kpis.get("conso_totale_kwh") or 0
-    cout_mois = conso * settings.PRIX_KWH_TN / 12 if conso else 0
+    nb_mois = int(kpis.get("nb_mois_periode") or 12)
+    cout_mois = conso * settings.PRIX_KWH_TN / nb_mois if conso else 0
     nb_incidents = int((pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce") > 0.5).sum())
     dispo = max(0, 100 - (nb_incidents / max(len(df), 1) * 100))
 
@@ -46,7 +49,12 @@ def page_accueil():
         with c1:
             kpi_card("Cout flotte", f"{cout_mois:,.0f} DT/mois", "Estimation", "blue")
         with c2:
-            kpi_card("Economies realisees", f"{eco_dt:,.0f} DT", "RL + regles", "green")
+            kpi_card(
+                "Economies realisees",
+                f"{eco_dt:,.0f} DT",
+                f"{eco_label} · ~{eco_mois:,.0f} DT/mois",
+                "green",
+            )
         with c3:
             kpi_card("CO2 evite", f"{co2:.1f} t", "Equivalent", "eco")
         with c4:
@@ -62,14 +70,15 @@ def page_accueil():
             if "timestamp" in df.columns and "mois" in df.columns:
                 monthly = df.copy()
                 monthly["timestamp"] = pd.to_datetime(monthly["timestamp"], errors="coerce")
-                agg_cols = {"conso": ("consommation_kwh", "sum")}
-                if "economie_estimee_kwh" in monthly.columns:
-                    agg_cols["eco_expert"] = ("economie_estimee_kwh", "sum")
-                if "economie_rl_kwh" in monthly.columns:
-                    agg_cols["eco_rl"] = ("economie_rl_kwh", "sum")
-                if "economie_kwh" in monthly.columns:
-                    agg_cols["eco"] = ("economie_kwh", "sum")
-                monthly = monthly.groupby(monthly["timestamp"].dt.to_period("M")).agg(**agg_cols).reset_index()
+                combinee_pct = float(kpis.get("economie_combinee_pct") or 0) / 100
+                rl_pct = float(kpis.get("economie_rl_pct") or 0) / 100
+                monthly = monthly.groupby(monthly["timestamp"].dt.to_period("M")).agg(
+                    conso=("consommation_kwh", "sum"),
+                ).reset_index()
+                if combinee_pct > 0:
+                    monthly["eco_expert"] = monthly["conso"] * combinee_pct
+                if rl_pct > 0:
+                    monthly["eco_rl"] = monthly["conso"] * rl_pct
                 monthly["periode"] = monthly["timestamp"].astype(str)
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["conso"], name="Consommation", line=dict(color="#1e3a8a")))
