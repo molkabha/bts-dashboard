@@ -12,6 +12,7 @@ from security.middleware import security_middleware
 from services.data_service import load_nb1_models_comparison, load_nb1_production_metrics
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_PREDICTION
+from ui.formatting import display_text
 from ui.page_helpers import load_dashboard_df
 from ui.utils import active_filter_label, session_outputs
 
@@ -34,7 +35,7 @@ def page_prediction():
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     nb1 = session_outputs().get("nb1", {})
     prod = load_nb1_production_metrics()
-    prod_name = str(prod.get("model", "—"))
+    prod_name = display_text(prod.get("model"))
     r2 = prod.get("r2")
     rmse = prod.get("rmse")
 

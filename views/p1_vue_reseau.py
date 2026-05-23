@@ -9,6 +9,7 @@ import streamlit as st
 
 from security.middleware import security_middleware
 from ui.components import header, section
+from ui.formatting import display_text
 from ui.page_helpers import get_station_map_data, load_dashboard_df
 from ui.utils import active_filter_label
 
@@ -50,13 +51,16 @@ def _render_folium_map(scores: pd.DataFrame):
         if pd.isna(lat) or pd.isna(lon):
             continue
         station = str(row.get("station_id", ""))
-        mode = str(row.get(mode_col, "NORMAL"))
+        mode = display_text(row.get(mode_col), "NORMAL")
         color = color_map.get(mode, "#2563eb")
         conso = float(row.get(conso_col, 3) or 3)
+        gov = display_text(row.get("gouvernorat"), "")
+        tech = display_text(row.get("technologie"), "")
+        loc = f"{gov} | {tech}".strip(" |") if gov or tech else "—"
         popup_html = f"""
         <div style="font-family:Inter,sans-serif;min-width:200px;">
             <b>{html.escape(station)}</b><br>
-            {html.escape(str(row.get('gouvernorat','')))} | {html.escape(str(row.get('technologie','')))}<br>
+            {html.escape(loc)}<br>
             Mode: <span style="color:{color};font-weight:700;">{html.escape(mode)}</span><br>
             Conso: {conso:.1f} kWh
         </div>"""

@@ -11,6 +11,7 @@ from security.middleware import security_middleware
 from services.data_service import load_nb2_network_stats
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_ANOMALIES
+from ui.formatting import format_dataframe_for_display
 from ui.page_helpers import load_dashboard_df
 from ui.utils import active_filter_label
 
@@ -78,7 +79,7 @@ def page_anomalies():
                 "ecart_pct": "Ecart %",
                 "mode_operation": "Mode",
             })
-            st.dataframe(show, width="stretch", hide_index=True)
+            st.dataframe(format_dataframe_for_display(show), width="stretch", hide_index=True)
 
     if {"ecart_pct", anom_col}.issubset(work.columns):
         with section("Vue d'ensemble"):

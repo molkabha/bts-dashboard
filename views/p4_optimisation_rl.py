@@ -8,13 +8,10 @@ import streamlit as st
 
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import (
-    build_nb3_profil_horaire,
-    compute_filtered_kpis,
-    load_nb3_rapport,
-)
+from services.data_service import build_nb3_profil_horaire, compute_filtered_kpis
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_DECISIONS
+from ui.formatting import display_text
 from ui.page_helpers import (
     latest_per_station,
     load_dashboard_df,
@@ -41,32 +38,24 @@ def page_optimisation_rl():
         return
 
     kpis = compute_filtered_kpis(df)
-    rapport = load_nb3_rapport() or nb3
-    economies = rapport.get("economies", {}) if isinstance(rapport, dict) else {}
-    combinee = economies.get("5 — Combinée (1+2+3+4)", {}) if isinstance(economies, dict) else {}
 
     c1, c2, c3 = st.columns(3)
     with c1:
         kpi_card(
             "Economies",
-            f"{float(combinee.get('economie_dt', kpis.get('economie_dt') or 0)):,.0f} DT",
-            "",
+            f"{float(kpis.get('economie_dt') or 0):,.0f} DT",
+            kpis.get("economie_periode_label", "Periode filtree"),
             "green",
         )
     with c2:
         kpi_card(
             "kWh economises",
-            f"{float(combinee.get('economie_kwh', kpis.get('economie_kwh') or 0)):,.0f}",
-            f"{float(combinee.get('economie_pct', kpis.get('economie_combinee_pct') or 0)):.1f}%",
+            f"{float(kpis.get('economie_kwh') or 0):,.0f}",
+            f"{float(kpis.get('economie_combinee_pct') or 0):.1f}%",
             "eco",
         )
     with c3:
-        kpi_card(
-            "Agent RL",
-            str(rapport.get("meilleur_agent", kpis.get("meilleur_agent_rl", "—"))),
-            "",
-            "gray",
-        )
+        kpi_card("Agent RL", display_text(kpis.get("meilleur_agent_rl")), "", "gray")
 
     if "station_id" in df.columns:
         with section("Actions par station"):

@@ -39,7 +39,7 @@ def page_accueil():
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         eco_dt = kpis.get("economie_dt") or 0
-        kpi_card("Economies", f"{eco_dt:,.0f} DT", "Estimation NB3", "green")
+        kpi_card("Economies", f"{eco_dt:,.0f} DT", kpis.get("economie_periode_label", "Periode filtree"), "green")
     with c2:
         kpi_card("CO2 evite", f"{float(kpis.get('co2_evite_t') or 0):.1f} t", "", "eco")
     with c3:

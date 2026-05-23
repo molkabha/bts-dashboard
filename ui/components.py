@@ -31,9 +31,11 @@ def image_data_uri(path: Path) -> str:
 
 
 def kpi_card(label: str, value: str, help_text: str = "", color: str = "", delta: str = "", delta_class: str = ""):
+    from ui.formatting import sanitize_kpi_value
+
     safe_label = html.escape(label)
-    safe_value = html.escape(value)
-    safe_help = html.escape(help_text)
+    safe_value = html.escape(sanitize_kpi_value(value))
+    safe_help = html.escape(sanitize_kpi_value(help_text, default=""))
     safe_color = html.escape(color)
     delta_html = f'<div class="kpi-delta {delta_class}">{html.escape(delta)}</div>' if delta else ""
     st.markdown(

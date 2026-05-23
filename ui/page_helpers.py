@@ -17,6 +17,7 @@ from services.data_service import (
     load_filtered_main_data,
     load_station_map_data,
 )
+from ui.formatting import display_text
 from ui.utils import apply_current_admin_filters, filters_cache_key
 
 DEFAULT_COLS = [
@@ -200,9 +201,11 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12) -> None:
     work = latest.copy()
     work["_prio"] = work["mode_operation"].astype(str).map(lambda m: prio.get(m, 9))
     for _, row in work.sort_values("_prio").head(limit).iterrows():
-        mode = str(row.get("mode_operation", "NORMAL"))
+        mode = display_text(row.get("mode_operation"), "NORMAL")
         color = MODE_COLORS.get(mode, "#64748b")
-        action = str(row.get("action_rl", row.get("action_proposee", row.get("action_principale", "—"))))
+        action = display_text(
+            row.get("action_rl") or row.get("action_proposee") or row.get("action_principale"),
+        )
         eco_kwh = float(row.get("economie_rl_kwh", row.get("economie_estimee_kwh", 0)) or 0)
         eco_dt = eco_kwh * settings.PRIX_KWH_TN
         sid = str(row.get("station_id", ""))

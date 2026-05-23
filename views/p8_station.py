@@ -10,6 +10,7 @@ from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import apply_time_filters, load_nb2_network_stats
 from ui.components import header, status_badge
+from ui.formatting import display_text, format_dataframe_for_display
 from ui.page_helpers import load_dashboard_df
 from ui.utils import merged_active_filters
 
@@ -42,8 +43,11 @@ def page_station_detail():
         return
 
     latest = sdf.sort_values("timestamp").iloc[-1] if "timestamp" in sdf.columns else sdf.iloc[-1]
-    mode = str(latest.get("mode_operation", "NORMAL"))
-    header(f"Station {station_id}", f"{latest.get('gouvernorat', '')} · {latest.get('technologie', '')}")
+    mode = display_text(latest.get("mode_operation"), "NORMAL")
+    header(
+        f"Station {station_id}",
+        f"{display_text(latest.get('gouvernorat'), '')} · {display_text(latest.get('technologie'), '')}".strip(" · "),
+    )
     status_badge(mode, "error" if mode == "CRITIQUE" else "warning" if mode == "ATTENTION" else "success")
 
     ts_series = pd.to_datetime(sdf["timestamp"], errors="coerce") if "timestamp" in sdf.columns else pd.Series(dtype="datetime64[ns]")
@@ -80,4 +84,4 @@ def page_station_detail():
             st.caption("Aucune alerte sur la periode.")
         else:
             cols = [c for c in ["timestamp", "anomalie_score_ensemble", "mode_operation"] if c in alerts.columns]
-            st.dataframe(alerts[cols], width="stretch", hide_index=True)
+            st.dataframe(format_dataframe_for_display(alerts[cols]), width="stretch", hide_index=True)
