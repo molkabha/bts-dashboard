@@ -12,7 +12,12 @@ import streamlit as st
 from config.settings import settings
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import artifact_table, compute_filtered_kpis, load_filtered_main_data
+from services.data_service import (
+    build_nb3_profil_horaire,
+    compute_filtered_kpis,
+    load_filtered_main_data,
+    load_nb3_rapport,
+)
 from ui.components import context_badge, header, kpi_card, render_artifact_gallery, section
 from ui.utils import apply_current_admin_filters, filter_artifact_dataframe, selected_station_filter, session_outputs
 
@@ -50,64 +55,57 @@ def page_optimisation_rl():
         return
 
     kpis = compute_filtered_kpis(df)
-    nb_stations = kpis.get("nb_stations", 87)
+    rapport = load_nb3_rapport() or nb3
+    economies = rapport.get("economies", {}) if isinstance(rapport, dict) else {}
+    combinee = economies.get("5 — Combinée (1+2+3+4)", {}) if isinstance(economies, dict) else {}
 
-    # Section 1 - Interactive savings simulator
-    with section("Simulateur d'Economies Interactif"):
-        st.markdown("**Et si vous activiez ces optimisations ?**")
-        c1, c2 = st.columns(2)
-        with c1:
-            sleep_stations = st.slider(
-                "Stations en sleep mode nocturne", 0, int(nb_stations), int(
-                    nb_stations // 2), key="opt_sleep")
-            reduction_pct = st.slider("Reduction puissance emission (%)", 0, 100, 30, key="opt_reduc")
-        with c2:
-            free_cooling = st.toggle("Free cooling active", value=True, key="opt_cooling")
-            eco_weekends = st.toggle("Mode eco weekends et feries", value=True, key="opt_weekends")
-
-        conso_base = float(kpis.get("conso_totale_kwh", 0) or 0)
-        if conso_base == 0:
-            conso_base = 500000
-        annualization = 12
-
-        eco_sleep = sleep_stations * 1.8 * 6 * 365
-        eco_reduc = conso_base * annualization * (reduction_pct / 100) * 0.08
-        eco_cool = conso_base * annualization * 0.15 if free_cooling else 0
-        eco_we = conso_base * annualization * 0.05 if eco_weekends else 0
-        eco_total_kwh = eco_sleep + eco_reduc + eco_cool + eco_we
-        eco_total_dt = eco_total_kwh * settings.PRIX_KWH_TN
-        co2_evite = eco_total_kwh * settings.FACTEUR_CO2_TN / 1000
-        roi_months = 4.2 if eco_total_kwh > 0 else 0
-
+    with section("Economies reseau (NB3 — rapport_optimisation.json)"):
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            kpi_card("Economie annuelle", f"{eco_total_dt:,.0f} DT", "Projection", "green")
+            kpi_card(
+                "Economie combinee",
+                f"{float(combinee.get('economie_dt', kpis.get('economie_dt') or 0)):,.0f} DT",
+                "Strategies 1+2+3+4",
+                "green",
+            )
         with c2:
-            kpi_card("Energie economisee", f"{eco_total_kwh:,.0f} kWh/an", "", "eco")
+            kpi_card(
+                "Energie economisee",
+                f"{float(combinee.get('economie_kwh', kpis.get('economie_kwh') or 0)):,.0f} kWh",
+                f"{float(combinee.get('economie_pct', kpis.get('economie_combinee_pct') or 0)):.1f}% conso",
+                "eco",
+            )
         with c3:
-            kpi_card("CO2 evite", f"{co2_evite:.1f} t/an", "", "blue")
+            kpi_card(
+                "CO2 evite",
+                f"{float(combinee.get('co2_evite_t', kpis.get('co2_evite_t') or 0)):.1f} t",
+                "Reseau",
+                "blue",
+            )
         with c4:
-            kpi_card("Retour sur investissement", f"{roi_months:.1f} mois", "", "gray")
+            kpi_card(
+                "Meilleur agent RL",
+                str(rapport.get("meilleur_agent", kpis.get("meilleur_agent_rl", "—"))),
+                f"{float(kpis.get('economie_rl_pct') or 0):.1f}%",
+                "gray",
+            )
+        if isinstance(economies, dict) and economies:
+            strat_rows = []
+            for label, stats in economies.items():
+                if isinstance(stats, dict) and stats.get("economie_kwh") is not None:
+                    strat_rows.append({
+                        "Strategie": label,
+                        "kWh": stats.get("economie_kwh"),
+                        "%": stats.get("economie_pct"),
+                        "DT": stats.get("economie_dt"),
+                    })
+            if strat_rows:
+                st.dataframe(pd.DataFrame(strat_rows), width="stretch", hide_index=True)
 
-        st.caption(f"Calcul base sur les donnees reelles, tarif STEG haute tension {settings.PRIX_KWH_TN} DT/kWh, "
-                   f"facteur CO2 reseau TN {settings.FACTEUR_CO2_TN} kg/kWh")
-
-    # Section 2 - 24h profile
     with section("Profil Horaire 24h"):
-        profil_nb3 = filter_artifact_dataframe(artifact_table("streamlit_profil_horaire.parquet"))
-        if selected_station and "heure" in df.columns and "consommation_kwh" in df.columns:
-            context_badge("Profil recalcule", f"Station {selected_station}", "success")
-            hourly = df.groupby("heure").agg(conso_moy=("consommation_kwh", "mean")).reset_index()
-            if "economie_estimee_kwh" in df.columns:
-                hourly["conso_optimisee_moy"] = hourly["conso_moy"] - df.groupby("heure")["economie_estimee_kwh"].apply(
-                    lambda x: pd.to_numeric(x, errors="coerce").mean()).reindex(hourly["heure"]).fillna(0).to_numpy()
-            if "economie_rl_kwh" in df.columns:
-                hourly["conso_optimisee_rl_moy"] = hourly["conso_moy"] - df.groupby("heure")["economie_rl_kwh"].apply(
-                    lambda x: pd.to_numeric(x, errors="coerce").mean()).reindex(hourly["heure"]).fillna(0).to_numpy()
-        elif not profil_nb3.empty:
-            hourly = profil_nb3.copy()
-        else:
-            hourly = pd.DataFrame()
+        hourly = build_nb3_profil_horaire(df)
+        if selected_station:
+            context_badge("Profil NB3", f"Filtre station {selected_station}", "success")
 
         if not hourly.empty:
             fig = go.Figure()
@@ -128,21 +126,17 @@ def page_optimisation_rl():
                 st.dataframe(hourly, width="stretch", hide_index=True)
 
     with st.expander("Series temporelles avancees", expanded=False):
-        ts_nb3 = filter_artifact_dataframe(artifact_table("streamlit_timeseries.parquet"))
-        if selected_station and "timestamp" in df.columns and "consommation_kwh" in df.columns:
-            ts_nb3 = df.copy()
-            ts_nb3["timestamp"] = pd.to_datetime(ts_nb3["timestamp"], errors="coerce")
-            agg = {"consommation_kwh": "sum"}
-            if "economie_estimee_kwh" in ts_nb3.columns:
-                agg["economie_estimee_kwh"] = "sum"
-            if "economie_rl_kwh" in ts_nb3.columns:
-                agg["economie_rl_kwh"] = "sum"
-            ts_nb3 = ts_nb3.groupby("timestamp", as_index=False).agg(agg).rename(columns={
-                "consommation_kwh": "conso_tot",
-                "economie_estimee_kwh": "economie_tot",
-                "economie_rl_kwh": "economie_rl_tot",
+        from services.data_service import build_nb3_monthly_series
+
+        ts_nb3 = build_nb3_monthly_series(df, kpis)
+        if not ts_nb3.empty:
+            ts_nb3 = ts_nb3.rename(columns={
+                "conso": "conso_tot",
+                "eco_expert": "economie_tot",
+                "eco_rl": "economie_rl_tot",
             })
-            context_badge("Serie recalculee", f"Station {selected_station}", "success")
+            if "timestamp" not in ts_nb3.columns and "periode" in ts_nb3.columns:
+                ts_nb3["timestamp"] = ts_nb3["periode"]
 
         if not ts_nb3.empty and "timestamp" in ts_nb3.columns:
             fig_ts = go.Figure()

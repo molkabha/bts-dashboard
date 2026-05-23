@@ -10,7 +10,7 @@ import streamlit as st
 
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import artifact_image_path
+from services.data_service import artifact_image_path, load_nb1_production_metrics
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
 from ui.utils import session_outputs
@@ -52,27 +52,19 @@ def page_prediction():
         horizon = st.selectbox("Horizon de prediction", ["6h", "12h", "24h"], index=2, key="pred_horizon")
     horizon_h = {"6h": 6, "12h": 12, "24h": 24}[horizon]
 
-    # KPI production
-    best_r2, best_rmse, best_mae = None, None, None
-    if {"consommation_kwh", "conso_predite"}.issubset(df.columns):
-        vdf = df.dropna(subset=["consommation_kwh", "conso_predite"])
-        yt = pd.to_numeric(vdf["consommation_kwh"], errors="coerce")
-        yp = pd.to_numeric(vdf["conso_predite"], errors="coerce")
-        valid = yt.notna() & yp.notna()
-        if valid.sum() > 0:
-            yt, yp = yt[valid], yp[valid]
-            best_rmse = float(np.sqrt(((yt - yp) ** 2).mean()))
-            best_mae = float((yt - yp).abs().mean())
-            ss_tot = ((yt - yt.mean()) ** 2).sum()
-            best_r2 = float(1 - (((yt - yp) ** 2).sum() / ss_tot)) if ss_tot else 0.0
+    nb1_metrics = load_nb1_production_metrics()
+    model_name = str(nb1_metrics.get("model", "LightGBM"))
+    best_r2 = nb1_metrics.get("r2")
+    best_rmse = nb1_metrics.get("rmse")
+    best_mae = nb1_metrics.get("mae")
 
     k1, k2, k3 = st.columns(3)
     with k1:
-        kpi_card("R2", f"{best_r2:.3f}" if best_r2 is not None else "—", "Production", "green")
+        kpi_card("R2", f"{float(best_r2):.3f}" if best_r2 is not None else "—", model_name, "green")
     with k2:
-        kpi_card("RMSE", f"{best_rmse:.2f} kWh" if best_rmse is not None else "—", "", "blue")
+        kpi_card("RMSE", f"{float(best_rmse):.3f} kWh" if best_rmse is not None else "—", "Test NB1", "blue")
     with k3:
-        kpi_card("MAE", f"{best_mae:.2f} kWh" if best_mae is not None else "—", "", "gray")
+        kpi_card("MAE", f"{float(best_mae):.3f} kWh" if best_mae is not None else "—", "Test NB1", "gray")
 
     with section(f"Courbe predite vs reelle ({horizon})"):
         if station and "timestamp" in df.columns:
@@ -90,12 +82,6 @@ def page_prediction():
 
     with section("Top 5 facteurs (langage metier)"):
         shap_data = nb1.get("feature_importance", nb1.get("shap_values", {}))
-        if not shap_data and not df.empty:
-            candidates = list(FEATURE_LABELS_FR.keys())
-            valid = [c for c in candidates if c in df.columns]
-            if valid:
-                corr = df[valid + ["consommation_kwh"]].apply(pd.to_numeric, errors="coerce").corr()["consommation_kwh"]
-                shap_data = corr.drop("consommation_kwh").abs().to_dict()
         if shap_data:
             items = sorted(shap_data.items(), key=lambda x: abs(float(x[1])), reverse=True)[:5]
             labels = [FEATURE_LABELS_FR.get(k, k) for k, _ in items]
@@ -104,6 +90,8 @@ def page_prediction():
             fig.update_layout(template=template, yaxis=dict(autorange="reversed"), height=220,
                               margin=dict(l=0, r=0, t=10, b=0))
             st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Importance des variables disponible dans resultats_modeles.json (NB1) ou via les graphiques SHAP ci-dessous.")
 
     with st.expander("SHAP — explication locale (station selectionnee)"):
         wf = artifact_image_path("shap_waterfall.png")

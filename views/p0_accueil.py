@@ -12,7 +12,7 @@ from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
-from services.data_service import compute_filtered_kpis
+from services.data_service import build_nb3_monthly_series, compute_filtered_kpis, load_nb2_network_stats
 
 
 def page_accueil():
@@ -41,8 +41,12 @@ def page_accueil():
     conso = kpis.get("conso_totale_kwh") or 0
     nb_mois = int(kpis.get("nb_mois_periode") or 12)
     cout_mois = conso * settings.PRIX_KWH_TN / nb_mois if conso else 0
-    nb_incidents = int((pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce") > 0.5).sum())
-    dispo = max(0, 100 - (nb_incidents / max(len(df), 1) * 100))
+    nb2_stats = load_nb2_network_stats()
+    seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
+    scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
+    nb_incidents = int((scores > seuil).sum())
+    pct_anom_nb2 = float(nb2_stats.get("pct_anomalies_reseau") or kpis.get("pct_anomalies") or 0)
+    dispo = max(0, 100 - pct_anom_nb2)
 
     with section("Indicateurs strategiques"):
         c1, c2, c3, c4, c5, c6 = st.columns(6)
@@ -67,29 +71,17 @@ def page_accueil():
     c1, c2 = st.columns(2)
     with c1:
         with section("Tendance mensuelle"):
-            if "timestamp" in df.columns and "mois" in df.columns:
-                monthly = df.copy()
-                monthly["timestamp"] = pd.to_datetime(monthly["timestamp"], errors="coerce")
-                combinee_pct = float(kpis.get("economie_combinee_pct") or 0) / 100
-                rl_pct = float(kpis.get("economie_rl_pct") or 0) / 100
-                monthly = monthly.groupby(monthly["timestamp"].dt.to_period("M")).agg(
-                    conso=("consommation_kwh", "sum"),
-                ).reset_index()
-                if combinee_pct > 0:
-                    monthly["eco_expert"] = monthly["conso"] * combinee_pct
-                if rl_pct > 0:
-                    monthly["eco_rl"] = monthly["conso"] * rl_pct
-                monthly["periode"] = monthly["timestamp"].astype(str)
+            monthly = build_nb3_monthly_series(df, kpis)
+            if not monthly.empty and "periode" in monthly.columns:
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["conso"], name="Consommation", line=dict(color="#1e3a8a")))
                 if "eco_expert" in monthly.columns:
                     fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco_expert"], name="Economie experte (NB3)", line=dict(color="#3b82f6")))
                 if "eco_rl" in monthly.columns:
                     fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco_rl"], name="Economie RL (NB3)", line=dict(color="#059669")))
-                elif "eco" in monthly.columns:
-                    fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco"], name="Economies NB3", line=dict(color="#059669")))
                 fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
                 st.plotly_chart(fig, width="stretch")
+                st.caption("Source : streamlit_timeseries.parquet (NB3) ou agregats filtres du dataset actif.")
 
     with c2:
         with section("Modes operationnels"):

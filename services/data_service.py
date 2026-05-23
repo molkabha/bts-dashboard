@@ -962,7 +962,134 @@ def engineer_assigned_stations(engineer_user: str | None = None) -> list[str]:
 @st.cache_data(ttl=300, show_spinner=False)
 def load_nb3_network_kpi() -> dict:
     """Canonical network KPIs exported by notebook NB3 (kpi_reseau.json)."""
-    return read_json(artifact_path("kpi_reseau.json"))
+    kpi = read_json(artifact_path("kpi_reseau.json"))
+    if kpi:
+        return kpi
+    rapport = read_json(artifact_path("rapport_optimisation.json"))
+    return rapport.get("kpi_reseau", {}) if isinstance(rapport, dict) else {}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_nb1_production_metrics() -> dict:
+    """Best production model metrics from NB1 resultats_modeles.json."""
+    nb1 = read_json(artifact_path("resultats_modeles.json"))
+    if not isinstance(nb1, dict) or not nb1:
+        return {}
+    for name in ("LightGBM", "XGBoost", "Random Forest"):
+        block = nb1.get(name)
+        if isinstance(block, dict) and block.get("r2") is not None:
+            return {"model": name, **block}
+    best_name, best_block = max(
+        ((k, v) for k, v in nb1.items() if isinstance(v, dict) and v.get("r2") is not None),
+        key=lambda item: float(item[1]["r2"]),
+        default=(None, None),
+    )
+    if best_block:
+        return {"model": best_name, **best_block}
+    return {}
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_nb2_network_stats() -> dict:
+    """NB2 detector summary + network anomaly rate from NB3 KPI."""
+    nb2 = read_json(artifact_path("resultats_anomalie.json"))
+    kpi = load_nb3_network_kpi()
+    pct = float(kpi.get("pct_anomalies")) if kpi and kpi.get("pct_anomalies") is not None else None
+    if pct is None and isinstance(nb2, dict):
+        test_pcts = [
+            float(v.get("pct_test"))
+            for v in nb2.values()
+            if isinstance(v, dict) and v.get("pct_test") not in (None, "")
+        ]
+        pct = sum(test_pcts) / len(test_pcts) if test_pcts else None
+    return {
+        "seuil_ensemble": 0.25,
+        "pct_anomalies_reseau": pct,
+        "detecteurs": nb2 if isinstance(nb2, dict) else {},
+    }
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_nb3_rapport() -> dict:
+    """Full NB3 optimisation report (rapport_optimisation.json)."""
+    return read_json(artifact_path("rapport_optimisation.json"))
+
+
+def build_nb3_profil_horaire(df: pd.DataFrame) -> pd.DataFrame:
+    """24h profile from filtered NB3 rows, else notebook export parquet."""
+    if not df.empty and {"heure", "consommation_kwh"}.issubset(df.columns):
+        work = harmonize_nb3_economies(df)
+        hourly = work.groupby("heure", as_index=False).agg(conso_moy=("consommation_kwh", "mean"))
+        if "economie_estimee_kwh" in work.columns:
+            eco_by_h = work.groupby("heure")["economie_estimee_kwh"].apply(
+                lambda s: pd.to_numeric(s, errors="coerce").mean(),
+            )
+            hourly["conso_optimisee_moy"] = hourly["conso_moy"] - eco_by_h.reindex(hourly["heure"]).fillna(0).to_numpy()
+        if "economie_rl_kwh" in work.columns:
+            rl_by_h = work.groupby("heure")["economie_rl_kwh"].apply(
+                lambda s: pd.to_numeric(s, errors="coerce").mean(),
+            )
+            hourly["conso_optimisee_rl_moy"] = hourly["conso_moy"] - rl_by_h.reindex(hourly["heure"]).fillna(0).to_numpy()
+        return hourly
+
+    profil = artifact_table("streamlit_profil_horaire.parquet")
+    return profil if isinstance(profil, pd.DataFrame) else pd.DataFrame()
+
+
+def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.DataFrame:
+    """Monthly conso/eco series from NB3 streamlit_timeseries or filtered main data."""
+    ts = artifact_table("streamlit_timeseries.parquet")
+    if isinstance(ts, pd.DataFrame) and not ts.empty and "timestamp" in ts.columns:
+        ts = ts.copy()
+        ts["timestamp"] = pd.to_datetime(ts["timestamp"], errors="coerce")
+        if not df.empty and "timestamp" in df.columns:
+            ts_bounds = pd.to_datetime(df["timestamp"], errors="coerce")
+            ts_min, ts_max = ts_bounds.min(), ts_bounds.max()
+            if pd.notna(ts_min) and pd.notna(ts_max):
+                ts = ts[(ts["timestamp"] >= ts_min) & (ts["timestamp"] <= ts_max)]
+        conso_col = "conso_tot" if "conso_tot" in ts.columns else "consommation_kwh"
+        agg_map = {conso_col: "sum"}
+        if "economie_tot" in ts.columns:
+            agg_map["economie_tot"] = "sum"
+        if "economie_rl_tot" in ts.columns:
+            agg_map["economie_rl_tot"] = "sum"
+        monthly = ts.groupby(ts["timestamp"].dt.to_period("M")).agg(agg_map).reset_index()
+        monthly = monthly.rename(columns={
+            conso_col: "conso",
+            "economie_tot": "eco_expert",
+            "economie_rl_tot": "eco_rl",
+        })
+        monthly["periode"] = monthly["timestamp"].astype(str)
+        return monthly
+
+    if df.empty or "timestamp" not in df.columns:
+        return pd.DataFrame()
+
+    work = harmonize_nb3_economies(df)
+    work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
+    monthly = work.groupby(work["timestamp"].dt.to_period("M"), as_index=False).agg(
+        conso=("consommation_kwh", "sum"),
+    )
+    kpis = kpis or {}
+    combinee_pct = float(kpis.get("economie_combinee_pct") or 0) / 100
+    rl_pct = float(kpis.get("economie_rl_pct") or 0) / 100
+    if combinee_pct > 0:
+        monthly["eco_expert"] = monthly["conso"] * combinee_pct
+    if rl_pct > 0:
+        monthly["eco_rl"] = monthly["conso"] * rl_pct
+    monthly["periode"] = monthly["timestamp"].astype(str)
+    return monthly
+
+
+def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Station map/scores: prefer NB3 streamlit_score_stations, else compute from df."""
+    carte = artifact_table("streamlit_score_stations.parquet")
+    if isinstance(carte, pd.DataFrame) and not carte.empty and "station_id" in carte.columns:
+        if df.empty or "station_id" not in df.columns:
+            return carte
+        keep = carte[carte["station_id"].astype(str).isin(df["station_id"].astype(str).unique())]
+        return keep if not keep.empty else carte
+    return station_summary_from_df(df)
 
 
 def _dataset_month_count(df: pd.DataFrame) -> int:
@@ -1086,6 +1213,7 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
             if nb3_kpi and nb3_kpi.get("economie_rl_pct") is not None
             else ((eco_rl / conso * 100) if eco_rl is not None and conso else None)
         ),
+        "meilleur_agent_rl": nb3_kpi.get("meilleur_agent_rl") if nb3_kpi else None,
         "co2_evite_t": co2_t,
         "economie_dt": eco_dt,
         "economie_dt_mois": economie_dt_mois,

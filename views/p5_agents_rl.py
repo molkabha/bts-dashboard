@@ -9,6 +9,7 @@ import streamlit as st
 from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, render_artifact_gallery, section
+from services.data_service import load_nb3_network_kpi
 from ui.utils import session_outputs
 
 
@@ -39,16 +40,22 @@ def page_agents_rl():
     if "economie_pct" in df_rl.columns:
         df_rl = df_rl.sort_values("economie_pct", ascending=False).reset_index(drop=True)
 
-    best = df_rl.iloc[0]
-    agent_name = str(best.get("Agent", "Q-Learning"))
+    kpi = load_nb3_network_kpi()
+    best_name = str(nb3.get("meilleur_agent") or kpi.get("meilleur_agent_rl") or "")
+    if best_name:
+        match = df_rl[df_rl["Agent"].astype(str) == best_name]
+        best = match.iloc[0] if not match.empty else df_rl.iloc[0]
+    else:
+        best = df_rl.iloc[0]
+    agent_name = str(best.get("Agent", best_name or "—"))
     eco_pct = float(best.get("economie_pct", 0) or 0)
-    confiance = min(99, max(50, 100 - float(best.get("pct_violations", 10) or 10) * 2))
+    viol = float(best.get("pct_violations", 0) or 0)
 
     st.markdown(f"""
 <div class="info-box" style="margin-bottom:16px;">
-  <div class="ib-title">Agent actif</div>
+  <div class="ib-title">Agent retenu (NB3)</div>
   <div class="ib-body" style="font-size:15px;font-weight:800;">
-    {agent_name} | Decision : Mode ECO | Economie : {eco_pct:.0f}% | Confiance : {confiance:.0f}%
+    {agent_name} | Economie : {eco_pct:.1f}% | Violations QoS : {viol:.1f}%
   </div>
 </div>
 """, unsafe_allow_html=True)

@@ -9,7 +9,12 @@ import streamlit as st
 from config.settings import settings
 from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import engineer_assigned_stations, load_filtered_main_data
+from services.data_service import (
+    build_nb3_profil_horaire,
+    engineer_assigned_stations,
+    load_filtered_main_data,
+    load_nb3_network_kpi,
+)
 from services.decision_service import MoteurDecisionEnergie
 from ui.components import header, kpi_card, section
 from ui.utils import apply_current_admin_filters
@@ -34,18 +39,26 @@ def page_sandbox():
         st.warning("Aucune donnee pour la simulation.")
         return
 
-    baseline = float(pd.to_numeric(df["consommation_kwh"], errors="coerce").mean() or 3) * 24
+    kpi = load_nb3_network_kpi()
+    nb_stations_max = int(kpi.get("nb_stations") or df["station_id"].nunique() or 1)
+    profil_ref = build_nb3_profil_horaire(df)
+    baseline = float(profil_ref["conso_moy"].sum()) if not profil_ref.empty and "conso_moy" in profil_ref.columns else (
+        float(pd.to_numeric(df["consommation_kwh"], errors="coerce").mean() or 0) * 24
+    )
+
+    st.caption("Scenario what-if local. Les references NB3 (KPI reseau, profil horaire) proviennent des artefacts notebook.")
 
     with section("Parametres du scenario"):
         c1, c2, c3 = st.columns(3)
         with c1:
-            nb_eco = st.slider("Stations en mode ECO", 0, 87, 30)
+            nb_eco = st.slider("Stations en mode ECO", 0, nb_stations_max, min(30, nb_stations_max))
         with c2:
             heure_debut, heure_fin = st.slider("Plage horaire", 0, 23, (0, 6))
         with c3:
             duree_h = st.slider("Duree simulation (h)", 1, 24, 24)
 
-    reduction = nb_eco / max(df["station_id"].nunique(), 1) * 0.18
+    pct_eco_ref = float(kpi.get("pct_mode_eco") or 26.7) / 100
+    reduction = nb_eco / max(df["station_id"].nunique(), 1) * pct_eco_ref
     sim_conso = baseline * (1 - reduction) * (duree_h / 24)
     eco_kwh = baseline * reduction * (duree_h / 24)
     eco_dt = eco_kwh * settings.PRIX_KWH_TN
@@ -60,11 +73,15 @@ def page_sandbox():
         kpi_card("CO2 evite", f"{co2_kg/1000:.2f} t", "", "blue")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
-    hours = list(range(24))
-    base_profile = [baseline / 24] * 24
-    sim_profile = [v * (1 - reduction if heure_debut <= h <= heure_fin else 1) for h, v in enumerate(base_profile)]
+    if not profil_ref.empty and "heure" in profil_ref.columns and "conso_moy" in profil_ref.columns:
+        hours = profil_ref["heure"].tolist()
+        base_profile = profil_ref["conso_moy"].tolist()
+    else:
+        hours = list(range(24))
+        base_profile = [baseline / 24] * 24
+    sim_profile = [v * (1 - reduction if heure_debut <= h <= heure_fin else 1) for h, v in zip(hours, base_profile)]
 
-    with section("Consommation simulee vs baseline (24h)"):
+    with section("Consommation simulee vs profil NB3 (24h)"):
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=hours, y=base_profile, name="Baseline", line=dict(color="#94a3b8")))
         fig.add_trace(go.Scatter(x=hours, y=sim_profile, name="Scenario ECO", line=dict(color="#059669", width=2.5)))

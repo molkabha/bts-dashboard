@@ -83,7 +83,13 @@ def _simulate_nb1_prediction(df: pd.DataFrame) -> pd.DataFrame:
 
 def _simulate_nb2_anomalies(df: pd.DataFrame) -> pd.DataFrame:
     """Add NB2-like anomaly scores and detector votes when missing."""
-    if "anomalie_score_ensemble" in df.columns and "nb_votes_anomalie" in df.columns:
+    has_scores = (
+        "anomalie_score_ensemble" in df.columns
+        and "nb_votes_anomalie" in df.columns
+        and not _blank_mask(df["anomalie_score_ensemble"]).any()
+        and not _blank_mask(df["nb_votes_anomalie"]).any()
+    )
+    if has_scores:
         return df
 
     index = df.index

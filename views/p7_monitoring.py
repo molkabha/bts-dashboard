@@ -86,18 +86,21 @@ def page_monitoring():
     with col_b:
         with section("Indicateurs flotte"):
             pue_vals = pd.to_numeric(latest.get("pue", pd.Series(dtype=float)), errors="coerce").dropna()
-            pue_moy = float(pue_vals.mean()) if not pue_vals.empty else 1.45
+            pue_moy = float(pue_vals.mean()) if not pue_vals.empty else None
             pct_eco = kpis["pct_eco"]
             g1, g2 = st.columns(2)
             template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
             with g1:
-                fig_pue = go.Figure(go.Indicator(
-                    mode="gauge+number", value=pue_moy, number={"suffix": ""},
-                    title={"text": "PUE moyen flotte"},
-                    gauge={"axis": {"range": [1, 2.5]}, "bar": {"color": "#1e3a8a"}},
-                ))
-                fig_pue.update_layout(template=template, height=180, margin=dict(l=10, r=10, t=40, b=0))
-                st.plotly_chart(fig_pue, width="stretch")
+                if pue_moy is not None:
+                    fig_pue = go.Figure(go.Indicator(
+                        mode="gauge+number", value=pue_moy, number={"suffix": ""},
+                        title={"text": "PUE moyen flotte"},
+                        gauge={"axis": {"range": [1, 2.5]}, "bar": {"color": "#1e3a8a"}},
+                    ))
+                    fig_pue.update_layout(template=template, height=180, margin=dict(l=10, r=10, t=40, b=0))
+                    st.plotly_chart(fig_pue, width="stretch")
+                else:
+                    st.info("PUE non present dans le dataset actif (colonne `pue`).")
             with g2:
                 fig_eco = go.Figure(go.Indicator(
                     mode="gauge+number", value=pct_eco, number={"suffix": "%"},

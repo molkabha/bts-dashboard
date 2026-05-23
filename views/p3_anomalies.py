@@ -8,7 +8,7 @@ import streamlit as st
 
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import artifact_image_path
+from services.data_service import artifact_image_path, load_nb2_network_stats
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
 
@@ -31,17 +31,21 @@ def page_anomalies():
         st.warning("Aucune donnee disponible.")
         return
 
+    nb2_stats = load_nb2_network_stats()
+    seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
+    pct_reseau = nb2_stats.get("pct_anomalies_reseau")
+
     anom_col = "anomalie_score_ensemble"
     df = df.copy()
     df["_score"] = pd.to_numeric(df.get(anom_col, 0), errors="coerce").fillna(0)
-    anom_df = df[df["_score"] > 0.25]
+    anom_df = df[df["_score"] > seuil]
 
     score_consensus = float(df["_score"].mean())
     k1, k2, k3 = st.columns(3)
     with k1:
-        kpi_card("Score consensus", f"{score_consensus:.2f}", "Vote pondere final", "orange")
+        kpi_card("Score consensus", f"{score_consensus:.2f}", "Vote pondere final NB2", "orange")
     with k2:
-        kpi_card("Anomalies actives", str(len(anom_df)), "Seuil > 0.25", "red")
+        kpi_card("Anomalies actives", str(len(anom_df)), f"Seuil NB2 > {seuil:.2f}", "red")
     with k3:
         kpi_card("Stations touchees", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
 
@@ -87,6 +91,22 @@ def page_anomalies():
                           title="Dernieres 24h par station")
             fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig, width="stretch")
+
+    with st.expander("Performance detecteurs (NB2)"):
+        detecteurs = nb2_stats.get("detecteurs", {})
+        if detecteurs:
+            rows = []
+            for name, stats in detecteurs.items():
+                if isinstance(stats, dict):
+                    rows.append({
+                        "Detecteur": name,
+                        "Anomalies %": stats.get("pct_test", stats.get("pct_anomalies")),
+                        "Accord metier %": stats.get("accord_metier_%"),
+                    })
+            if rows:
+                st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+        if pct_reseau is not None:
+            st.caption(f"Taux anomalies reseau (NB3 KPI) : {float(pct_reseau):.2f}%")
 
     with st.expander("Projection PCA / t-SNE (label normal / anomalie)"):
         img = artifact_image_path("tsne_anomalies.png")

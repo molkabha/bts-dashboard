@@ -11,6 +11,7 @@ from config.settings import settings
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, kpi_card, section
+from services.data_service import compute_filtered_kpis
 from ui.page_helpers import load_dashboard_df, mode_explanation
 
 
@@ -34,15 +35,14 @@ def page_decision():
             fig.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0), height=280, showlegend=False)
             st.plotly_chart(fig, width="stretch")
 
-    eco_kwh = pd.to_numeric(df.get("economie_estimee_kwh", pd.Series(0)), errors="coerce").fillna(0).sum()
-    eco_rl = pd.to_numeric(df.get("economie_rl_kwh", pd.Series(0)), errors="coerce").fillna(0).sum()
-    eco_total = max(eco_kwh, eco_rl)
-    eco_dt = eco_total * settings.PRIX_KWH_TN
-    co2_kg = eco_total * settings.FACTEUR_CO2_TN
+    kpis = compute_filtered_kpis(df)
+    eco_total = float(kpis.get("economie_kwh") or 0)
+    eco_dt = float(kpis.get("economie_dt") or 0)
+    co2_kg = float(kpis.get("co2_evite_t") or 0) * 1000
 
     c1, c2, c3 = st.columns(3)
     with c1:
-        kpi_card("Economies cumulees", f"{eco_dt:,.0f} DT", "Depuis activation", "green")
+        kpi_card("Economies cumulees", f"{eco_dt:,.0f} DT", kpis.get("economie_periode_label", "NB3"), "green")
     with c2:
         kpi_card("Energie economisee", f"{eco_total:,.0f} kWh", "", "eco")
     with c3:
