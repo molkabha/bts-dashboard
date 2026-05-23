@@ -102,6 +102,13 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
         out = apply_admin_dimension_filters(out, filters)
         out = apply_time_filters(out, filters)
 
+    if "station_id" in out.columns:
+        from services.data_service import load_inactive_stations
+
+        inactive = load_inactive_stations()
+        if inactive:
+            out = out[~out["station_id"].astype(str).isin(inactive)]
+
     return out
 
 

@@ -861,6 +861,75 @@ def set_user_stations(username: str, stations: list[str]):
     val = ",".join(stations) if stations else ""
     db_execute("set_user_stations", (val, username))
 
+
+INACTIVE_STATIONS_KEY = "inactive_stations"
+
+
+def load_inactive_stations() -> set[str]:
+    """Station IDs excluded from maps, filtres et KPIs (admin configuration)."""
+    cached = st.session_state.get("inactive_stations")
+    if isinstance(cached, (set, list, tuple)):
+        return {str(s) for s in cached if str(s).strip()}
+
+    inactive: set[str] = set()
+    raw = db_scalar("get_setting", (INACTIVE_STATIONS_KEY,), None)
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                inactive = {str(s) for s in parsed if str(s).strip()}
+        except Exception:
+            inactive = set()
+
+    if not inactive:
+        legacy = db_scalar("get_setting", ("dashboard_config",), None)
+        if legacy:
+            try:
+                cfg = json.loads(legacy)
+                if isinstance(cfg, dict):
+                    inactive = {str(s) for s in cfg.get("inactive_stations", []) if str(s).strip()}
+            except Exception:
+                pass
+
+    st.session_state["inactive_stations"] = inactive
+    return inactive
+
+
+def save_inactive_stations(station_ids: list[str]) -> None:
+    cleaned = sorted({str(s).strip() for s in station_ids if str(s).strip()})
+    db_execute("upsert_setting", (INACTIVE_STATIONS_KEY, json.dumps(cleaned)))
+    st.session_state["inactive_stations"] = set(cleaned)
+    log_event("inactive_stations_updated", {"count": len(cleaned), "stations": cleaned})
+
+
+def all_dataset_station_ids() -> list[str]:
+    """All station IDs in the active dataset (before inactive filter)."""
+    opts = load_filter_dimension_options(dataset_cache_key())
+    stations = opts.get("stations") or []
+    if stations:
+        return sorted(str(s) for s in stations)
+    outputs = st.session_state.get("data")
+    if outputs is None:
+        outputs = load_outputs()
+        st.session_state["data"] = outputs
+    df = outputs.get("scores")
+    if isinstance(df, pd.DataFrame) and "station_id" in df.columns:
+        return sorted(df["station_id"].dropna().astype(str).unique().tolist())
+    path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
+    if path and path.exists():
+        df = read_parquet_fast(path, ["station_id"])
+        if not df.empty and "station_id" in df.columns:
+            return sorted(df["station_id"].dropna().astype(str).unique().tolist())
+    return []
+
+
+def filter_active_station_ids(station_ids: list[str]) -> list[str]:
+    inactive = load_inactive_stations()
+    if not inactive:
+        return list(station_ids)
+    return [str(s) for s in station_ids if str(s) not in inactive]
+
+
 # --- Domain Specific Loading ---
 
 
@@ -1016,9 +1085,13 @@ def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
         "zones": "type_zone",
         "modes": "mode_operation",
     }
+    inactive = load_inactive_stations()
     for key, col in mapping.items():
         if col in df.columns:
-            out[key] = sorted(df[col].dropna().astype(str).unique().tolist())
+            values = sorted(df[col].dropna().astype(str).unique().tolist())
+            if key == "stations" and inactive:
+                values = [v for v in values if v not in inactive]
+            out[key] = values
     return out
 
 
@@ -1110,18 +1183,7 @@ def load_simulation_base(max_rows: int) -> pd.DataFrame:
 
 
 def available_stations() -> list[str]:
-    opts = load_filter_dimension_options(dataset_cache_key())
-    stations = opts.get("stations") or []
-    if stations:
-        return stations
-    outputs = st.session_state.get("data")
-    if outputs is None:
-        outputs = load_outputs()
-        st.session_state["data"] = outputs
-    df = outputs.get("scores")
-    if isinstance(df, pd.DataFrame) and "station_id" in df.columns:
-        return sorted(df["station_id"].dropna().astype(str).unique().tolist())
-    return []
+    return filter_active_station_ids(all_dataset_station_ids())
 
 
 def engineer_assigned_stations(engineer_user: str | None = None) -> list[str]:

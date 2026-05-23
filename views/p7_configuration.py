@@ -1,226 +1,168 @@
-"""Page 7 - Configuration (Admin uniquement)."""
+"""Page 12 - Gestion des stations (admin)."""
 
 from __future__ import annotations
-
-import json
 
 import pandas as pd
 import streamlit as st
 
 from security.middleware import security_middleware
 from services.data_service import (
-    artifact_inventory,
-    available_stations,
-    db_execute,
-    db_scalar,
-    load_filtered_main_data,
-    load_nb2_network_stats,
+    all_dataset_station_ids,
+    dataset_cache_key,
+    load_enriched_base_dataset,
+    load_inactive_stations,
     log_event,
+    save_inactive_stations,
+    station_summary_from_df,
 )
-from ui.components import header, section
+from ui.components import header, kpi_card, section
 
 
-DEFAULT_THRESHOLDS = {
-    "qos_min_eco": 0.60,
-    "anomalie_critique": 0.60,
-    "cpu_max_eco": 50,
-    "heure_nuit_debut": 22,
-    "heure_nuit_fin": 6,
-    "seuil_charge_voix_sleep": 0.15,
-    "rl_episodes": 500,
-    "rl_alpha": 0.10,
-    "rl_gamma": 0.95,
-    "rl_epsilon": 0.50,
-}
+def _station_inventory() -> pd.DataFrame:
+    """Build station list with metadata from the active dataset."""
+    all_ids = all_dataset_station_ids()
+    if not all_ids:
+        return pd.DataFrame()
 
+    inactive = load_inactive_stations()
+    base = pd.DataFrame({"Station": all_ids})
+    base["Actif"] = ~base["Station"].isin(inactive)
 
-def _load_config() -> dict:
-    stored = db_scalar("get_setting", ("dashboard_config",), None)
-    if stored:
-        try:
-            return json.loads(stored)
-        except Exception:
-            pass
-    return dict(DEFAULT_THRESHOLDS)
+    df = load_enriched_base_dataset(dataset_cache_key())
+    if not df.empty:
+        use_cols = [c for c in [
+            "station_id", "gouvernorat", "technologie", "type_zone", "mode_operation", "consommation_kwh",
+        ] if c in df.columns]
+        df = df[use_cols] if use_cols else df
+    if df.empty or "station_id" not in df.columns:
+        return base.sort_values("Station").reset_index(drop=True)
 
+    summary = station_summary_from_df(df)
+    if summary.empty or "station_id" not in summary.columns:
+        return base.sort_values("Station").reset_index(drop=True)
 
-def _save_config(config: dict):
-    db_execute("upsert_setting", ("dashboard_config", json.dumps(config)))
-    st.session_state["dashboard_config"] = config
-    log_event("config_updated", config)
+    meta = summary.copy()
+    meta["Station"] = meta["station_id"].astype(str)
+    keep = ["Station"]
+    rename = {}
+    if "gouvernorat" in meta.columns:
+        keep.append("gouvernorat")
+        rename["gouvernorat"] = "Gouvernorat"
+    if "technologie" in meta.columns:
+        keep.append("technologie")
+        rename["technologie"] = "Technologie"
+    if "type_zone" in meta.columns:
+        keep.append("type_zone")
+        rename["type_zone"] = "Zone"
+    if "mode_operation" in meta.columns:
+        keep.append("mode_operation")
+        rename["mode_operation"] = "Mode"
+    if "conso_moy" in meta.columns:
+        keep.append("conso_moy")
+        rename["conso_moy"] = "Conso moy. (kWh)"
+
+    meta = meta[keep].rename(columns=rename)
+    if "Conso moy. (kWh)" in meta.columns:
+        meta["Conso moy. (kWh)"] = pd.to_numeric(meta["Conso moy. (kWh)"], errors="coerce").round(2)
+
+    merged = base.merge(meta.drop_duplicates("Station"), on="Station", how="left")
+    return merged.sort_values("Station").reset_index(drop=True)
 
 
 def page_configuration():
-    security_middleware.enforce()
-    role = st.session_state.get("role")
-    if role != "admin":
-        st.error("Acces refuse. Cette page est reservee aux administrateurs.")
+    security_middleware.enforce(role="admin")
+    header(
+        "Gestion des stations",
+        "Activer ou desactiver les stations visibles dans tout le dashboard",
+        show_status=False,
+    )
+
+    inventory = _station_inventory()
+    if inventory.empty:
+        st.warning(
+            "Aucune station dans le dataset actif. Publiez un jeu de donnees (page Donnees) "
+            "ou verifiez les artefacts NB sur Hugging Face."
+        )
         return
 
-    header("Configuration", "Parametres du systeme et seuils de decision")
-    config = _load_config()
+    inactive = load_inactive_stations()
+    total = len(inventory)
+    active_count = int(inventory["Actif"].sum()) if "Actif" in inventory.columns else total
+    inactive_count = total - active_count
 
-    # Section 1 - Decision thresholds
-    with section("Seuils du Moteur de Decision"):
-        st.caption("Ces seuils controlent les modes operationnels ECO / NORMAL / ATTENTION / CRITIQUE.")
+    k1, k2, k3 = st.columns(3)
+    with k1:
+        kpi_card("Stations dataset", str(total), "Parc reference", "blue")
+    with k2:
+        kpi_card("Actives", str(active_count), "Visibles dashboard", "green")
+    with k3:
+        kpi_card("Desactivees", str(inactive_count), "Exclues filtres / cartes", "orange")
 
-        c1, c2 = st.columns(2)
-        with c1:
-            qos_min = st.slider("Seuil QoS minimum pour mode ECO", 0.0, 1.0,
-                                float(config.get("qos_min_eco", 0.60)), 0.01, key="cfg_qos")
-            st.caption("En dessous de ce score, la station ne peut pas passer en ECO pour proteger la qualite reseau.")
-        with c2:
-            anom_crit = st.slider("Seuil score anomalie CRITIQUE", 0.0, 1.0,
-                                  float(config.get("anomalie_critique", 0.60)), 0.01, key="cfg_anom")
+    st.caption(
+        "Les stations desactivees sont masquees pour tous les utilisateurs (carte, KPI, filtres, ingenieurs). "
+        "Les acces par ingenieur se gerent dans **Gestion Utilisateurs**."
+    )
 
-        cpu_eco = st.slider("Seuil CPU maximum pour mode ECO", 0, 100,
-                            int(config.get("cpu_max_eco", 50)), key="cfg_cpu")
+    with section("Parc stations"):
+        search = st.text_input("Rechercher", placeholder="ID station, gouvernorat, technologie…", key="cfg_station_search")
 
-        # Preview impact
-        cols = ["consommation_kwh", "score_qos", "anomalie_score_ensemble", "charge_cpu_pct", "heure"]
-        df = load_filtered_main_data(cols)
-        if not df.empty and "score_qos" in df.columns:
-            qos_vals = pd.to_numeric(df["score_qos"], errors="coerce").fillna(1)
-            cpu_vals = pd.to_numeric(
-                df.get(
-                    "charge_cpu_pct",
-                    pd.Series(
-                        50,
-                        index=df.index)),
-                errors="coerce").fillna(50)
-            anom_vals = pd.to_numeric(
-                df.get(
-                    "anomalie_score_ensemble",
-                    pd.Series(
-                        0,
-                        index=df.index)),
-                errors="coerce").fillna(0)
-            seuil_nb2 = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
-            pct_eco = ((qos_vals >= qos_min) & (cpu_vals < cpu_eco) & (anom_vals < seuil_nb2)).mean() * 100
-            st.info(
-                f"Avec ces seuils, {pct_eco:.1f}% des observations seraient eligibles au mode ECO "
-                f"(seuil anomalie NB2 : {seuil_nb2:.2f})."
+        filtered = inventory.copy()
+        if search.strip():
+            mask = False
+            for col in filtered.columns:
+                if col == "Actif":
+                    continue
+                mask = mask | filtered[col].astype(str).str.contains(search.strip(), case=False, na=False)
+            filtered = filtered[mask]
+
+        bc1, bc2, bc3 = st.columns(3)
+        with bc1:
+            if st.button("Tout activer", use_container_width=True):
+                st.session_state["cfg_station_table"] = inventory.assign(Actif=True)
+                st.rerun()
+        with bc2:
+            if st.button("Tout desactiver", use_container_width=True):
+                st.session_state["cfg_station_table"] = inventory.assign(Actif=False)
+                st.rerun()
+        with bc3:
+            show_inactive_only = st.checkbox("Voir seulement desactivees", value=False, key="cfg_inactive_only")
+
+        table_data = st.session_state.get("cfg_station_table", filtered)
+        if not isinstance(table_data, pd.DataFrame) or table_data.empty:
+            table_data = filtered
+        if show_inactive_only and "Actif" in table_data.columns:
+            table_data = table_data[~table_data["Actif"]]
+
+        column_config = {
+            "Actif": st.column_config.CheckboxColumn("Active", help="Decoche pour masquer la station"),
+            "Station": st.column_config.TextColumn("Station", disabled=True),
+        }
+        for col in ("Gouvernorat", "Technologie", "Zone", "Mode"):
+            if col in table_data.columns:
+                column_config[col] = st.column_config.TextColumn(col, disabled=True)
+        if "Conso moy. (kWh)" in table_data.columns:
+            column_config["Conso moy. (kWh)"] = st.column_config.NumberColumn(
+                "Conso moy. (kWh)", format="%.2f", disabled=True,
             )
 
-    # Section 2 - Optimization strategies
-    with section("Parametres des Strategies d'Optimisation"):
-        c1, c2 = st.columns(2)
-        with c1:
-            nuit_debut = st.slider("Heure debut fenetre nocturne", 20, 23,
-                                   int(config.get("heure_nuit_debut", 22)), key="cfg_nuit_deb")
-            seuil_voix = st.slider("Seuil charge voix pour sleep mode", 0.10, 0.40,
-                                   float(config.get("seuil_charge_voix_sleep", 0.15)), 0.01, key="cfg_voix")
-        with c2:
-            nuit_fin = st.slider("Heure fin fenetre nocturne", 4, 8,
-                                 int(config.get("heure_nuit_fin", 6)), key="cfg_nuit_fin")
+        edited = st.data_editor(
+            table_data,
+            column_config=column_config,
+            hide_index=True,
+            use_container_width=True,
+            key="cfg_station_editor",
+        )
 
-        st.markdown("**Strategies actives**")
-        sc1, sc2, sc3, sc4 = st.columns(4)
-        with sc1:
-            strat_sleep = st.toggle("Sleep mode", value=config.get("strat_sleep", True), key="cfg_strat_sleep")
-        with sc2:
-            strat_puissance = st.toggle(
-                "Reduction puissance", value=config.get(
-                    "strat_puissance", True), key="cfg_strat_puiss")
-        with sc3:
-            strat_cooling = st.toggle("Free cooling", value=config.get("strat_cooling", True), key="cfg_strat_cool")
-        with sc4:
-            strat_calendaire = st.toggle(
-                "Mode calendaire", value=config.get(
-                    "strat_calendaire", True), key="cfg_strat_cal")
-
-    # Section 3 - RL parameters
-    with st.expander("Parametres RL avances", expanded=False):
-        st.caption("Ces parametres s'appliquent au prochain relancement du pipeline.")
-        c1, c2 = st.columns(2)
-        with c1:
-            rl_episodes = st.slider("Nombre d'episodes", 100, 2000,
-                                    int(config.get("rl_episodes", 500)), key="cfg_rl_ep")
-            rl_alpha = st.slider("Taux d'apprentissage (alpha)", 0.01, 0.50,
-                                 float(config.get("rl_alpha", 0.10)), 0.01, key="cfg_rl_alpha")
-        with c2:
-            rl_gamma = st.slider("Facteur de decompte (gamma)", 0.80, 0.99,
-                                 float(config.get("rl_gamma", 0.95)), 0.01, key="cfg_rl_gamma")
-            rl_epsilon = st.slider("Epsilon initial (exploration)", 0.10, 1.00,
-                                   float(config.get("rl_epsilon", 0.50)), 0.01, key="cfg_rl_eps")
-
-    # Section 4 - Station management
-    with section("Gestion des Stations"):
-        all_stations = available_stations()
-        if all_stations:
-            inactive = set(config.get("inactive_stations", []))
-            bc1, bc2 = st.columns(2)
-            with bc1:
-                if st.button("Tout activer", width="stretch"):
-                    inactive = set()
-            with bc2:
-                if st.button("Tout desactiver", width="stretch"):
-                    inactive = set(all_stations)
-
-            station_statuses = []
-            for s in all_stations:
-                station_statuses.append({"Station": s, "Actif": s not in inactive})
-            sdf = pd.DataFrame(station_statuses)
-            edited = st.data_editor(sdf, width="stretch", hide_index=True,
-                                    column_config={"Actif": st.column_config.CheckboxColumn()},
-                                    key="station_editor")
-            if edited is not None:
-                inactive = set(edited[~edited["Actif"]]["Station"].tolist())
-        else:
-            inactive = set()
-            st.info("Aucune station disponible.")
-
-    # Section 4.5 - RLS Access Management
-    # (Moved to 'Gestion Utilisateurs' page for better centralized admin)
-
-    # Section 5 - Save & Export/Import
-    with section("Enregistrer la Configuration"):
-        if st.button("Enregistrer tous les parametres", type="primary", width="stretch"):
-            new_config = {
-                "qos_min_eco": qos_min,
-                "anomalie_critique": anom_crit,
-                "cpu_max_eco": cpu_eco,
-                "heure_nuit_debut": nuit_debut,
-                "heure_nuit_fin": nuit_fin,
-                "seuil_charge_voix_sleep": seuil_voix,
-                "strat_sleep": strat_sleep,
-                "strat_puissance": strat_puissance,
-                "strat_cooling": strat_cooling,
-                "strat_calendaire": strat_calendaire,
-                "rl_episodes": rl_episodes,
-                "rl_alpha": rl_alpha,
-                "rl_gamma": rl_gamma,
-                "rl_epsilon": rl_epsilon,
-                "inactive_stations": sorted(inactive),
-            }
-            _save_config(new_config)
-            st.success("Configuration enregistree.")
-            st.toast("Configuration sauvegardee avec succes.")
-
-    with section("Export / Import Configuration"):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            config_json = json.dumps(config, indent=2, ensure_ascii=False)
-            st.download_button("Exporter config JSON", data=config_json,
-                               file_name="config_bts.json", mime="application/json",
-                               width="stretch")
-        with c2:
-            uploaded_cfg = st.file_uploader("Importer config JSON", type=["json"], key="import_cfg")
-            if uploaded_cfg is not None:
-                try:
-                    imported = json.loads(uploaded_cfg.read().decode("utf-8"))
-                    _save_config(imported)
-                    st.success("Configuration importee.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erreur d'import : {e}")
-        with c3:
-            if st.button("Restaurer les valeurs par defaut", width="stretch"):
-                _save_config(dict(DEFAULT_THRESHOLDS))
-                st.success("Valeurs par defaut restaurees.")
-                st.rerun()
-
-    with st.expander("Inventaire artefacts Hugging Face", expanded=False):
-        inv = artifact_inventory()
-        st.dataframe(inv, width="stretch", hide_index=True,
-                     column_config={"lien_hf": st.column_config.LinkColumn("Lien HF")})
+        if st.button("Enregistrer", type="primary", use_container_width=False):
+            if edited is None or edited.empty:
+                save_inactive_stations([])
+            else:
+                new_inactive = edited.loc[~edited["Actif"].astype(bool), "Station"].astype(str).tolist()
+                save_inactive_stations(new_inactive)
+            st.session_state.pop("cfg_station_table", None)
+            st.cache_data.clear()
+            st.session_state.pop("_df_session_key", None)
+            st.session_state.pop("_df_session_val", None)
+            log_event("station_parc_saved", {"inactive": len(load_inactive_stations())})
+            st.success("Parc stations enregistre. Les vues du dashboard sont a jour.")
+            st.rerun()

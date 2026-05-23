@@ -255,7 +255,7 @@ ADMIN_PAGE_LABELS = [
     "Rapport",
     "Comparaison",
     "Donnees",
-    "Configuration",
+    "Gestion stations",
     "Gestion Utilisateurs",
 ]
 
@@ -274,7 +274,7 @@ ADMIN_PAGE_INDEX = {
     "Rapport": 9,
     "Comparaison": 10,
     "Donnees": 11,
-    "Configuration": 12,
+    "Gestion stations": 12,
     "Gestion Utilisateurs": 13,
 }
 
