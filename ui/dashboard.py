@@ -30,7 +30,6 @@ from views.p5_agents_rl import page_agents_rl
 from views.p5_simulation import page_simulation
 from views.p7_monitoring import page_monitoring
 from views.p8_station import page_station_detail
-from views.p9_rapport import page_rapport
 from views.p10_comparaison import page_comparaison
 from views.p6_upload_admin import page_upload_admin
 from views.p7_configuration import page_configuration
@@ -47,7 +46,6 @@ PAGE_FUNCTIONS = {
     14: page_optimisation_rl,
     7: page_monitoring,
     8: page_station_detail,
-    9: page_rapport,
     10: page_comparaison,
     11: page_upload_admin,
     12: page_configuration,

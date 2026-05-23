@@ -243,3 +243,43 @@ def mode_explanation(row: pd.Series) -> str:
         ecart = abs(float(row.get("ecart_pct", 0) or 0))
         return f"Mode ATTENTION : ecart consommation {ecart:.1f}% vs profil ou score {score:.2f}"
     return f"Mode NORMAL : supervision standard, score anomalie {score:.2f}"
+
+
+def render_executive_report_export(kpis: dict) -> None:
+    """PDF export block (filtres sidebar appliques)."""
+    from datetime import datetime
+
+    import streamlit as st
+
+    from services.data_service import load_nb2_network_stats, load_top_anomalies
+    from ui.components import section
+    from ui.utils import apply_current_admin_filters
+    from utils.pdf_export import generate_report_pdf
+
+    with section("Generer le rapport"):
+        st.caption("Synthese PDF des KPI et des 5 principales alertes pour la periode filtree.")
+        top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
+        seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
+        anomaly_items = []
+        if not top.empty:
+            for _, row in top.iterrows():
+                score = float(row.get("anomalie_score_ensemble", 0) or 0)
+                anomaly_items.append({
+                    "station_id": str(row.get("station_id", "")),
+                    "detail": f"Score {score:.2f}",
+                    "severity": (
+                        "CRITIQUE" if score > seuil * 2.4
+                        else "ATTENTION" if score > seuil
+                        else "FAIBLE"
+                    ),
+                })
+        if st.button("Generer rapport PDF", type="primary", key="exec_report_pdf"):
+            pdf_bytes = generate_report_pdf(kpis, anomaly_items)
+            st.download_button(
+                "Telecharger le rapport PDF",
+                data=pdf_bytes,
+                file_name=f"rapport_bts_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="exec_report_download",
+            )
