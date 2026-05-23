@@ -134,7 +134,7 @@ def page_footer():
     st.markdown(f'<div class="page-footer">{footer}</div>', unsafe_allow_html=True)
 
 
-def header(title: str, subtitle: str, logo_path: Path | None = None, *, show_status: bool = True):
+def header(title: str, subtitle: str, logo_path: Path | None = None, *, show_status: bool = False):
     if logo_path is None:
         logo_path = Path("static/logo.png")
     logo_html = ""
@@ -157,7 +157,7 @@ def header(title: str, subtitle: str, logo_path: Path | None = None, *, show_sta
         unsafe_allow_html=True,
     )
     if show_status and st.session_state.get("authenticated"):
-        global_status_bar()
+        global_status_bar()  # opt-in only (admin / debug)
 
 
 def render_artifact_gallery(

@@ -72,13 +72,3 @@ def page_decision():
   <div class="dc-reason">{expl}</div>
   <div class="dc-saving">Economie potentielle : {eco:.2f} DT | {float(row.get('economie_estimee_kwh', 0) or 0):.2f} kWh</div>
 </div>""", unsafe_allow_html=True)
-
-            tbl_cols = ["station_id", "mode_operation", "action_proposee", "consommation_kwh", "score_qos"]
-            tbl_cols = [c for c in tbl_cols if c in latest.columns]
-            if not tbl_cols:
-                tbl_cols = ["station_id", "mode_operation"]
-            st.dataframe(
-                latest[tbl_cols].head(30),
-                width="stretch",
-                hide_index=True,
-            )

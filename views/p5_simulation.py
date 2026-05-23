@@ -262,15 +262,6 @@ def page_simulation():
             unsafe_allow_html=True,
         )
 
-        if len(latest_all) > 1:
-            tbl = latest_all.copy()
-            tbl["eco_rl"] = economie_rl_kwh_series(tbl)
-            tbl["eco_tot"] = effective_economie_kwh(tbl)
-            show = tbl[[c for c in [
-                "station_id", "mode_operation", "consommation_kwh", "eco_rl", "eco_tot", "score_qos",
-            ] if c in tbl.columns]]
-            st.dataframe(show, use_container_width=True, hide_index=True)
-
         section("Consommation — session")
         hist = sim_data.copy()
         hist["conso"] = _num(hist, "consommation_kwh", 0)

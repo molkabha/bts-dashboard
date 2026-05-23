@@ -49,22 +49,6 @@ def page_anomalies():
     with k3:
         kpi_card("Stations touchees", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
 
-    with section("Tableau filtrable"):
-        if not anom_df.empty:
-            tbl = anom_df.copy()
-            tbl["type_anomalie"] = tbl.apply(
-                lambda r: _anomaly_type(float(r["_score"]), float(r.get("score_qos", 1) or 1)), axis=1)
-            show = ["station_id", "_score", "nb_votes_anomalie", "mode_operation", "score_qos", "type_anomalie"]
-            if "ecart_pct" in tbl.columns:
-                show.insert(2, "ecart_pct")
-            show = [c for c in show if c in tbl.columns]
-            rename = {"_score": "score_ensemble", "nb_votes_anomalie": "nb_votes"}
-            st.dataframe(
-                tbl[show].rename(columns=rename).sort_values("score_ensemble", ascending=False).head(100),
-                width="stretch",
-                hide_index=True,
-            )
-
     with section("Scatter operationnel"):
         if {"ecart_pct", anom_col, "mode_operation"}.issubset(df.columns):
             scatter_df = df.copy()

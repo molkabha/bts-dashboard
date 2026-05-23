@@ -112,37 +112,3 @@ def page_monitoring():
                 ))
                 fig_eco.update_layout(template=template, height=180, margin=dict(l=10, r=10, t=40, b=0))
                 st.plotly_chart(fig_eco, width="stretch")
-
-    # Tableau monitoring avec sparklines 24h
-    with section("Tableau de monitoring"):
-        if "station_id" in df.columns and "heure" in df.columns:
-            spark_data = []
-            for sid in sorted(df["station_id"].astype(str).unique())[:50]:
-                sdf = df[df["station_id"].astype(str) == sid].sort_values("timestamp" if "timestamp" in df.columns else "heure")
-                hourly = sdf.groupby("heure")["consommation_kwh"].mean().reindex(range(24), fill_value=np.nan)
-                row_latest = latest[latest["station_id"].astype(str) == sid]
-                if row_latest.empty:
-                    continue
-                r = row_latest.iloc[0]
-                spark_data.append({
-                    "station_id": sid,
-                    "mode": str(r.get("mode_operation", "NORMAL")),
-                    "conso_kwh": round(float(r.get("consommation_kwh", 0) or 0), 2),
-                    "qos": round(float(r.get("score_qos", 0) or 0), 2),
-                    "profil_24h": hourly.fillna(0).tolist(),
-                })
-            if spark_data:
-                tbl = pd.DataFrame(spark_data)
-                st.dataframe(
-                    tbl,
-                    column_config={
-                        "station_id": "Station",
-                        "mode": "Mode",
-                        "conso_kwh": st.column_config.NumberColumn("Conso (kWh)", format="%.2f"),
-                        "qos": st.column_config.NumberColumn("QoS", format="%.2f"),
-                        "profil_24h": st.column_config.LineChartColumn("Profil 24h", width="medium"),
-                    },
-                    width="stretch",
-                    hide_index=True,
-                    height=420,
-                )
