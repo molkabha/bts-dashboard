@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
