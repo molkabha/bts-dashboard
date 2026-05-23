@@ -18,7 +18,7 @@ from services.data_service import (
 from ui.layout import configure_page
 from ui.auth import login_page, force_password_change_page
 from ui.components import sidebar_global, page_footer
-from ui.page_helpers import fleet_status_metrics, load_dashboard_df, render_data_provenance_banner
+from ui.page_helpers import fleet_status_metrics, load_dashboard_df
 
 from views.p0_accueil import page_accueil
 from views.p1_vue_reseau import page_vue_reseau
@@ -115,7 +115,6 @@ def main():
         _df = load_dashboard_df()
         st.session_state["_dashboard_df"] = _df
         st.session_state["_fleet_metrics"] = fleet_status_metrics(_df)
-        render_data_provenance_banner(_df)
     else:
         st.session_state.pop("_dashboard_df", None)
         st.session_state.pop("_fleet_metrics", None)
