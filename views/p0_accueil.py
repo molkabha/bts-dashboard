@@ -44,7 +44,9 @@ def page_accueil():
     nb_stations = kpis.get("nb_stations", 0)
     conso = kpis.get("conso_totale_kwh") or 0
     nb_mois = int(kpis.get("nb_mois_periode") or 12)
-    cout_mois = conso * settings.PRIX_KWH_TN / nb_mois if conso else 0
+    cout_annuel = conso * settings.PRIX_KWH_TN if conso else 0
+    cout_mois = cout_annuel / nb_mois if nb_mois else cout_annuel
+    pct_eco_sur_cout = (eco_mois / cout_mois * 100) if cout_mois else float(kpis.get("economie_combinee_pct") or 0)
     nb2_stats = load_nb2_network_stats()
     seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
     scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
@@ -55,12 +57,17 @@ def page_accueil():
     with section("Indicateurs strategiques"):
         c1, c2, c3, c4, c5, c6 = st.columns(6)
         with c1:
-            kpi_card("Cout flotte", f"{cout_mois:,.0f} DT/mois", "Estimation", "blue")
+            kpi_card(
+                "Cout energie flotte",
+                f"{cout_mois:,.0f} DT/mois",
+                f"Facture estimee · {cout_annuel:,.0f} DT sur {nb_mois} mois (0,40 DT/kWh)",
+                "blue",
+            )
         with c2:
             kpi_card(
                 "Economies realisees",
                 f"{eco_dt:,.0f} DT",
-                f"{eco_label} · ~{eco_mois:,.0f} DT/mois",
+                f"{eco_label} · ~{eco_mois:,.0f} DT/mois (~{pct_eco_sur_cout:.1f}% du cout energie)",
                 "green",
             )
         with c3:
