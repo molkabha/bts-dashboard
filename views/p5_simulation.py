@@ -16,7 +16,7 @@ from security.middleware import security_middleware
 from services.data_service import engineer_assigned_stations, load_nb2_network_stats
 from services.nb_metrics import effective_economie_kwh
 from services.nb_replay import load_replay_source, replay_batch, replay_timestamps
-from ui.components import context_badge, header, kpi_card, live_indicator, section
+from ui.components import context_badge, header, kpi_card, section
 from ui.page_helpers import load_dashboard_df, mode_explanation
 from ui.utils import active_filter_label, download_df_button
 
@@ -404,16 +404,11 @@ def page_simulation():
         latest_all = sim_data[sim_data["timestamp"] == latest_ts]
         multi = len(selected_stations) > 1
 
-        status_col, live_col = st.columns([3, 1])
-        with status_col:
-            context_badge("Horodatage", str(latest_ts)[:19], "info")
-            if st.session_state.get("sim_running"):
-                context_badge("Etat", "En cours", "success")
-            else:
-                context_badge("Etat", "Pause / termine", "warning")
-        with live_col:
-            if st.session_state.get("sim_running"):
-                live_indicator()
+        context_badge("Horodatage", str(latest_ts)[:19], "info")
+        if st.session_state.get("sim_running"):
+            context_badge("Etat", "En cours", "success")
+        else:
+            context_badge("Etat", "Pause / termine", "warning")
 
         _render_instant_kpis(latest_all)
 
