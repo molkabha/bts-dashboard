@@ -30,13 +30,20 @@ def _render_folium_map(scores: pd.DataFrame):
         return
 
     if "gps_source" in plot_scores.columns:
-        nb_exact = int((plot_scores["gps_source"] == "dataset_actif").sum())
-        nb_centroid = int((plot_scores["gps_source"] == "centroide_gouvernorat").sum())
+        src = plot_scores["gps_source"].astype(str)
+        nb_carte = int(src.str.contains("carte_nb3", na=False).sum())
+        nb_dataset = int((src == "dataset_actif").sum())
+        nb_swap = int(src.str.contains("swap", na=False).sum())
+        nb_bbox = int(src.str.contains("bbox_gouvernorat", na=False).sum())
         parts = [f"{len(plot_scores)} stations affichees"]
-        if nb_exact:
-            parts.append(f"{nb_exact} GPS reel (dataset / carte NB3)")
-        if nb_centroid:
-            parts.append(f"{nb_centroid} centroide gouvernorat (approx.)")
+        if nb_carte:
+            parts.append(f"{nb_carte} GPS carte NB3")
+        if nb_dataset:
+            parts.append(f"{nb_dataset} GPS dataset")
+        if nb_swap:
+            parts.append(f"{nb_swap} lat/lon corriges")
+        if nb_bbox:
+            parts.append(f"{nb_bbox} repositionnees (bbox gouvernorat)")
         st.caption(" · ".join(parts))
 
     import folium

@@ -1236,66 +1236,78 @@ def _merge_station_map_frames(left: pd.DataFrame, right: pd.DataFrame) -> pd.Dat
     return l.reset_index()
 
 
-def _fill_missing_coordinates(stations: pd.DataFrame) -> pd.DataFrame:
-    """Fill missing lat/lon using governorate centroids (deterministic jitter per station)."""
-    from utils.geo_tunisia import governorate_centroid, normalize_geo_columns, station_coordinate_jitter, valid_coordinate_mask
+def _merge_gps_by_priority(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Keep the best GPS source per station (carte NB3 > dataset > fallbacks)."""
+    from utils.geo_tunisia import GPS_SOURCE_PRIORITY, normalize_geo_columns, valid_coordinate_mask
 
-    if stations.empty:
-        return stations
-    out = normalize_geo_columns(stations)
-    if "gouvernorat" not in out.columns:
-        return out
-
-    mask = ~valid_coordinate_mask(out)
-    if not mask.any():
-        return out
-
-    if "gps_source" not in out.columns:
-        out["gps_source"] = pd.NA
-
-    for idx in out.index[mask]:
-        gov = out.at[idx, "gouvernorat"]
-        centroid = governorate_centroid(str(gov) if pd.notna(gov) else "")
-        if centroid is None:
+    best: dict[str, dict] = {}
+    for frame in frames:
+        if frame.empty or "station_id" not in frame.columns:
             continue
-        station_id = str(out.at[idx, "station_id"])
-        dlat, dlon = station_coordinate_jitter(station_id)
-        out.at[idx, "latitude"] = centroid[0] + dlat
-        out.at[idx, "longitude"] = centroid[1] + dlon
-        out.at[idx, "gps_source"] = "centroide_gouvernorat"
-    return out
+        work = normalize_geo_columns(frame)
+        if not valid_coordinate_mask(work).any():
+            continue
+        keep_cols = ["station_id", "latitude", "longitude"]
+        for col in ("gps_source", "gouvernorat", "technologie", "type_zone"):
+            if col in work.columns:
+                keep_cols.append(col)
+        for _, row in work[valid_coordinate_mask(work)].iterrows():
+            sid = str(row["station_id"])
+            src = str(row.get("gps_source") or "dataset_actif")
+            base_src = src.split("+")[0]
+            priority = GPS_SOURCE_PRIORITY.get(base_src, 20)
+            if sid not in best or priority > best[sid]["priority"]:
+                best[sid] = {"priority": priority, "row": row[keep_cols].to_dict()}
+    if not best:
+        return pd.DataFrame()
+    return pd.DataFrame([entry["row"] for entry in best.values()])
 
 
 def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Station map data: merge NB3 carte/score parquets, GPS from active dataset,
-    then governorate centroids for any remaining gaps.
+    Station map data: GPS from NB3 carte (priority), dataset, then validated
+    governorate bbox placement (no offshore centroid jitter).
     """
-    from utils.geo_tunisia import normalize_geo_columns
+    from utils.geo_tunisia import normalize_geo_columns, sanitize_station_coordinates, valid_coordinate_mask
 
     summary = station_summary_from_df(df) if not df.empty else pd.DataFrame()
+    summary = summary.drop(columns=["latitude", "longitude"], errors="ignore")
 
-    from utils.geo_tunisia import valid_coordinate_mask
+    gps_frames: list[pd.DataFrame] = []
 
     for artifact_name in ("streamlit_carte_stations.parquet", "streamlit_score_stations.parquet"):
         artefact = artifact_table_for_df(artifact_name, df)
-        if isinstance(artefact, pd.DataFrame) and not artefact.empty and "station_id" in artefact.columns:
-            artefact = normalize_geo_columns(artefact)
-            if valid_coordinate_mask(artefact).any() and "gps_source" not in artefact.columns:
-                artefact = artefact.copy()
-                artefact["gps_source"] = "carte_nb3"
-            if df.empty or "station_id" not in df.columns:
-                summary = _merge_station_map_frames(summary, artefact)
-            else:
-                keep = artefact[
-                    artefact["station_id"].astype(str).isin(df["station_id"].astype(str).unique())
-                ]
-                summary = _merge_station_map_frames(summary, keep if not keep.empty else artefact)
+        if not isinstance(artefact, pd.DataFrame) or artefact.empty or "station_id" not in artefact.columns:
+            continue
+        artefact = normalize_geo_columns(artefact)
+        if not valid_coordinate_mask(artefact).any():
+            continue
+        artefact = artefact[valid_coordinate_mask(artefact)].copy()
+        artefact["gps_source"] = "carte_nb3"
+        if not df.empty and "station_id" in df.columns:
+            station_ids = df["station_id"].astype(str).unique()
+            artefact = artefact[artefact["station_id"].astype(str).isin(station_ids)]
+        if not artefact.empty:
+            gps_frames.append(artefact)
 
     if not df.empty:
-        summary = _merge_station_map_frames(summary, _extract_station_coordinates(df))
+        coords = _extract_station_coordinates(df)
+        if not coords.empty:
+            gps_frames.append(coords)
 
-    return _fill_missing_coordinates(summary)
+    gps = _merge_gps_by_priority(gps_frames)
+    if not gps.empty:
+        summary = _merge_station_map_frames(summary, gps)
+
+    if not df.empty and {"station_id", "gouvernorat"}.issubset(df.columns) and not summary.empty:
+        gov_by_station = df.groupby("station_id")["gouvernorat"].agg(
+            lambda s: s.dropna().astype(str).mode().iloc[0] if not s.dropna().empty else "",
+        )
+        summary["gouvernorat"] = summary["station_id"].astype(str).map(
+            gov_by_station.astype(str),
+        ).fillna(summary.get("gouvernorat", pd.Series(dtype=str)))
+
+    return sanitize_station_coordinates(summary)
 
 
 def _dataset_month_count(df: pd.DataFrame) -> int:
