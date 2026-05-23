@@ -50,6 +50,10 @@ def login_page(logo_path: Path):
                 if success and user_record:
                     session_data = create_user_session(user_record)
                     st.session_state.update(session_data)
+                    st.session_state["_goto_home"] = True
+                    role = session_data.get("role", "")
+                    role_label = "Administrateur" if role == "admin" else "Ingenieur reseau"
+                    st.session_state["_login_role_hint"] = role_label
                     from services.data_service import log_event
                     log_event("login", {"role": session_data["role"]})
                     st.rerun()
@@ -72,8 +76,18 @@ def login_page(logo_path: Path):
                         else:
                             st.error(message)
 
+            role_hint = st.session_state.pop("_login_role_hint", None)
+            if role_hint:
+                st.success(f"Connexion reussie — acces {role_hint}. Redirection vers votre espace...")
+
             st.markdown(
-                '<div class="login-footer">Accès réservé aux administrateurs et ingénieurs autorisés.</div>',
+                """
+<div class="login-footer">
+  <strong>Tunisie Telecom</strong> — BTS Energy Management System<br>
+  Acces reserve : <span style="color:#059669;font-weight:800;">ADMIN</span> et
+  <span style="color:#2563eb;font-weight:800;">INGENIEUR RESEAU</span>
+</div>
+""",
                 unsafe_allow_html=True,
             )
 

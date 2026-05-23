@@ -87,6 +87,18 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 /* Role pills */
 .role-pill { display:inline-block; background:#f1f5f9; color:var(--tt-text); border:1px solid var(--tt-border); padding:4px 9px; border-radius:999px; font-size:10.5px; font-weight:800; text-transform:uppercase; }
 .role-pill.admin { background:var(--tt-red); color:#fff; border-color:var(--tt-red); }
+.role-badge { display:inline-block; margin-top:6px; padding:4px 10px; border-radius:999px; font-size:10px; font-weight:850; letter-spacing:0.5px; text-transform:uppercase; }
+.role-badge-admin { background:#059669; color:#fff; border:1px solid #047857; }
+.role-badge-engineer { background:#2563eb; color:#fff; border:1px solid #1d4ed8; }
+.global-status-bar { display:flex; flex-wrap:wrap; gap:10px; margin:-4px 0 14px 0; padding:10px 12px; background:var(--tt-card); border:1px solid var(--tt-border); border-radius:8px; }
+.gsb-item { flex:1; min-width:120px; display:flex; flex-direction:column; gap:2px; padding:6px 10px; border-radius:6px; border:1px solid var(--tt-border); background:#f8fafc; }
+.gsb-item span { font-size:10px; font-weight:750; text-transform:uppercase; color:var(--tt-muted); letter-spacing:0.3px; }
+.gsb-item strong { font-size:18px; font-weight:850; color:var(--tt-text); }
+.gsb-item.gsb-danger { border-left:3px solid var(--tt-danger); }
+.gsb-item.gsb-warning { border-left:3px solid var(--tt-warning); }
+.gsb-item.gsb-success { border-left:3px solid var(--tt-success); }
+.gsb-item.gsb-info { border-left:3px solid var(--tt-blue-soft); }
+.page-footer { text-align:center; font-size:10.5px; color:var(--tt-muted); margin-top:28px; padding:10px; border-top:1px dashed var(--tt-border); opacity:0.85; }
 
 /* Badges */
 .badge { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px; font-size:11px; font-weight:800; letter-spacing:0.6px; text-transform:uppercase; border:1px solid transparent; }

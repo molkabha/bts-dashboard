@@ -1,108 +1,92 @@
-"""Page 0 - Accueil : orientation rapide et KPIs cles."""
+"""Page 0 - Vue executive (admin)."""
 
 from __future__ import annotations
 
-from datetime import datetime
-
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
+from config.settings import settings
+from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import compute_filtered_kpis, load_filtered_main_data, load_top_anomalies
-from ui.components import alert_banner, header, kpi_card, section
-from ui.utils import apply_current_admin_filters
-from utils.pdf_export import generate_report_pdf
+from ui.components import header, kpi_card, section
+from ui.page_helpers import load_dashboard_df
+from services.data_service import compute_filtered_kpis
 
 
 def page_accueil():
     security_middleware.enforce()
-    header("Accueil", "Vue synthetique de l'etat du reseau")
+    if st.session_state.get("role") != "admin":
+        st.session_state["_nav_override"] = 7
+        st.rerun()
+        return
 
-    cols = ["timestamp", "station_id", "consommation_kwh", "score_qos",
-            "anomalie_score_ensemble", "economie_rl_kwh", "mode_operation"]
-    df_raw = load_filtered_main_data(cols)
-    df = apply_current_admin_filters(df_raw)
-    kpis = compute_filtered_kpis(df) if not df.empty else {}
+    header("Vue executive", "Pilotage strategique du parc BTS Tunisie Telecom")
 
+    df = load_dashboard_df()
+    if df.empty:
+        st.warning("Aucune donnee disponible.")
+        return
+
+    kpis = compute_filtered_kpis(df)
+    template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
+
+    eco_dt = kpis.get("economie_dt") or 0
+    co2 = kpis.get("co2_evite_t") or 0
+    pct_eco = kpis.get("pct_mode_eco") or 0
     nb_stations = kpis.get("nb_stations", 0)
-    nb_critiques = 0
-    if not df.empty and "mode_operation" in df.columns:
-        nb_critiques = int(df[df["mode_operation"].astype(str).eq("CRITIQUE")]["station_id"].nunique())
-    eco_dt = kpis.get("economie_dt", 0) or 0
+    conso = kpis.get("conso_totale_kwh") or 0
+    cout_mois = conso * settings.PRIX_KWH_TN / 12 if conso else 0
+    nb_incidents = int((pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce") > 0.5).sum())
+    dispo = max(0, 100 - (nb_incidents / max(len(df), 1) * 100))
 
-    # Dynamic summary phrase
-    with section("Synthese"):
-        phrase = (
-            f"Le systeme surveille {nb_stations} stations. "
-            f"{nb_critiques} necessitent une intervention. "
-            f"Les optimisations actives ont economise {eco_dt:,.0f} DT sur la periode."
-        )
-        st.markdown(f'<div class="summary-strip">{phrase}</div>', unsafe_allow_html=True)
-
-        c1, c2, c3, c4, c5 = st.columns(5)
+    with section("Indicateurs strategiques"):
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
         with c1:
-            kpi_card("Stations", f"{nb_stations}", "Perimetre filtre", "blue")
+            kpi_card("Cout flotte", f"{cout_mois:,.0f} DT/mois", "Estimation", "blue")
         with c2:
-            conso = kpis.get("conso_totale_kwh")
-            kpi_card("Consommation", f"{conso:,.0f} kWh" if conso is not None else "0 kWh", "Total periode", "gray")
+            kpi_card("Economies realisees", f"{eco_dt:,.0f} DT", "RL + regles", "green")
         with c3:
-            qos = kpis.get("score_qos_moyen")
-            kpi_card("QoS moyenne", f"{qos:.2f}" if qos is not None else "0.00", "Qualite service", "eco")
+            kpi_card("CO2 evite", f"{co2:.1f} t", "Equivalent", "eco")
         with c4:
-            anom = kpis.get("pct_anomalies")
-            kpi_card("Anomalies", f"{anom:.1f}%" if anom is not None else "0.0%", "Score > seuil", "orange")
+            kpi_card("% stations ECO", f"{pct_eco:.1f}%", "Mode actif", "eco")
         with c5:
-            kpi_card("Economies", f"{eco_dt:,.0f} DT", "Potentiel RL", "green")
+            kpi_card("Incidents", str(nb_incidents), "Anomalies majeures", "orange")
+        with c6:
+            kpi_card("Disponibilite", f"{dispo:.1f}%", "Systeme", "gray")
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
-        if st.button("Carte reseau", key="nav_map", width="stretch"):
-            st.session_state["_nav_override"] = 1
-            st.rerun()
+        with section("Tendance mensuelle"):
+            if "timestamp" in df.columns and "mois" in df.columns:
+                monthly = df.copy()
+                monthly["timestamp"] = pd.to_datetime(monthly["timestamp"], errors="coerce")
+                monthly = monthly.groupby(monthly["timestamp"].dt.to_period("M")).agg(
+                    conso=("consommation_kwh", "sum"),
+                    eco=("economie_rl_kwh", "sum"),
+                ).reset_index()
+                monthly["periode"] = monthly["timestamp"].astype(str)
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["conso"], name="Consommation", line=dict(color="#1e3a8a")))
+                fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco"], name="Economies", line=dict(color="#059669")))
+                fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
+                st.plotly_chart(fig, width="stretch")
+
     with c2:
-        if st.button("Alertes", key="nav_anom", width="stretch"):
-            st.session_state["_nav_override"] = 3
-            st.rerun()
-    with c3:
-        if st.button("Optimisation", key="nav_opt", width="stretch"):
-            st.session_state["_nav_override"] = 4
-            st.rerun()
+        with section("Modes operationnels"):
+            if "mode_operation" in df.columns:
+                modes = df["mode_operation"].astype(str).value_counts().reset_index()
+                modes.columns = ["Mode", "Nb"]
+                fig = px.pie(modes, names="Mode", values="Nb", hole=0.5, color="Mode", color_discrete_map=MODE_COLORS)
+                fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
+                st.plotly_chart(fig, width="stretch")
 
-    # Recent alerts
-    with section("Dernieres Alertes"):
-        top_raw = load_top_anomalies(limit=300)
-        top = apply_current_admin_filters(top_raw).head(3)
-        if not top.empty:
-            for _, row in top.iterrows():
-                score = float(row.get("anomalie_score_ensemble", 0) or 0)
-                sev = "danger" if score > 0.6 else "warning" if score > 0.3 else "info"
-                station = str(row.get("station_id", ""))
-                ts_str = str(row.get("timestamp", ""))[:16]
-                alert_banner(
-                    f"Anomalie detectee - Station {station}",
-                    f"Score anomalie : {score:.2f}",
-                    sev,
-                    ts_str,
-                )
-        else:
-            st.info("Aucune anomalie recente detectee.")
-
-    # PDF export
-    with section("Rapport"):
-        if st.button("Generer rapport PDF", type="primary", width="stretch"):
-            anomaly_items = []
-            if not top.empty:
-                for _, row in top.head(5).iterrows():
-                    score = float(row.get("anomalie_score_ensemble", 0) or 0)
-                    anomaly_items.append({
-                        "station_id": str(row.get("station_id", "")),
-                        "detail": f"Score {score:.2f}",
-                        "severity": "CRITIQUE" if score > 0.6 else "ATTENTION" if score > 0.3 else "FAIBLE",
-                    })
-            pdf_bytes = generate_report_pdf(kpis, anomaly_items)
-            st.download_button(
-                "Telecharger le rapport PDF",
-                data=pdf_bytes,
-                file_name=f"rapport_bts_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf",
-                width="stretch",
-            )
+    with section("Consommation moyenne par gouvernorat (EEI proxy)"):
+        if "gouvernorat" in df.columns:
+            by_gov = df.groupby("gouvernorat")["consommation_kwh"].mean().reset_index()
+            by_gov.columns = ["Gouvernorat", "EEI proxy (kWh moy)"]
+            fig = px.bar(by_gov.sort_values("EEI proxy (kWh moy)", ascending=True),
+                         x="EEI proxy (kWh moy)", y="Gouvernorat", orientation="h")
+            fig.update_layout(template=template, height=300, margin=dict(l=0, r=0, t=20, b=0))
+            st.plotly_chart(fig, width="stretch")
