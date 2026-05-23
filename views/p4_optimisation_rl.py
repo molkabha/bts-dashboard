@@ -17,7 +17,7 @@ from services.data_service import (
     compute_filtered_kpis,
     load_nb3_rapport,
 )
-from ui.components import context_badge, header, kpi_card, render_artifact_gallery, section
+from ui.components import context_badge, header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
 from ui.utils import active_filter_label, selected_station_filter, session_outputs
 
@@ -193,19 +193,6 @@ def page_optimisation_rl():
                 st.dataframe(df_rl, width="stretch", hide_index=True)
             else:
                 st.info("Donnees agents RL non disponibles dans les artefacts NB3.")
-
-        with st.expander("Artefacts notebook NB3", expanded=False):
-            render_artifact_gallery(
-                [
-                    ("rl_7agents_apprentissage.png", "Apprentissage des 7 agents RL"),
-                    ("tableau_de_bord_complet.png", "Tableau de bord complet notebook"),
-                ],
-                title="Artefacts visuels NB3",
-                links=[
-                    ("agents_rl_7.pkl", "Agents RL"),
-                    ("pipeline_inference.joblib", "Pipeline inference"),
-                ],
-            )
 
     # Section 4 - Decision distribution
     with section("Distribution des Decisions"):
