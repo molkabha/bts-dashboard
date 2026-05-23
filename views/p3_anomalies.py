@@ -23,7 +23,7 @@ def _anomaly_type(score: float, qos: float) -> str:
 
 def page_anomalies():
     security_middleware.enforce()
-    header("Detection d'anomalies", "Score consensus — vote pondere final")
+    header("Anomalies", "Detection NB2 — score consensus vote pondere")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     df = load_dashboard_df(["ecart_pct", "label_ensemble_score"])
@@ -45,7 +45,7 @@ def page_anomalies():
     with k1:
         kpi_card("Score consensus", f"{score_consensus:.2f}", "Vote pondere final NB2", "orange")
     with k2:
-        kpi_card("Anomalies actives", str(len(anom_df)), f"Seuil NB2 > {seuil:.2f}", "red")
+        kpi_card("Mesures NB2 alerte", str(len(anom_df)), f"Score > {seuil:.2f}", "red")
     with k3:
         kpi_card("Stations touchees", str(anom_df["station_id"].nunique()) if not anom_df.empty else "0", "", "blue")
 

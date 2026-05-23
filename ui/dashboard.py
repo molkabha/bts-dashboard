@@ -26,7 +26,6 @@ from views.p2_prediction import page_prediction
 from views.p3_anomalies import page_anomalies
 from views.p4_decision import page_decision
 from views.p4_optimisation_rl import page_optimisation_rl
-from views.p5_agents_rl import page_agents_rl
 from views.p5_simulation import page_simulation
 from views.p7_monitoring import page_monitoring
 from views.p8_station import page_station_detail
@@ -41,7 +40,6 @@ PAGE_FUNCTIONS = {
     2: page_prediction,
     3: page_anomalies,
     4: page_decision,
-    5: page_agents_rl,
     6: page_simulation,
     14: page_optimisation_rl,
     7: page_monitoring,
@@ -101,8 +99,6 @@ def main():
 
     if nav_override is not None:
         page_index = nav_override
-        if role != "admin" and page_index == 5:
-            page_index = 6
 
     # Redirect to role home on first load
     if st.session_state.pop("_goto_home", False):

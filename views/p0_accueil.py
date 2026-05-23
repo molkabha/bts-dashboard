@@ -1,4 +1,4 @@
-"""Page 0 - Vue executive (admin)."""
+"""Page 0 - Accueil (admin)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df, render_executive_report_export
@@ -25,7 +25,7 @@ def page_accueil():
         st.rerun()
         return
 
-    header("Vue executive", "Pilotage strategique du parc BTS Tunisie Telecom")
+    header("Accueil", "Pilotage strategique du parc BTS Tunisie Telecom")
 
     df = load_dashboard_df()
     if df.empty:
@@ -44,7 +44,7 @@ def page_accueil():
     nb2_stats = load_nb2_network_stats()
     seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
     scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
-    nb_incidents = int((scores > seuil).sum())
+    nb_anomalies = int((scores > seuil).sum())
 
     with section("Indicateurs strategiques"):
         c1, c2, c3, c4 = st.columns(4)
@@ -58,7 +58,12 @@ def page_accueil():
         with c3:
             kpi_card("% stations ECO", f"{pct_eco:.1f}%", "Mode actif", "eco")
         with c4:
-            kpi_card("Incidents", str(nb_incidents), "Anomalies majeures", "orange")
+            kpi_card(
+                "Anomalies NB2",
+                str(nb_anomalies),
+                f"Mesures avec score > {seuil:.2f}",
+                "orange",
+            )
 
     c1, c2 = st.columns(2)
     with c1:
@@ -76,12 +81,25 @@ def page_accueil():
                 st.caption("Source : streamlit_timeseries.parquet (NB3) ou agregats filtres du dataset actif.")
 
     with c2:
-        with section("Modes operationnels"):
-            if "mode_operation" in df.columns:
-                modes = df["mode_operation"].astype(str).value_counts().reset_index()
-                modes.columns = ["Mode", "Nb"]
-                fig = px.pie(modes, names="Mode", values="Nb", hole=0.5, color="Mode", color_discrete_map=MODE_COLORS)
-                fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
+        with section("Top gouvernorats (conso moyenne)"):
+            if {"gouvernorat", "consommation_kwh"}.issubset(df.columns):
+                by_gov = (
+                    df.groupby("gouvernorat", as_index=False)["consommation_kwh"]
+                    .mean()
+                    .nlargest(8, "consommation_kwh")
+                    .sort_values("consommation_kwh")
+                )
+                fig = px.bar(
+                    by_gov,
+                    x="consommation_kwh",
+                    y="gouvernorat",
+                    orientation="h",
+                    labels={"consommation_kwh": "kWh moyen", "gouvernorat": ""},
+                )
+                fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0), showlegend=False)
                 st.plotly_chart(fig, width="stretch")
+                st.caption("Detail par gouvernorat : page Comparaison.")
+            else:
+                st.info("Colonnes gouvernorat / consommation indisponibles.")
 
     render_executive_report_export(kpis)

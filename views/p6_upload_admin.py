@@ -84,7 +84,7 @@ def page_upload_admin():
         st.error("Acces refuse. Cette page est reservee aux administrateurs.")
         return
 
-    header("Donnees", "Importer un dataset et le publier dans tout le dashboard")
+    header("Import / dataset", "Importer un dataset et le publier dans tout le dashboard")
     info = active_dataset_info()
     if info:
         st.info(f"Dataset actif : {info.get('name', 'Standard')} ({info.get('published_at', '')})")

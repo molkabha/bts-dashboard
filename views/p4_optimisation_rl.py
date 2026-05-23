@@ -37,7 +37,7 @@ AGENT_DESCRIPTIONS = {
 
 def page_optimisation_rl():
     security_middleware.enforce()
-    header("Optimisation", "Economies, modes operationnels et recommandations")
+    header("Optimisation RL", "Economies, modes operationnels et recommandations")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     outputs = session_outputs()
@@ -145,24 +145,20 @@ def page_optimisation_rl():
             else:
                 st.info("Donnees agents RL non disponibles dans les artefacts NB3.")
 
-    # Section 4 - Decision distribution
-    with section("Distribution des Decisions"):
+    with section("Repartition des modes operationnels"):
         if "mode_operation" in df.columns:
-            c1, c2 = st.columns(2)
-            with c1:
-                mode_counts = df["mode_operation"].value_counts().reset_index()
-                mode_counts.columns = ["Mode", "Nb"]
-                colors = {"ECO": "#059669", "NORMAL": "#2563eb", "ATTENTION": "#d97706", "CRITIQUE": "#c8102e"}
-                fig_d = px.pie(mode_counts, names="Mode", values="Nb", hole=0.45,
-                               color="Mode", color_discrete_map=colors,
-                               title="Repartition des modes operationnels")
-                fig_d.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0), height=300)
-                st.plotly_chart(fig_d, width="stretch")
-            with c2:
-                if "heure" in df.columns:
-                    mode_hour = df.groupby(["heure", "mode_operation"]).size().reset_index(name="count")
-                    fig_mh = px.bar(mode_hour, x="heure", y="count", color="mode_operation",
-                                    color_discrete_map=colors, title="Distribution par heure")
-                    fig_mh.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0),
-                                         height=300, barmode="stack")
-                    st.plotly_chart(fig_mh, width="stretch")
+            mode_counts = df["mode_operation"].value_counts().reset_index()
+            mode_counts.columns = ["Mode", "Nb"]
+            colors = {"ECO": "#059669", "NORMAL": "#2563eb", "ATTENTION": "#d97706", "CRITIQUE": "#c8102e"}
+            fig_d = px.pie(
+                mode_counts,
+                names="Mode",
+                values="Nb",
+                hole=0.45,
+                color="Mode",
+                color_discrete_map=colors,
+                title="Decisions NB3 sur la periode filtree",
+            )
+            fig_d.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0), height=320)
+            st.plotly_chart(fig_d, width="stretch")
+            st.caption("Profil horaire : page Monitoring (ingenieur).")

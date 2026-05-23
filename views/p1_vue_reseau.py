@@ -1,4 +1,4 @@
-"""Page 1 - Gestion du parc BTS (admin)."""
+"""Page 1 - Carte du parc BTS (admin)."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFram
 
 def page_vue_reseau():
     security_middleware.enforce()
-    header("Gestion du parc", "Carte interactive et inventaire stations")
+    header("Carte", "Carte interactive et inventaire stations")
 
     df = load_dashboard_df(["mode_operation", "latitude", "longitude"])
     st.caption(active_filter_label())

@@ -33,7 +33,7 @@ FEATURE_LABELS_FR = {
 
 def page_prediction():
     security_middleware.enforce()
-    header("Predictions IA", "LightGBM — prevision consommation et explicabilite locale")
+    header("Predictions", "LightGBM — prevision consommation et explicabilite locale")
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     outputs = session_outputs()

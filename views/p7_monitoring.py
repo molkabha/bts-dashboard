@@ -28,7 +28,7 @@ def page_monitoring():
     if not isinstance(df, pd.DataFrame) or df.empty:
         df = load_dashboard_df(["trafic_data_mbps", "pue", "taux_charge_data"])
     metrics = st.session_state.get("_fleet_metrics") or fleet_status_metrics(df)
-    header("Monitoring temps reel", "Supervision operationnelle du parc BTS")
+    header("Monitoring", "Supervision operationnelle du parc BTS")
 
     df = load_dashboard_df(["trafic_data_mbps", "pue", "taux_charge_data"])
     if df.empty:

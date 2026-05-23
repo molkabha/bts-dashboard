@@ -49,6 +49,12 @@ def _station_alerts_table(df: pd.DataFrame, limit: int = 10) -> pd.DataFrame:
 
 def page_station_detail():
     security_middleware.enforce()
+    back_index = 1 if st.session_state.get("role") == "admin" else 7
+    back_label = "Carte" if back_index == 1 else "Monitoring"
+    if st.button(f"Retour — {back_label}", key="station_back_nav"):
+        st.session_state["_nav_override"] = back_index
+        st.rerun()
+
     station_id = st.session_state.get("selected_station_detail")
     if not station_id:
         st.info("Selectionnez une station depuis la carte ou le tableau du parc.")
