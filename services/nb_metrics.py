@@ -37,6 +37,28 @@ def _needs_fill_mask(series: pd.Series, column: str, zero_as_missing: bool) -> p
     return missing
 
 
+def _coerce_merge_key(series: pd.Series, key: str) -> pd.Series:
+    """Align merge key dtypes (upload CSV vs notebook parquet)."""
+    if key == "station_id":
+        return series.astype(str).str.strip()
+    if key == "timestamp":
+        ts = pd.to_datetime(series, errors="coerce")
+        if getattr(ts.dt, "tz", None) is not None:
+            ts = ts.dt.tz_convert("UTC").dt.tz_localize(None)
+        return ts
+    if key == "heure":
+        return pd.to_numeric(series, errors="coerce").astype("Int64")
+    return series
+
+
+def _prepare_merge_keys(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
+    out = df.copy()
+    for key in keys:
+        if key in out.columns:
+            out[key] = _coerce_merge_key(out[key], key)
+    return out
+
+
 def merge_business_columns(
     df: pd.DataFrame,
     source: pd.DataFrame,
@@ -55,8 +77,12 @@ def merge_business_columns(
     if not available:
         return df
 
-    right = source[keys + available].drop_duplicates(subset=keys, keep="last")
-    merged = df.merge(right, on=keys, how="left", suffixes=("", "_nb_src"))
+    left = _prepare_merge_keys(df, keys)
+    right = _prepare_merge_keys(
+        source[keys + available].drop_duplicates(subset=keys, keep="last"),
+        keys,
+    )
+    merged = left.merge(right, on=keys, how="left", suffixes=("", "_nb_src"))
 
     for col in available:
         src_name = f"{col}_nb_src"
