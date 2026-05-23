@@ -160,28 +160,35 @@ def _render_models_comparison(models_df: pd.DataFrame, template: str, prod_name:
             if not err_cols:
                 st.info("RMSE / MAE non disponibles dans l'artefact NB1.")
             else:
-                melt = display.melt(
-                    id_vars=["Modèle"],
-                    value_vars=err_cols,
-                    var_name="Métrique",
-                    value_name="Valeur",
+                melt = (
+                    display.melt(
+                        id_vars=["Modèle"],
+                        value_vars=err_cols,
+                        var_name="Métrique",
+                        value_name="Valeur",
+                    )
+                    .dropna(subset=["Valeur"])
                 )
-                fig = px.bar(
-                    melt,
-                    x="Valeur",
-                    y="Modèle",
-                    color="Metrique",
-                    orientation="h",
-                    barmode="group",
-                    color_discrete_map={"RMSE": "#1e3a8a", "MAE": "#64748b"},
-                )
-                fig.update_layout(
-                    template=template,
-                    height=max(220, 44 * len(display)),
-                    margin=dict(l=0, r=0, t=8, b=0),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02),
-                )
-                st.plotly_chart(fig, width="stretch")
+                if melt.empty:
+                    st.info("RMSE / MAE non disponibles dans l'artefact NB1.")
+                else:
+                    fig = px.bar(
+                        melt,
+                        x="Valeur",
+                        y="Modèle",
+                        color="Métrique",
+                        orientation="h",
+                        barmode="group",
+                        color_discrete_map={"RMSE": "#1e3a8a", "MAE": "#64748b"},
+                        labels={"Valeur": "Erreur (kWh)", "Modèle": "Modèle", "Métrique": "Métrique"},
+                    )
+                    fig.update_layout(
+                        template=template,
+                        height=max(220, 44 * len(display)),
+                        margin=dict(l=0, r=0, t=8, b=0),
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                    )
+                    st.plotly_chart(fig, width="stretch")
 
 
 def page_prediction():
@@ -230,7 +237,7 @@ def page_prediction():
         )
     with c2:
         horizon = st.selectbox(
-            "Fenetre",
+            "Fenêtre",
             horizon_options,
             index=0,
             key="pred_horizon",
