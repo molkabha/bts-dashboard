@@ -15,6 +15,7 @@ from config.settings import settings
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
 from services.data_service import available_stations, engineer_assigned_stations
+from services.nb_metrics import effective_economie_kwh
 from services.pipeline_service import simulate_nb_pipeline
 from services.realtime_generator import generate_realtime_station_data
 from ui.components import header, kpi_card, section, live_indicator
@@ -59,9 +60,7 @@ def _numeric_series(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.S
 def _session_summary(sim_data: pd.DataFrame, selected_stations: list[str]):
     """Render session summary KPIs from accumulated simulation data."""
     conso = _numeric_series(sim_data, "consommation_kwh", 0)
-    eco_rl = _numeric_series(sim_data, "economie_rl_kwh", 0)
-    eco_expert = _numeric_series(sim_data, "economie_estimee_kwh", 0)
-    eco_best = eco_rl.where(eco_rl > eco_expert, eco_expert)
+    eco_best = effective_economie_kwh(sim_data)
 
     total_conso = conso.sum()
     total_eco = eco_best.sum()
@@ -255,9 +254,7 @@ def page_simulation():
                 mode = str(row.get("mode_operation", "NORMAL"))
                 action = str(row.get("action_proposee", row.get("action_principale", "Monitoring standard")))
                 qos = float(row.get("score_qos", 0.82) or 0.82)
-                eco_rl = float(row.get("economie_rl_kwh", 0) or 0)
-                eco_exp = float(row.get("economie_estimee_kwh", 0) or 0)
-                eco = max(eco_rl, eco_exp)
+                eco = float(effective_economie_kwh(pd.DataFrame([row])).iloc[0])
                 best_agent = str(row.get("meilleur_agent_rl", ""))
                 nb_votes = int(row.get("nb_votes_anomalie", 0) or 0)
                 anom_score = float(row.get("anomalie_score_ensemble", 0) or 0)
@@ -282,14 +279,11 @@ def page_simulation():
             with section("Evolution Consommation"):
                 history = sim_data.copy()
                 history["consommation_kwh"] = pd.to_numeric(history["consommation_kwh"], errors="coerce")
-                if "economie_rl_kwh" in history.columns:
-                    history["economie_rl_kwh"] = pd.to_numeric(history["economie_rl_kwh"], errors="coerce").fillna(0)
-                else:
-                    history["economie_rl_kwh"] = 0
+                history["economie_kwh"] = effective_economie_kwh(history)
 
                 agg = history.groupby("timestamp").agg(
                     baseline=("consommation_kwh", "sum"),
-                    eco=("economie_rl_kwh", "sum"),
+                    eco=("economie_kwh", "sum"),
                 ).reset_index().tail(24)
                 agg["optimise"] = agg["baseline"] - agg["eco"]
 

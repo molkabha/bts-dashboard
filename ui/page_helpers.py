@@ -13,7 +13,7 @@ DEFAULT_COLS = [
     "consommation_kwh", "conso_predite", "pred_q10", "pred_q90",
     "anomalie_score_ensemble", "nb_votes_anomalie", "score_qos",
     "mode_operation", "action_proposee", "action_principale",
-    "economie_estimee_kwh", "economie_rl_kwh", "ecart_pct",
+    "economie_estimee_kwh", "economie_rl_kwh", "economie_kwh", "ecart_pct",
     "heure", "jour_semaine", "mois", "charge_cpu_pct",
     "latitude", "longitude", "meilleur_agent_rl",
 ]

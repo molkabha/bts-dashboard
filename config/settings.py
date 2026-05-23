@@ -96,7 +96,8 @@ class Settings(BaseSettings):
     SIMULATION_COLUMNS: List[str] = Field(
         default=[
             "timestamp", "station_id", "consommation_kwh", "heure", "conso_predite",
-            "anomalie_score_ensemble", "mode_operation", "action_rl", "economie_rl_kwh", "score_qos"
+            "anomalie_score_ensemble", "mode_operation", "action_rl", "action_proposee",
+            "economie_estimee_kwh", "economie_rl_kwh", "economie_kwh", "score_qos",
         ]
     )
 

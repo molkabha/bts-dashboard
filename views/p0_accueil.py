@@ -62,14 +62,23 @@ def page_accueil():
             if "timestamp" in df.columns and "mois" in df.columns:
                 monthly = df.copy()
                 monthly["timestamp"] = pd.to_datetime(monthly["timestamp"], errors="coerce")
-                monthly = monthly.groupby(monthly["timestamp"].dt.to_period("M")).agg(
-                    conso=("consommation_kwh", "sum"),
-                    eco=("economie_rl_kwh", "sum"),
-                ).reset_index()
+                agg_cols = {"conso": ("consommation_kwh", "sum")}
+                if "economie_estimee_kwh" in monthly.columns:
+                    agg_cols["eco_expert"] = ("economie_estimee_kwh", "sum")
+                if "economie_rl_kwh" in monthly.columns:
+                    agg_cols["eco_rl"] = ("economie_rl_kwh", "sum")
+                if "economie_kwh" in monthly.columns:
+                    agg_cols["eco"] = ("economie_kwh", "sum")
+                monthly = monthly.groupby(monthly["timestamp"].dt.to_period("M")).agg(**agg_cols).reset_index()
                 monthly["periode"] = monthly["timestamp"].astype(str)
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["conso"], name="Consommation", line=dict(color="#1e3a8a")))
-                fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco"], name="Economies", line=dict(color="#059669")))
+                if "eco_expert" in monthly.columns:
+                    fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco_expert"], name="Economie experte (NB3)", line=dict(color="#3b82f6")))
+                if "eco_rl" in monthly.columns:
+                    fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco_rl"], name="Economie RL (NB3)", line=dict(color="#059669")))
+                elif "eco" in monthly.columns:
+                    fig.add_trace(go.Scatter(x=monthly["periode"], y=monthly["eco"], name="Economies NB3", line=dict(color="#059669")))
                 fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
                 st.plotly_chart(fig, width="stretch")
 

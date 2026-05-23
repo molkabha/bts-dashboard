@@ -16,6 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from config.settings import ROOT, settings
+from services.nb_metrics import harmonize_nb3_economies, merge_business_columns
 
 try:
     import pyarrow.parquet as pq
@@ -450,7 +451,11 @@ def load_active_dataset(columns: list[str] | None = None) -> pd.DataFrame:
     path = active_dataset_path()
     if path is None or not path.exists():
         return pd.DataFrame()
-    return read_parquet_fast(path, columns)
+    df = read_parquet_fast(path, columns)
+    if df.empty:
+        return df
+    requested = list(columns) if columns else list(df.columns)
+    return enrich_dashboard_data(df, requested)
 
 # --- File Integrity ---
 
@@ -865,67 +870,47 @@ def load_filtered_main_data(columns: list[str]) -> pd.DataFrame:
     return enrich_dashboard_data(df, cols)
 
 
-def _merge_missing_columns(
-    df: pd.DataFrame,
-    source: pd.DataFrame,
-    columns: list[str],
-    keys: list[str],
-) -> pd.DataFrame:
-    if df.empty or source.empty or not set(keys).issubset(df.columns) or not set(keys).issubset(source.columns):
-        return df
-    missing = [col for col in columns if col not in df.columns and col in source.columns]
-    if not missing:
-        return df
-    right = source[keys + missing].drop_duplicates(keys)
-    return df.merge(right, on=keys, how="left")
+NB2_BUSINESS_COLUMNS = ["score_qos", "anomalie_score_ensemble", "nb_votes_anomalie"]
+NB3_BUSINESS_COLUMNS = [
+    "mode_operation",
+    "action_proposee",
+    "action_rl",
+    "economie_estimee_kwh",
+    "economie_rl_kwh",
+    "score_qos",
+]
+NB3_DECISION_COLUMNS = [
+    "action_rl",
+    "economie_rl_kwh",
+    "economie_estimee_kwh",
+    "mode_operation",
+    "score_qos",
+]
 
 
 def enrich_dashboard_data(df: pd.DataFrame, requested_columns: list[str]) -> pd.DataFrame:
-    """Fill requested business metrics from canonical NB2/NB3 artefacts."""
+    """Fill business metrics from canonical NB2/NB3 artefacts (including blank historical rows)."""
     if df.empty:
         return df
 
     out = normalize_dataframe_columns(df)
-    requested = set(requested_columns)
 
-    needs_nb2 = requested.intersection({"score_qos", "anomalie_score_ensemble", "nb_votes_anomalie"}) - set(out.columns)
-    if needs_nb2 and {"station_id", "timestamp"}.issubset(out.columns):
-        nb2_cols = list(dict.fromkeys(["timestamp", "station_id", "score_qos",
-                        "anomalie_score_ensemble", "nb_votes_anomalie"]))
+    if {"station_id", "timestamp"}.issubset(out.columns):
+        nb2_cols = list(dict.fromkeys(["timestamp", "station_id", *NB2_BUSINESS_COLUMNS]))
         nb2 = read_parquet_fast(artifact_path(settings.ANOMALY_DATASET), nb2_cols)
-        out = _merge_missing_columns(out, nb2, list(needs_nb2), ["station_id", "timestamp"])
+        out = merge_business_columns(out, nb2, NB2_BUSINESS_COLUMNS, ["station_id", "timestamp"])
 
-    needs_nb3 = requested.intersection(
-        {"mode_operation", "action_proposee", "action_rl", "economie_estimee_kwh", "economie_rl_kwh", "score_qos"}
-    ) - set(out.columns)
-    if needs_nb3 and {"station_id", "timestamp"}.issubset(out.columns):
-        nb3_cols = list(
-            dict.fromkeys(
-                [
-                    "timestamp",
-                    "station_id",
-                    "mode_operation",
-                    "action_proposee",
-                    "action_rl",
-                    "economie_estimee_kwh",
-                    "economie_rl_kwh",
-                    "score_qos",
-                ]
-            )
-        )
+        nb3_cols = list(dict.fromkeys(["timestamp", "station_id", *NB3_BUSINESS_COLUMNS]))
         nb3 = read_parquet_fast(artifact_path("streamlit_data.parquet"), nb3_cols)
-        out = _merge_missing_columns(out, nb3, list(needs_nb3), ["station_id", "timestamp"])
+        out = merge_business_columns(out, nb3, NB3_BUSINESS_COLUMNS, ["station_id", "timestamp"])
 
-    needs_decisions = requested.intersection(
-        {"action_rl", "economie_rl_kwh", "economie_estimee_kwh", "score_qos"}) - set(out.columns)
-    if needs_decisions and {"station_id", "heure"}.issubset(out.columns):
-        decisions = read_parquet_fast(
-            artifact_path("decisions_par_station.parquet"),
-            ["station_id", "heure", "action_rl", "economie_rl_kwh", "economie_estimee_kwh", "score_qos"],
-        )
-        out = _merge_missing_columns(out, decisions, list(needs_decisions), ["station_id", "heure"])
+    if {"station_id", "heure"}.issubset(out.columns):
+        decision_cols = list(dict.fromkeys(["station_id", "heure", *NB3_DECISION_COLUMNS]))
+        decisions = read_parquet_fast(artifact_path("decisions_par_station.parquet"), decision_cols)
+        out = merge_business_columns(out, decisions, NB3_DECISION_COLUMNS, ["station_id", "heure"])
 
-    return normalize_dataframe_columns(out)
+    out = harmonize_nb3_economies(normalize_dataframe_columns(out))
+    return out
 
 
 def load_top_anomalies(limit: int = 300) -> pd.DataFrame:
@@ -944,7 +929,9 @@ def load_simulation_base(max_rows: int) -> pd.DataFrame:
     path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
     if path is None:
         return pd.DataFrame()
-    return read_parquet_fast(path, settings.SIMULATION_COLUMNS).head(max_rows)
+    cols = list(dict.fromkeys(settings.SIMULATION_COLUMNS + ["economie_estimee_kwh", "economie_kwh"]))
+    df = read_parquet_fast(path, cols).head(max_rows)
+    return enrich_dashboard_data(df, cols)
 
 
 def available_stations() -> list[str]:
@@ -975,34 +962,41 @@ def engineer_assigned_stations(engineer_user: str | None = None) -> list[str]:
 def compute_filtered_kpis(df: pd.DataFrame) -> dict:
     if df.empty:
         return {}
+    work = harmonize_nb3_economies(df) if "economie_kwh" not in df.columns else df
     conso_values = pd.to_numeric(
-        df["consommation_kwh"],
-        errors="coerce").dropna() if "consommation_kwh" in df.columns else pd.Series(
+        work["consommation_kwh"],
+        errors="coerce").dropna() if "consommation_kwh" in work.columns else pd.Series(
         dtype=float)
     conso = float(conso_values.sum()) if not conso_values.empty else None
     eco_values = pd.to_numeric(
-        df["economie_rl_kwh"],
-        errors="coerce").dropna() if "economie_rl_kwh" in df.columns else pd.Series(
+        work["economie_kwh"],
+        errors="coerce").dropna() if "economie_kwh" in work.columns else pd.Series(
         dtype=float)
     eco_rl = float(eco_values.sum()) if not eco_values.empty else None
+    eco_est_values = pd.to_numeric(
+        work["economie_estimee_kwh"],
+        errors="coerce").dropna() if "economie_estimee_kwh" in work.columns else pd.Series(dtype=float)
+    eco_est = float(eco_est_values.sum()) if not eco_est_values.empty else None
     score_qos_moyen = None
-    if "score_qos" in df.columns:
-        qos_values = pd.to_numeric(df["score_qos"], errors="coerce").dropna()
+    if "score_qos" in work.columns:
+        qos_values = pd.to_numeric(work["score_qos"], errors="coerce").dropna()
         if not qos_values.empty:
             score_qos_moyen = float(qos_values.mean())
+    mode_values = work["mode_operation"].dropna().astype(str) if "mode_operation" in work.columns else pd.Series(dtype=str)
     anomaly_values = pd.to_numeric(
-        df["anomalie_score_ensemble"],
-        errors="coerce").dropna() if "anomalie_score_ensemble" in df.columns else pd.Series(
+        work["anomalie_score_ensemble"],
+        errors="coerce").dropna() if "anomalie_score_ensemble" in work.columns else pd.Series(
         dtype=float)
-    mode_values = df["mode_operation"].dropna().astype(str) if "mode_operation" in df.columns else pd.Series(dtype=str)
     return {
-        "nb_stations": df["station_id"].nunique() if "station_id" in df.columns else 0,
-        "nb_mesures": len(df),
+        "nb_stations": work["station_id"].nunique() if "station_id" in work.columns else 0,
+        "nb_mesures": len(work),
         "conso_totale_kwh": conso,
         "conso_moyenne_kwh": float(conso_values.mean()) if not conso_values.empty else None,
         "score_qos_moyen": score_qos_moyen,
         "pct_anomalies": float(anomaly_values.gt(0.25).mean() * 100) if not anomaly_values.empty else None,
         "pct_mode_eco": float(mode_values.eq("ECO").mean() * 100) if not mode_values.empty else None,
+        "economie_kwh": eco_rl,
+        "economie_estimee_kwh": eco_est,
         "economie_rl_pct": (eco_rl / conso * 100) if eco_rl is not None and conso else None,
         "co2_evite_t": eco_rl * settings.FACTEUR_CO2_TN / 1000 if eco_rl is not None else None,
         "economie_dt": eco_rl * settings.PRIX_KWH_TN if eco_rl is not None else None,
@@ -1012,6 +1006,7 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
 def station_summary_from_df(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "station_id" not in df.columns:
         return pd.DataFrame()
+    df = harmonize_nb3_economies(df)
     agg = {
         "consommation_kwh": "mean",
         "score_qos": "mean",
@@ -1020,7 +1015,7 @@ def station_summary_from_df(df: pd.DataFrame) -> pd.DataFrame:
         "technologie": "first",
         "type_zone": "first",
     }
-    for col in ["economie_estimee_kwh", "economie_rl_kwh", "latitude", "longitude"]:
+    for col in ["economie_estimee_kwh", "economie_rl_kwh", "economie_kwh", "latitude", "longitude"]:
         if col in df.columns:
             agg[col] = "mean" if col.startswith("economie") else "first"
     available_agg = {k: v for k, v in agg.items() if k in df.columns}

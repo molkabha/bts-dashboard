@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from services.decision_service import MoteurDecisionEnergie
+from services.nb_metrics import harmonize_nb3_economies
 from services.optimization_service import StrategieOptimisation
 
 
@@ -173,17 +174,42 @@ def simulate_nb_pipeline(
         keep = ["station_id", "heure", "action_rl", "economie_rl_kwh", "mode_majoritaire"]
         missing_keep = [c for c in ["action_rl", "economie_rl_kwh", "mode_majoritaire"] if c not in df.columns]
         if missing_keep and {"station_id", "heure"}.issubset(decisions.columns):
-            df = df.merge(
+            merged = df.merge(
                 decisions[[c for c in keep if c in decisions.columns]],
                 on=["station_id", "heure"],
                 how="left",
-                suffixes=("", "_nb3_station"),
+                suffixes=("", "_nb3"),
             )
+            for col in ["action_rl", "economie_rl_kwh", "mode_majoritaire"]:
+                src = f"{col}_nb3"
+                if src not in merged.columns:
+                    continue
+                if col not in merged.columns:
+                    merged[col] = merged[src]
+                else:
+                    missing = _blank_mask(merged[col])
+                    if missing.any():
+                        merged.loc[missing, col] = merged.loc[missing, src]
+                merged = merged.drop(columns=[src], errors="ignore")
+            df = merged
 
-    # 3. Fallbacks for RL columns
-    if "action_rl" not in df.columns:
-        df["action_rl"] = df["action_proposee"]
-    if "economie_rl_kwh" not in df.columns:
-        df["economie_rl_kwh"] = df["economie_estimee_kwh"]
+    # 3. Fallbacks for RL columns (notebook: RL inherits expert when not computed)
+    if "action_proposee" in df.columns:
+        if "action_rl" not in df.columns:
+            df["action_rl"] = df["action_proposee"]
+        else:
+            missing_action = _blank_mask(df["action_rl"])
+            if missing_action.any():
+                df.loc[missing_action, "action_rl"] = df.loc[missing_action, "action_proposee"]
 
-    return df
+    if "economie_estimee_kwh" in df.columns:
+        if "economie_rl_kwh" not in df.columns:
+            df["economie_rl_kwh"] = df["economie_estimee_kwh"]
+        else:
+            rl = pd.to_numeric(df["economie_rl_kwh"], errors="coerce")
+            est = pd.to_numeric(df["economie_estimee_kwh"], errors="coerce")
+            missing_rl = _blank_mask(df["economie_rl_kwh"]) | ((rl.fillna(0) <= 0) & (est.fillna(0) > 0))
+            if missing_rl.any():
+                df.loc[missing_rl, "economie_rl_kwh"] = df.loc[missing_rl, "economie_estimee_kwh"]
+
+    return harmonize_nb3_economies(df)
