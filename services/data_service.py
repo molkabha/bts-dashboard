@@ -1040,6 +1040,31 @@ def get_dataset_date_bounds(cache_key: str) -> tuple[object, object]:
     return ts.min().date(), ts.max().date()
 
 
+def _unique_latest_modes_per_station(df: pd.DataFrame) -> list[str]:
+    """Modes présents sur le dernier état de chaque station (aligné filtre sidebar)."""
+    from config.theme import MODE_ORDER, normalize_mode_key
+
+    if df.empty or "station_id" not in df.columns or "mode_operation" not in df.columns:
+        return []
+
+    work = df[["station_id", "mode_operation"]].copy()
+    if "timestamp" in df.columns:
+        work["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        latest = work.sort_values("timestamp").groupby("station_id", as_index=False).tail(1)
+    else:
+        latest = work.groupby("station_id", as_index=False).agg(mode_operation=("mode_operation", "last"))
+
+    seen: dict[str, str] = {}
+    for raw in latest["mode_operation"].dropna().astype(str):
+        key = normalize_mode_key(raw)
+        if key and key not in ("NONE", "NAN"):
+            seen[key] = key
+
+    ordered = [m for m in MODE_ORDER if m in seen]
+    ordered.extend(sorted(set(seen) - set(ordered)))
+    return ordered
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
     """Lightweight unique values for sidebar filters (no full enrich)."""
@@ -1050,16 +1075,17 @@ def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
         return {}
     available = set(existing_columns(path))
     cols = [c for c in ("station_id", "gouvernorat", "technologie", "type_zone", "mode_operation") if c in available]
+    if "mode_operation" in cols and "timestamp" in available:
+        cols.append("timestamp")
     if not cols:
         return {}
-    df = read_parquet_fast(path, cols)
+    df = read_parquet_fast(path, list(dict.fromkeys(cols)))
     out: dict[str, list[str]] = {}
     mapping = {
         "stations": "station_id",
         "gouvernorats": "gouvernorat",
         "technologies": "technologie",
         "zones": "type_zone",
-        "modes": "mode_operation",
     }
     inactive = load_inactive_stations()
     for key, col in mapping.items():
@@ -1068,6 +1094,10 @@ def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
             if key == "stations" and inactive:
                 values = [v for v in values if v not in inactive]
             out[key] = values
+
+    if "mode_operation" in df.columns:
+        out["modes"] = _unique_latest_modes_per_station(df)
+
     return out
 
 
