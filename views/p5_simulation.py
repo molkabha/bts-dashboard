@@ -80,6 +80,16 @@ def _advance_replay(source_df, selected_stations, sim_mode, sim_base_date, start
     return replay_ok
 
 
+def _replay_source_df() -> pd.DataFrame:
+    """Return cached replay source; never use `or` on a DataFrame (ambiguous truth value)."""
+    cached = st.session_state.get("sim_source_df")
+    if isinstance(cached, pd.DataFrame):
+        return cached
+    source_df = load_replay_source()
+    st.session_state["sim_source_df"] = source_df
+    return source_df
+
+
 def _primary_row(latest_all: pd.DataFrame) -> pd.Series:
     if latest_all.empty:
         return pd.Series(dtype=object)
@@ -153,8 +163,7 @@ def page_simulation():
             return
 
         if st.session_state.pop("sim_advance", False) and st.session_state.get("sim_running"):
-            source_df = st.session_state.get("sim_source_df") or load_replay_source()
-            st.session_state["sim_source_df"] = source_df
+            source_df = _replay_source_df()
             _advance_replay(
                 source_df, selected_stations, sim_mode, sim_base_date, start_hour,
                 int(st.session_state.get("sim_speed", 1)),
