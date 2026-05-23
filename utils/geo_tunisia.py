@@ -46,6 +46,19 @@ GOVERNORATE_BBOXES: dict[str, tuple[float, float, float, float]] = {
     "kébili": (33.66, 33.78, 8.88, 9.12),
 }
 
+def _text_val(value, default: str = "") -> str:
+    """Safe string for pandas scalars (pd.NA cannot be used with `or`)."""
+    try:
+        if pd.isna(value):
+            return default
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    if text.lower() in ("", "nan", "none", "<na>"):
+        return default
+    return text
+
+
 GEO_COLUMN_ALIASES: dict[str, list[str]] = {
     "latitude": ["lat", "Lat", "LAT", "gps_lat", "station_lat", "latitude_station", "lat_station"],
     "longitude": ["lon", "lng", "long", "Lon", "LON", "gps_lon", "gps_lng", "station_lon", "longitude_station"],
@@ -221,7 +234,7 @@ def sanitize_station_coordinates(stations: pd.DataFrame) -> pd.DataFrame:
         gov = row[gov_col] if gov_col else None
         lat = row.get("latitude")
         lon = row.get("longitude")
-        prev_source = str(row.get("gps_source") or "")
+        prev_source = _text_val(row.get("gps_source"))
 
         if pd.isna(lat) or pd.isna(lon):
             pos = station_position_in_governorate(str(row["station_id"]), str(gov or ""))

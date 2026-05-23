@@ -1387,7 +1387,9 @@ def _merge_gps_by_priority(frames: list[pd.DataFrame]) -> pd.DataFrame:
                 keep_cols.append(col)
         for _, row in work[valid_coordinate_mask(work)].iterrows():
             sid = str(row["station_id"])
-            src = str(row.get("gps_source") or "dataset_actif")
+            from utils.geo_tunisia import _text_val
+
+            src = _text_val(row.get("gps_source"), "dataset_actif")
             base_src = src.split("+")[0]
             priority = GPS_SOURCE_PRIORITY.get(base_src, 20)
             if sid not in best or priority > best[sid]["priority"]:
