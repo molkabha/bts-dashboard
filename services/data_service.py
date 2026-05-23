@@ -1127,6 +1127,29 @@ def build_nb3_profil_horaire(df: pd.DataFrame) -> pd.DataFrame:
     return profil if isinstance(profil, pd.DataFrame) else pd.DataFrame()
 
 
+def _plotly_safe_monthly_series(monthly: pd.DataFrame) -> pd.DataFrame:
+    """Convert Period / exotic dtypes to strings and floats for Plotly JSON serialization."""
+    if monthly.empty:
+        return monthly
+    out = monthly.copy()
+    if "timestamp" in out.columns:
+        ts_col = out["timestamp"]
+        if isinstance(ts_col.dtype, pd.PeriodDtype) or str(ts_col.dtype).startswith("period"):
+            out["periode"] = ts_col.astype(str)
+            out["timestamp"] = pd.to_datetime(out["periode"], errors="coerce")
+        elif not pd.api.types.is_datetime64_any_dtype(ts_col):
+            out["periode"] = ts_col.astype(str)
+            out["timestamp"] = pd.to_datetime(out["periode"], errors="coerce")
+        elif "periode" not in out.columns:
+            out["periode"] = pd.to_datetime(ts_col, errors="coerce").dt.strftime("%Y-%m")
+    for col in out.columns:
+        if col in {"timestamp", "periode", "station_id"}:
+            continue
+        if pd.api.types.is_numeric_dtype(out[col]):
+            out[col] = pd.to_numeric(out[col], errors="coerce")
+    return out
+
+
 def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.DataFrame:
     """Monthly conso/eco series from NB3 streamlit_timeseries or filtered main data."""
     ts = artifact_table_for_df("streamlit_timeseries.parquet", df)
@@ -1146,7 +1169,7 @@ def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.D
             "economie_rl_tot": "eco_rl",
         })
         monthly["periode"] = monthly["timestamp"].astype(str)
-        return monthly
+        return _plotly_safe_monthly_series(monthly)
 
     if df.empty or "timestamp" not in df.columns:
         return pd.DataFrame()
@@ -1164,7 +1187,7 @@ def build_nb3_monthly_series(df: pd.DataFrame, kpis: dict | None = None) -> pd.D
     if rl_pct > 0:
         monthly["eco_rl"] = monthly["conso"] * rl_pct
     monthly["periode"] = monthly["timestamp"].astype(str)
-    return monthly
+    return _plotly_safe_monthly_series(monthly)
 
 
 def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:

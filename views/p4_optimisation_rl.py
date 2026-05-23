@@ -138,15 +138,20 @@ def page_optimisation_rl():
             if "timestamp" not in ts_nb3.columns and "periode" in ts_nb3.columns:
                 ts_nb3["timestamp"] = ts_nb3["periode"]
 
-        if not ts_nb3.empty and "timestamp" in ts_nb3.columns:
+        x_axis = (
+            ts_nb3["periode"].astype(str)
+            if "periode" in ts_nb3.columns
+            else pd.to_datetime(ts_nb3["timestamp"], errors="coerce")
+        )
+        if not ts_nb3.empty and ("periode" in ts_nb3.columns or "timestamp" in ts_nb3.columns):
             fig_ts = go.Figure()
-            fig_ts.add_trace(go.Scatter(x=ts_nb3["timestamp"], y=ts_nb3["conso_tot"],
+            fig_ts.add_trace(go.Scatter(x=x_axis, y=pd.to_numeric(ts_nb3["conso_tot"], errors="coerce"),
                                         name="Consommation totale", line=dict(color="#1e3a8a", width=2)))
             if "economie_tot" in ts_nb3.columns:
-                fig_ts.add_trace(go.Scatter(x=ts_nb3["timestamp"], y=ts_nb3["economie_tot"],
+                fig_ts.add_trace(go.Scatter(x=x_axis, y=pd.to_numeric(ts_nb3["economie_tot"], errors="coerce"),
                                             name="Economie experte", line=dict(color="#3b82f6", width=1.8)))
             if "economie_rl_tot" in ts_nb3.columns:
-                fig_ts.add_trace(go.Scatter(x=ts_nb3["timestamp"], y=ts_nb3["economie_rl_tot"],
+                fig_ts.add_trace(go.Scatter(x=x_axis, y=pd.to_numeric(ts_nb3["economie_rl_tot"], errors="coerce"),
                                             name="Economie RL", line=dict(color="#059669", width=2)))
             fig_ts.update_layout(template=template, margin=dict(l=0, r=0, t=20, b=0),
                                  height=300, hovermode="x unified")
