@@ -5,10 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
-from config.settings import settings
 from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import station_summary_from_df
@@ -38,6 +36,10 @@ def page_monitoring():
         return
 
     kpis = metrics if metrics else fleet_status_metrics(df)
+    latest = _latest_per_station(df)
+    pue_vals = pd.to_numeric(latest.get("pue", pd.Series(dtype=float)), errors="coerce").dropna()
+    pue_moy = float(pue_vals.mean()) if not pue_vals.empty else None
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         kpi_card("Conso totale actuelle", f"{kpis['conso_instant']:,.1f} kWh", "Instantanee flotte", "blue")
@@ -47,7 +49,10 @@ def page_monitoring():
     with c3:
         kpi_card("% ECO actif", f"{kpis['pct_eco']:.1f}%", "Stations en mode economie", "eco")
     with c4:
-        kpi_card("EEI moyen", f"{kpis['eei_moy']:.2f}", "kWh / Mbps proxy", "gray")
+        if pue_moy is not None:
+            kpi_card("PUE moyen", f"{pue_moy:.2f}", "Flotte", "gray")
+        else:
+            kpi_card("EEI moyen", f"{kpis['eei_moy']:.2f}", "kWh / Mbps proxy", "gray")
 
     # Heatmap consommation : heure x jour semaine
     with section("Heatmap consommation (kWh moyen)"):
@@ -64,51 +69,20 @@ def page_monitoring():
             fig.update_layout(template=template, margin=dict(l=0, r=0, t=24, b=0), height=320)
             st.plotly_chart(fig, width="stretch")
 
-    # Top 10 stations + gauges
-    latest = _latest_per_station(df)
     scores = station_summary_from_df(df)
 
-    col_a, col_b = st.columns([1.4, 1])
-    with col_a:
-        with section("Top 10 stations consommatrices"):
-            if not scores.empty and "conso_moy" in scores.columns:
-                profil = scores["conso_moy"].median() if scores["conso_moy"].notna().any() else 1
-                scores = scores.copy()
-                scores["ecart_vs_profil"] = ((scores["conso_moy"] - profil) / profil * 100).round(1)
-                top10 = scores.nlargest(10, "conso_moy")
-                fig = px.bar(
-                    top10.sort_values("conso_moy"),
-                    x="ecart_vs_profil", y="station_id", orientation="h",
-                    title="Ecart vs profil moyen (%)",
-                    color="ecart_vs_profil", color_continuous_scale="Reds",
-                )
-                template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
-                fig.update_layout(template=template, showlegend=False, height=360, margin=dict(l=0, r=0, t=30, b=0))
-                st.plotly_chart(fig, width="stretch")
-
-    with col_b:
-        with section("Indicateurs flotte"):
-            pue_vals = pd.to_numeric(latest.get("pue", pd.Series(dtype=float)), errors="coerce").dropna()
-            pue_moy = float(pue_vals.mean()) if not pue_vals.empty else None
-            pct_eco = kpis["pct_eco"]
-            g1, g2 = st.columns(2)
+    with section("Top 10 stations consommatrices"):
+        if not scores.empty and "conso_moy" in scores.columns:
+            profil = scores["conso_moy"].median() if scores["conso_moy"].notna().any() else 1
+            scores = scores.copy()
+            scores["ecart_vs_profil"] = ((scores["conso_moy"] - profil) / profil * 100).round(1)
+            top10 = scores.nlargest(10, "conso_moy")
+            fig = px.bar(
+                top10.sort_values("conso_moy"),
+                x="ecart_vs_profil", y="station_id", orientation="h",
+                title="Ecart vs profil moyen (%)",
+                color="ecart_vs_profil", color_continuous_scale="Reds",
+            )
             template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
-            with g1:
-                if pue_moy is not None:
-                    fig_pue = go.Figure(go.Indicator(
-                        mode="gauge+number", value=pue_moy, number={"suffix": ""},
-                        title={"text": "PUE moyen flotte"},
-                        gauge={"axis": {"range": [1, 2.5]}, "bar": {"color": "#1e3a8a"}},
-                    ))
-                    fig_pue.update_layout(template=template, height=180, margin=dict(l=10, r=10, t=40, b=0))
-                    st.plotly_chart(fig_pue, width="stretch")
-                else:
-                    st.info("PUE non present dans le dataset actif (colonne `pue`).")
-            with g2:
-                fig_eco = go.Figure(go.Indicator(
-                    mode="gauge+number", value=pct_eco, number={"suffix": "%"},
-                    title={"text": "Stations ECO actif"},
-                    gauge={"axis": {"range": [0, 100]}, "bar": {"color": "#059669"}},
-                ))
-                fig_eco.update_layout(template=template, height=180, margin=dict(l=10, r=10, t=40, b=0))
-                st.plotly_chart(fig_eco, width="stretch")
+            fig.update_layout(template=template, showlegend=False, height=360, margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig, width="stretch")

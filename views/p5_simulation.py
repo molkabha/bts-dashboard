@@ -224,24 +224,17 @@ def page_simulation():
 
         st.caption(f"Pas horaire : **{str(latest_ts)[:19]}**")
 
-        k1, k2, k3, k4 = st.columns(4)
+        k1, k2, k3 = st.columns(3)
         with k1:
             kpi_card("Consommation", f"{conso:.2f} kWh", "Ce pas", "blue")
         with k2:
             kpi_card(
-                "Economie RL",
-                f"{eco_rl:.3f} kWh",
-                f"{eco_rl * settings.PRIX_KWH_TN:.2f} DT",
-                "green" if eco_rl > 0 else "gray",
-            )
-        with k3:
-            kpi_card(
-                "Economie combinee",
+                "Economie NB3",
                 f"{eco_comb:.3f} kWh",
-                "max(RL, expert) NB3",
+                f"{eco_comb * settings.PRIX_KWH_TN:.2f} DT · RL {eco_rl:.3f} kWh",
                 "green" if eco_comb > 0 else "gray",
             )
-        with k4:
+        with k3:
             kpi_card("QoS", f"{qos:.2f}", mode, "eco" if qos >= 0.75 else "danger")
 
         if eco_rl <= 0 and eco_comb <= 0:

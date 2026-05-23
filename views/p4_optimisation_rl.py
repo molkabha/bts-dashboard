@@ -5,7 +5,6 @@ from __future__ import annotations
 import html
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -91,20 +90,7 @@ def page_optimisation_rl():
                 f"{float(kpis.get('economie_rl_pct') or 0):.1f}%",
                 "gray",
             )
-        if isinstance(economies, dict) and economies:
-            strat_rows = []
-            for label, stats in economies.items():
-                if isinstance(stats, dict) and stats.get("economie_kwh") is not None:
-                    strat_rows.append({
-                        "Strategie": label,
-                        "kWh": stats.get("economie_kwh"),
-                        "%": stats.get("economie_pct"),
-                        "DT": stats.get("economie_dt"),
-                    })
-            if strat_rows:
-                st.dataframe(pd.DataFrame(strat_rows), width="stretch", hide_index=True)
-
-    with section("Profil Horaire 24h"):
+    with section("Profil horaire 24h"):
         hourly = build_nb3_profil_horaire(df)
         if selected_station:
             context_badge("Profil NB3", f"Filtre station {selected_station}", "success")
@@ -124,44 +110,8 @@ def page_optimisation_rl():
             fig.update_layout(template=template, xaxis_title="Heure", yaxis_title="kWh moyen",
                               margin=dict(l=0, r=0, t=20, b=0), height=320, hovermode="x unified")
             st.plotly_chart(fig, width="stretch")
-            with st.expander("Voir profil horaire NB3"):
-                st.dataframe(hourly, width="stretch", hide_index=True)
 
-    with st.expander("Series temporelles avancees", expanded=False):
-        from services.data_service import build_nb3_monthly_series
-
-        ts_nb3 = build_nb3_monthly_series(df, kpis)
-        if not ts_nb3.empty:
-            ts_nb3 = ts_nb3.rename(columns={
-                "conso": "conso_tot",
-                "eco_expert": "economie_tot",
-                "eco_rl": "economie_rl_tot",
-            })
-            if "timestamp" not in ts_nb3.columns and "periode" in ts_nb3.columns:
-                ts_nb3["timestamp"] = ts_nb3["periode"]
-
-        x_axis = (
-            ts_nb3["periode"].astype(str)
-            if "periode" in ts_nb3.columns
-            else pd.to_datetime(ts_nb3["timestamp"], errors="coerce")
-        )
-        if not ts_nb3.empty and ("periode" in ts_nb3.columns or "timestamp" in ts_nb3.columns):
-            fig_ts = go.Figure()
-            fig_ts.add_trace(go.Scatter(x=x_axis, y=pd.to_numeric(ts_nb3["conso_tot"], errors="coerce"),
-                                        name="Consommation totale", line=dict(color="#1e3a8a", width=2)))
-            if "economie_tot" in ts_nb3.columns:
-                fig_ts.add_trace(go.Scatter(x=x_axis, y=pd.to_numeric(ts_nb3["economie_tot"], errors="coerce"),
-                                            name="Economie experte", line=dict(color="#3b82f6", width=1.8)))
-            if "economie_rl_tot" in ts_nb3.columns:
-                fig_ts.add_trace(go.Scatter(x=x_axis, y=pd.to_numeric(ts_nb3["economie_rl_tot"], errors="coerce"),
-                                            name="Economie RL", line=dict(color="#059669", width=2)))
-            fig_ts.update_layout(template=template, margin=dict(l=0, r=0, t=20, b=0),
-                                 height=300, hovermode="x unified")
-            st.plotly_chart(fig_ts, width="stretch")
-            with st.expander("Voir series temporelles NB3"):
-                st.dataframe(ts_nb3, width="stretch", hide_index=True)
-
-    # Section 3 - RL agents comparison (admin only - technical detail)
+    # RL agents comparison (admin only)
     if st.session_state.get("role") == "admin":
         with st.expander("Comparaison technique des agents RL", expanded=False):
             rl_data = nb3.get("rl_resultats_tous_agents", {})

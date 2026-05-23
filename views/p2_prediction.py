@@ -10,7 +10,7 @@ import streamlit as st
 
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import artifact_image_path, load_nb1_production_metrics
+from services.data_service import load_nb1_production_metrics
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
 from ui.utils import session_outputs
@@ -91,24 +91,4 @@ def page_prediction():
                               margin=dict(l=0, r=0, t=10, b=0))
             st.plotly_chart(fig, width="stretch")
         else:
-            st.info("Importance des variables disponible dans resultats_modeles.json (NB1) ou via les graphiques SHAP ci-dessous.")
-
-    with st.expander("SHAP — explication locale (station selectionnee)"):
-        for img_name, caption in [
-            ("shap_waterfall.png", "Waterfall SHAP"),
-            ("shap_beeswarm.png", "Beeswarm SHAP"),
-            ("shap_bar.png", "Importance globale SHAP"),
-        ]:
-            path = artifact_image_path(img_name)
-            if path:
-                st.image(str(path), caption=f"{caption} — {station or 'vue globale'}")
-        if not any(artifact_image_path(n) for n, _ in [
-            ("shap_waterfall.png", ""), ("shap_beeswarm.png", ""), ("shap_bar.png", ""),
-        ]):
-            st.info("Artefacts SHAP NB1 non disponibles (shap_*.png).")
-
-    with st.expander("Analyse technique (notebook)"):
-        models = nb1.get("comparaison_modeles", nb1.get("resultats_par_modele", {}))
-        if models:
-            st.dataframe(pd.DataFrame.from_dict(models, orient="index").reset_index(names="Modele"),
-                         width="stretch", hide_index=True)
+            st.info("Importance des variables disponible dans resultats_modeles.json (NB1).")

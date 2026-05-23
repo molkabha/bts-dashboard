@@ -10,7 +10,7 @@ import streamlit as st
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from ui.components import header, kpi_card, section
-from ui.page_helpers import load_dashboard_df, render_conso_gouvernorat_par_periode
+from ui.page_helpers import load_dashboard_df
 from services.data_service import (
     build_nb3_monthly_series,
     compute_filtered_kpis,
@@ -87,6 +87,3 @@ def page_accueil():
                 fig = px.pie(modes, names="Mode", values="Nb", hole=0.5, color="Mode", color_discrete_map=MODE_COLORS)
                 fig.update_layout(template=template, height=280, margin=dict(l=0, r=0, t=20, b=0))
                 st.plotly_chart(fig, width="stretch")
-
-    with section("Consommation moyenne par gouvernorat (par periode)"):
-        render_conso_gouvernorat_par_periode(df, template)

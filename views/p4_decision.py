@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 from config.settings import settings
-from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import MODE_COLORS
 from security.middleware import security_middleware
-from ui.components import header, kpi_card, section
-from services.data_service import compute_filtered_kpis
+from ui.components import header, section
 from ui.page_helpers import load_dashboard_df, mode_explanation
 
 
@@ -24,31 +21,7 @@ def page_decision():
         st.warning("Aucune donnee disponible.")
         return
 
-    template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
-
-    if "mode_operation" in df.columns:
-        mode_counts = df["mode_operation"].astype(str).value_counts().reset_index()
-        mode_counts.columns = ["Mode", "Nb"]
-        with section("Repartition modes operationnels"):
-            fig = px.bar(mode_counts, x="Mode", y="Nb", color="Mode",
-                         color_discrete_map=MODE_COLORS, title="Flotte en ce moment")
-            fig.update_layout(template=template, margin=dict(l=0, r=0, t=30, b=0), height=280, showlegend=False)
-            st.plotly_chart(fig, width="stretch")
-
-    kpis = compute_filtered_kpis(df)
-    eco_total = float(kpis.get("economie_kwh") or 0)
-    eco_dt = float(kpis.get("economie_dt") or 0)
-    co2_kg = float(kpis.get("co2_evite_t") or 0) * 1000
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        kpi_card("Economies cumulees", f"{eco_dt:,.0f} DT", kpis.get("economie_periode_label", "NB3"), "green")
-    with c2:
-        kpi_card("Energie economisee", f"{eco_total:,.0f} kWh", "", "eco")
-    with c3:
-        kpi_card("CO2 evite", f"{co2_kg/1000:.2f} t", "", "blue")
-
-    # Decision cards + priority table
+    # Decision cards (economies / modes : voir Vue executive et Optimisation)
     if "station_id" in df.columns:
         latest = df.sort_values("timestamp").groupby("station_id", as_index=False).last() if "timestamp" in df.columns else df.groupby("station_id", as_index=False).last()
         prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}

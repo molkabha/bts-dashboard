@@ -8,7 +8,7 @@ import streamlit as st
 
 from config.theme import PLOTLY_LIGHT, PLOTLY_DARK
 from security.middleware import security_middleware
-from services.data_service import artifact_image_path, load_nb2_network_stats
+from services.data_service import load_nb2_network_stats
 from ui.components import header, kpi_card, section
 from ui.page_helpers import load_dashboard_df
 
@@ -92,9 +92,3 @@ def page_anomalies():
         if pct_reseau is not None:
             st.caption(f"Taux anomalies reseau (NB3 KPI) : {float(pct_reseau):.2f}%")
 
-    with st.expander("Projection PCA / t-SNE (label normal / anomalie)"):
-        img = artifact_image_path("tsne_anomalies.png")
-        if img:
-            st.image(str(img), caption="Coloration : normal / anomalie (label_ensemble_score)")
-        else:
-            st.info("Artefact tsne_anomalies.png non disponible.")
