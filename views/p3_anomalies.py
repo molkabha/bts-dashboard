@@ -11,29 +11,9 @@ from security.middleware import security_middleware
 from services.data_service import load_nb2_network_stats
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_ANOMALIES
-from ui.formatting import display_number, format_dataframe_for_display
+from ui.formatting import format_dataframe_for_display
 from ui.page_helpers import load_dashboard_df
 from ui.utils import active_filter_label, is_admin
-
-
-def _detector_threshold(stats: dict) -> float | None:
-    """Seuil par detecteur — cles varient selon l'export du notebook NB2."""
-    for key in (
-        "seuil",
-        "seuil_test",
-        "threshold",
-        "optimal_threshold",
-        "score_threshold",
-        "seuil_score",
-    ):
-        raw = stats.get(key)
-        if raw is None or raw == "":
-            continue
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            continue
-    return None
 
 
 def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
@@ -49,13 +29,11 @@ def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
         if name in skip or not isinstance(stats, dict):
             continue
         pct = stats.get("pct_test", stats.get("pct_anomalies"))
-        if pct is None and _detector_threshold(stats) is None:
+        if pct is None:
             continue
-        th = _detector_threshold(stats)
         rows.append({
             "Détecteur": str(name),
             "Anomalies %": pct,
-            "Seuil": display_number(th, decimals=3, default="—"),
         })
     return pd.DataFrame(rows)
 
@@ -114,10 +92,8 @@ def page_anomalies():
                 st.dataframe(det_df, width="stretch", hide_index=True)
                 src = nb2_stats.get("seuil_ensemble_source", "")
                 st.caption(
-                    f"Seuil consensus (ensemble) : {seuil:.3f}"
+                    f"Seuil consensus (ensemble) appliqué aux alertes : {seuil:.3f}"
                     + (f" — source : {src}" if src else "")
-                    + ". Le fichier NB2 `resultats_anomalie.json` indique en général le % d'anomalies par modèle, "
-                    "pas le seuil calibré de chaque détecteur ; la colonne Seuil affiche alors « — »."
                 )
 
         with section("Stations prioritaires"):
