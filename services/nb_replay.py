@@ -42,12 +42,22 @@ def load_replay_source() -> pd.DataFrame:
     return load_filtered_main_data(REPLAY_COLUMNS)
 
 
-def replay_timestamps(source: pd.DataFrame, stations: list[str], start_dt: datetime | None = None) -> list:
+def replay_timestamps(
+    source: pd.DataFrame,
+    stations: list[str],
+    start_dt: datetime | None = None,
+    *,
+    on_date: datetime | None = None,
+) -> list:
     if source.empty or "timestamp" not in source.columns or not stations:
         return []
-    work = source[source["station_id"].astype(str).isin(stations)].copy()
+    station_set = {str(s) for s in stations}
+    work = source[source["station_id"].astype(str).isin(station_set)].copy()
     work["timestamp"] = pd.to_datetime(work["timestamp"], errors="coerce")
     work = work.dropna(subset=["timestamp"]).sort_values("timestamp")
+    if on_date is not None:
+        target = pd.Timestamp(on_date).date()
+        work = work[work["timestamp"].dt.date == target]
     if start_dt is not None:
         work = work[work["timestamp"] >= pd.Timestamp(start_dt)]
     return sorted(work["timestamp"].drop_duplicates().tolist())
@@ -58,9 +68,11 @@ def replay_batch(
     stations: list[str],
     tick: int,
     start_dt: datetime | None = None,
+    *,
+    on_date: datetime | None = None,
 ) -> tuple[pd.DataFrame, datetime | None]:
     """Return all station rows for replay tick (one timestamp slice)."""
-    stamps = replay_timestamps(source, stations, start_dt)
+    stamps = replay_timestamps(source, stations, start_dt, on_date=on_date)
     if tick < 0 or tick >= len(stamps):
         return pd.DataFrame(), None
     ts = stamps[tick]

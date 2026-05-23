@@ -245,7 +245,6 @@ ENGINEER_PAGE_LABELS = [
     "Anomalies",
     "Predictions",
     "Decision",
-    "Agents RL",
     "Simulation",
 ]
 
@@ -265,7 +264,6 @@ ENGINEER_PAGE_INDEX = {
     "Anomalies": 3,
     "Predictions": 2,
     "Decision": 4,
-    "Agents RL": 5,
     "Simulation": 6,
 }
 

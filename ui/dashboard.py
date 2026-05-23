@@ -103,6 +103,8 @@ def main():
 
     if nav_override is not None:
         page_index = nav_override
+        if role != "admin" and page_index == 5:
+            page_index = 6
 
     # Redirect to role home on first load
     if st.session_state.pop("_goto_home", False):
