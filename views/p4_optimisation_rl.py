@@ -15,11 +15,11 @@ from security.middleware import security_middleware
 from services.data_service import (
     build_nb3_profil_horaire,
     compute_filtered_kpis,
-    load_filtered_main_data,
     load_nb3_rapport,
 )
 from ui.components import context_badge, header, kpi_card, render_artifact_gallery, section
-from ui.utils import apply_current_admin_filters, filter_artifact_dataframe, selected_station_filter, session_outputs
+from ui.page_helpers import load_dashboard_df
+from ui.utils import active_filter_label, selected_station_filter, session_outputs
 
 AGENT_DESCRIPTIONS = {
     "Q-Learning": "Apprend de ses erreurs passees sans les repeter",
@@ -43,16 +43,18 @@ def page_optimisation_rl():
     outputs = session_outputs()
     nb3 = outputs.get("nb3", {})
 
-    cols = ["timestamp", "station_id", "consommation_kwh", "economie_estimee_kwh",
-            "economie_rl_kwh", "action_rl", "action_proposee", "score_qos",
-            "mode_operation", "heure", "technologie", "type_zone"]
-    df_raw = load_filtered_main_data(cols)
-    df = apply_current_admin_filters(df_raw)
+    df = load_dashboard_df([
+        "timestamp", "station_id", "consommation_kwh", "economie_estimee_kwh",
+        "economie_rl_kwh", "action_rl", "action_proposee", "score_qos",
+        "mode_operation", "heure", "technologie", "type_zone",
+    ])
     selected_station = selected_station_filter()
 
     if df.empty:
-        st.warning("Aucune donnee disponible pour l'optimisation.")
+        st.warning("Aucune donnee disponible pour les filtres actifs.")
         return
+
+    st.caption(active_filter_label())
 
     kpis = compute_filtered_kpis(df)
     rapport = load_nb3_rapport() or nb3

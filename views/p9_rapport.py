@@ -22,7 +22,8 @@ def page_rapport():
     kpis = compute_filtered_kpis(df) if not df.empty else {}
 
     with section("Generer le rapport"):
-        top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
+        top = load_top_anomalies(limit=300)
+        top = apply_current_admin_filters(top).head(5)
         anomaly_items = []
         seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
         if not top.empty:

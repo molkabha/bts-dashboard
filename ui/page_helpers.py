@@ -8,9 +8,12 @@ import streamlit as st
 from services.data_service import (
     active_dataset_info,
     compute_filtered_kpis,
+    dataset_cache_key,
     load_filtered_main_data,
     load_nb3_network_kpi,
+    load_station_map_data,
 )
+from ui.utils import filters_cache_key
 from services.nb_metrics import blank_mask
 from ui.components import alert_banner
 from ui.utils import apply_current_admin_filters
@@ -26,10 +29,34 @@ DEFAULT_COLS = [
 ]
 
 
+def get_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Session-cached station map positions for the current filter context."""
+    station_token = ""
+    if not df.empty and "station_id" in df.columns:
+        station_token = str(hash(tuple(sorted(df["station_id"].astype(str).unique()))))
+    cache_id = f"{dataset_cache_key()}|{filters_cache_key()}|{station_token}"
+    if st.session_state.get("_map_data_key") == cache_id:
+        cached = st.session_state.get("_map_data_val")
+        if isinstance(cached, pd.DataFrame):
+            return cached
+    result = load_station_map_data(df)
+    st.session_state["_map_data_key"] = cache_id
+    st.session_state["_map_data_val"] = result
+    return result
+
+
 def load_dashboard_df(extra_cols: list[str] | None = None) -> pd.DataFrame:
-    cols = list(dict.fromkeys(DEFAULT_COLS + (extra_cols or [])))
-    df_raw = load_filtered_main_data(cols)
-    return apply_current_admin_filters(df_raw)
+    """Load filtered dashboard data with per-rerun session cache."""
+    cols = tuple(dict.fromkeys(DEFAULT_COLS + (extra_cols or [])))
+    session_key = f"{dataset_cache_key()}|{filters_cache_key()}|{cols}"
+    cached = st.session_state.get("_df_session_val")
+    if st.session_state.get("_df_session_key") == session_key and isinstance(cached, pd.DataFrame):
+        if all(c in cached.columns for c in cols):
+            return cached
+    df = apply_current_admin_filters(load_filtered_main_data(list(cols)))
+    st.session_state["_df_session_key"] = session_key
+    st.session_state["_df_session_val"] = df
+    return df
 
 
 def dataset_provenance_stats(df: pd.DataFrame) -> dict:

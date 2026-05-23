@@ -1,4 +1,5 @@
 import io
+import json
 from datetime import datetime
 
 import streamlit as st
@@ -8,6 +9,7 @@ import numpy as np
 from services.data_service import (
     apply_admin_dimension_filters,
     apply_time_filters,
+    get_user_stations,
     load_outputs,
 )
 
@@ -48,44 +50,65 @@ def session_outputs() -> dict:
     return outputs
 
 
+def filters_cache_key() -> str:
+    """Stable key for session-level filtered dataframe cache."""
+    gf = st.session_state.get("global_filters", {})
+    atf = st.session_state.get("admin_time_filters", {})
+    agf = st.session_state.get("admin_global_filters", {})
+    role = st.session_state.get("role", "")
+    user = st.session_state.get("username") or st.session_state.get("user", "")
+    assigned: tuple[str, ...] = ()
+    if role != "admin" and user:
+        assigned = tuple(sorted(str(s) for s in get_user_stations(user)))
+    return json.dumps(
+        {"gf": gf, "atf": atf, "agf": agf, "role": role, "assigned": assigned},
+        sort_keys=True,
+        default=str,
+    )
+
+
+def merged_active_filters() -> dict:
+    """Combine sidebar, admin global and admin time filters (single source of truth)."""
+    filters: dict = {}
+    filters.update(st.session_state.get("admin_global_filters") or {})
+    filters.update(st.session_state.get("global_filters") or {})
+
+    atf = st.session_state.get("admin_time_filters") or {}
+    if atf.get("date_range") and not filters.get("date_range"):
+        filters["date_range"] = atf["date_range"]
+    if atf.get("hours") is not None and filters.get("hours") is None:
+        filters["hours"] = atf["hours"]
+    if atf.get("months") and not filters.get("months"):
+        filters["months"] = atf["months"]
+    if atf.get("day_type") and not filters.get("day_type"):
+        filters["day_type"] = atf["day_type"]
+    if atf.get("days") and not filters.get("days"):
+        filters["days"] = atf["days"]
+    return filters
+
+
 def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
 
-    # RLS Enforcement (Row-Level Security)
+    filters = merged_active_filters()
+    out = df
+
+    # RLS — ingenieur : stations assignees uniquement
     if st.session_state.get("role") != "admin":
-        from services.data_service import get_user_stations
-        username = st.session_state.get("username")
+        username = st.session_state.get("username") or st.session_state.get("user")
         assigned = get_user_stations(username) if username else []
-        if assigned and "station_id" in df.columns:
-            df = df[df["station_id"].isin(assigned)]
-        elif not assigned and "station_id" in df.columns:
-            # If engineer has 0 stations assigned, return empty dataframe
-            df = df.iloc[0:0]
+        if "station_id" in out.columns:
+            if assigned:
+                allowed = {str(s) for s in assigned}
+                out = out[out["station_id"].astype(str).isin(allowed)]
+            else:
+                return out.iloc[0:0]
 
-    out = apply_admin_dimension_filters(df)
-    filters = st.session_state.get("admin_time_filters", {})
     if filters:
-        out = apply_time_filters(out, {
-            "date_range": filters.get("date_range"),
-            "hours": filters.get("hours"),
-            "months": None,
-            "day_type": "Tous",
-            "days": None,
-        })
+        out = apply_admin_dimension_filters(out, filters)
+        out = apply_time_filters(out, filters)
 
-    # Apply new global sidebar filters
-    gf = st.session_state.get("global_filters", {})
-    if gf:
-        if "date_range" in gf and "timestamp" in out.columns:
-            out = apply_time_filters(out, {"date_range": gf["date_range"]})
-        stations = gf.get("stations")
-        if stations and "station_id" in out.columns:
-            out = out[out["station_id"].astype(str).isin([str(s) for s in stations])]
-        for key, col in [("gouvernorats", "gouvernorat"), ("technologies", "technologie"), ("zones", "type_zone")]:
-            vals = gf.get(key)
-            if vals and col in out.columns:
-                out = out[out[col].astype(str).isin(vals)]
     return out
 
 
@@ -96,7 +119,7 @@ def selected_station_filter() -> str | None:
 
 
 def active_filter_label() -> str:
-    gf = st.session_state.get("global_filters", {})
+    gf = merged_active_filters()
     parts = []
     station = selected_station_filter()
     if station:
@@ -109,6 +132,8 @@ def active_filter_label() -> str:
         parts.append(f"{len(gf['technologies'])} technologies")
     if gf.get("zones"):
         parts.append(f"{len(gf['zones'])} zones")
+    if gf.get("modes"):
+        parts.append(f"{len(gf['modes'])} modes")
     if gf.get("date_range"):
         start, end = gf["date_range"]
         parts.append(f"{start} -> {end}")

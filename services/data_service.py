@@ -516,11 +516,9 @@ def apply_time_filters(df: pd.DataFrame, filters: dict | None = None) -> pd.Data
     if df.empty:
         return df
     if not filters:
-        filters = st.session_state.get("admin_time_filters", {})
-    if not filters:
         return df
 
-    out = df.copy()
+    out = df
     date_range = filters.get("date_range")
     if date_range and "timestamp" in out.columns:
         try:
@@ -558,11 +556,9 @@ def apply_admin_dimension_filters(df: pd.DataFrame, filters: dict | None = None)
     if df.empty:
         return df
     if not filters:
-        filters = st.session_state.get("admin_global_filters", {})
-    if not filters:
         return df
 
-    out = df.copy()
+    out = df
     mapping = {
         "stations": "station_id",
         "gouvernorats": "gouvernorat",
@@ -893,13 +889,110 @@ def load_station_anomalies(station: str, columns: tuple[str, ...] = tuple()) -> 
     return read_parquet_fast(path, list(columns), filters=[("station_id", "=", station)])
 
 
-def load_filtered_main_data(columns: list[str]) -> pd.DataFrame:
+DASHBOARD_BASE_COLUMNS = list(
+    dict.fromkeys(
+        settings.TEMPORAL_COLUMNS
+        + [
+            "station_id",
+            "gouvernorat",
+            "technologie",
+            "type_zone",
+            "consommation_kwh",
+            "conso_predite",
+            "pred_q10",
+            "pred_q90",
+            "anomalie_score_ensemble",
+            "nb_votes_anomalie",
+            "score_qos",
+            "mode_operation",
+            "action_proposee",
+            "action_rl",
+            "economie_estimee_kwh",
+            "economie_rl_kwh",
+            "economie_kwh",
+            "ecart_pct",
+            "heure",
+            "charge_cpu_pct",
+            "latitude",
+            "longitude",
+            "source_decision_nb3",
+            "trafic_data_mbps",
+            "pue",
+            "taux_charge_data",
+            "taux_charge_voix",
+            "est_weekend",
+            "jour_semaine",
+        ]
+    )
+)
+
+
+def dataset_cache_key() -> str:
+    """Cache buster for parquet + active uploaded dataset."""
     path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
     if path is None:
+        return ""
+    active = active_dataset_path()
+    active_part = str(active.resolve()) if active else ""
+    active_mtime = active.stat().st_mtime if active and active.exists() else 0.0
+    return f"{path.resolve()}|{path.stat().st_mtime}|{active_part}|{active_mtime}"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_enriched_base_dataset(cache_key: str) -> pd.DataFrame:
+    """Load and enrich the main dataset once per file revision (expensive merges)."""
+    if not cache_key:
         return pd.DataFrame()
-    cols = list(dict.fromkeys(columns + settings.TEMPORAL_COLUMNS))
+    path = Path(cache_key.split("|")[0])
+    if not path.exists():
+        return pd.DataFrame()
+    available = set(existing_columns(path))
+    read_cols = [c for c in DASHBOARD_BASE_COLUMNS if c in available]
+    for required in ("station_id", "timestamp"):
+        if required in available and required not in read_cols:
+            read_cols.append(required)
+    if not read_cols:
+        return pd.DataFrame()
+    df = read_parquet_fast(path, read_cols)
+    return enrich_dashboard_data(df, DASHBOARD_BASE_COLUMNS)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
+    """Lightweight unique values for sidebar filters (no full enrich)."""
+    if not cache_key:
+        return {}
+    path = Path(cache_key.split("|")[0])
+    if not path.exists():
+        return {}
+    available = set(existing_columns(path))
+    cols = [c for c in ("station_id", "gouvernorat", "technologie", "type_zone", "mode_operation") if c in available]
+    if not cols:
+        return {}
     df = read_parquet_fast(path, cols)
-    return enrich_dashboard_data(df, cols)
+    out: dict[str, list[str]] = {}
+    mapping = {
+        "stations": "station_id",
+        "gouvernorats": "gouvernorat",
+        "technologies": "technologie",
+        "zones": "type_zone",
+        "modes": "mode_operation",
+    }
+    for key, col in mapping.items():
+        if col in df.columns:
+            out[key] = sorted(df[col].dropna().astype(str).unique().tolist())
+    return out
+
+
+def load_filtered_main_data(columns: list[str]) -> pd.DataFrame:
+    base = load_enriched_base_dataset(dataset_cache_key())
+    if base.empty:
+        return base
+    if not columns:
+        return base
+    use = list(dict.fromkeys(list(columns) + settings.TEMPORAL_COLUMNS))
+    present = [c for c in use if c in base.columns]
+    return base[present] if present else base
 
 
 NB2_BUSINESS_COLUMNS = ["score_qos", "anomalie_score_ensemble", "nb_votes_anomalie"]
@@ -975,11 +1068,10 @@ def load_simulation_base(max_rows: int) -> pd.DataFrame:
 
 
 def available_stations() -> list[str]:
-    path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
-    if path is not None:
-        df = read_parquet_fast(path, ["station_id"])
-        if "station_id" in df.columns:
-            return sorted(df["station_id"].dropna().astype(str).unique().tolist())
+    opts = load_filter_dimension_options(dataset_cache_key())
+    stations = opts.get("stations") or []
+    if stations:
+        return stations
     outputs = st.session_state.get("data")
     if outputs is None:
         outputs = load_outputs()

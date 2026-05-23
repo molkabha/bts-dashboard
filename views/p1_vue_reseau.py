@@ -8,7 +8,8 @@ import pandas as pd
 import streamlit as st
 
 from security.middleware import security_middleware
-from services.data_service import load_station_map_data
+from ui.page_helpers import get_station_map_data
+from ui.utils import active_filter_label
 from ui.components import header, section
 from ui.page_helpers import load_dashboard_df
 
@@ -101,37 +102,22 @@ def page_vue_reseau():
 
     df = load_dashboard_df(["mode_operation", "latitude", "longitude", "derniere_alerte"])
     if df.empty:
-        st.warning("Aucune donnee disponible.")
+        st.warning("Aucune donnee disponible pour les filtres actifs.")
         return
 
-    with section("Filtres"):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        filtered = df.copy()
-        with fc1:
-            if "gouvernorat" in df.columns:
-                govs = st.multiselect("Gouvernorat", sorted(df["gouvernorat"].dropna().unique().astype(str)))
-                if govs:
-                    filtered = filtered[filtered["gouvernorat"].astype(str).isin(govs)]
-        with fc2:
-            if "technologie" in df.columns:
-                techs = st.multiselect("Technologie", sorted(df["technologie"].dropna().unique().astype(str)))
-                if techs:
-                    filtered = filtered[filtered["technologie"].astype(str).isin(techs)]
-        with fc3:
-            if "type_zone" in df.columns:
-                zones = st.multiselect("Type zone", sorted(df["type_zone"].dropna().unique().astype(str)))
-                if zones:
-                    filtered = filtered[filtered["type_zone"].astype(str).isin(zones)]
-        with fc4:
-            if "mode_operation" in df.columns:
-                statuts = st.multiselect("Statut", ["ECO", "NORMAL", "ATTENTION", "CRITIQUE"])
-                if statuts:
-                    filtered = filtered[filtered["mode_operation"].astype(str).isin(statuts)]
+    st.caption(active_filter_label() + " — modifiez les filtres dans la barre laterale.")
 
-    scores = load_station_map_data(filtered)
+    filtered = df
+    scores = get_station_map_data(filtered)
     if "mode_operation" in filtered.columns and "station_id" in scores.columns:
-        modes = filtered.sort_values("timestamp").groupby("station_id")["mode_operation"].last() if "timestamp" in filtered.columns else filtered.groupby("station_id")["mode_operation"].first()
+        if "timestamp" in filtered.columns:
+            modes = filtered.sort_values("timestamp").groupby("station_id")["mode_operation"].last()
+        else:
+            modes = filtered.groupby("station_id")["mode_operation"].first()
         scores = scores.merge(modes.rename("mode_actuel"), left_on="station_id", right_index=True, how="left")
+        if st.session_state.get("global_filters", {}).get("modes"):
+            allowed = {str(m) for m in st.session_state["global_filters"]["modes"]}
+            scores = scores[scores["mode_actuel"].astype(str).isin(allowed)]
 
     with section("Carte du parc"):
         _render_folium_map(scores)

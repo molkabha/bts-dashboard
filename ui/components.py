@@ -98,6 +98,8 @@ def live_indicator():
 def global_status_bar(metrics: dict | None = None):
     """Fleet-wide status strip: alerts, OK stations, instant consumption."""
     if metrics is None:
+        metrics = st.session_state.get("_fleet_metrics")
+    if metrics is None:
         try:
             from ui.page_helpers import fleet_status_metrics, load_dashboard_df
 
@@ -370,32 +372,44 @@ def sidebar_global(
         if date_from and date_to:
             filters["date_range"] = (date_from, date_to)
 
-        from services.data_service import load_filtered_main_data
-        ds = load_filtered_main_data(["gouvernorat", "technologie", "type_zone"])
+        from services.data_service import dataset_cache_key, load_filter_dimension_options
 
-        if "gouvernorat" in ds.columns:
-            govs = sorted(ds["gouvernorat"].dropna().unique().astype(str).tolist())
+        dim_opts = load_filter_dimension_options(dataset_cache_key())
+
+        govs = dim_opts.get("gouvernorats") or []
+        if govs:
             sel_govs = st.multiselect(
                 "Gouvernorat", govs, default=[], key="sb_govs", placeholder="Tous les gouvernorats"
             )
             if sel_govs:
                 filters["gouvernorats"] = sel_govs
 
-        if "technologie" in ds.columns:
-            techs = sorted(ds["technologie"].dropna().unique().astype(str).tolist())
+        techs = dim_opts.get("technologies") or []
+        if techs:
             sel_techs = st.multiselect(
                 "Technologie", techs, default=[], key="sb_techs", placeholder="Toutes les technologies"
             )
             if sel_techs:
                 filters["technologies"] = sel_techs
 
-        if "type_zone" in ds.columns:
-            zones = sorted(ds["type_zone"].dropna().unique().astype(str).tolist())
+        zones = dim_opts.get("zones") or []
+        if zones:
             sel_zones = st.multiselect(
                 "Type zone", zones, default=[], key="sb_zones", placeholder="Toutes les zones"
             )
             if sel_zones:
                 filters["zones"] = sel_zones
+
+        modes = dim_opts.get("modes") or ["ECO", "NORMAL", "ATTENTION", "CRITIQUE"]
+        sel_modes = st.multiselect(
+            "Mode operationnel",
+            modes,
+            default=[],
+            key="sb_modes",
+            placeholder="Tous les modes",
+        )
+        if sel_modes:
+            filters["modes"] = sel_modes
 
     st.sidebar.divider()
 

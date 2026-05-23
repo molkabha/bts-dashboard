@@ -26,15 +26,18 @@ def _latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
 
 def page_monitoring():
     security_middleware.enforce()
-    metrics = fleet_status_metrics(load_dashboard_df())
+    df = st.session_state.get("_dashboard_df")
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        df = load_dashboard_df(["trafic_data_mbps", "pue", "taux_charge_data"])
+    metrics = st.session_state.get("_fleet_metrics") or fleet_status_metrics(df)
     header("Monitoring temps reel", "Supervision operationnelle du parc BTS")
 
     df = load_dashboard_df(["trafic_data_mbps", "pue", "taux_charge_data"])
     if df.empty:
-        st.warning("Aucune donnee disponible.")
+        st.warning("Aucune donnee disponible pour les filtres actifs.")
         return
 
-    kpis = fleet_status_metrics(df)
+    kpis = metrics if metrics else fleet_status_metrics(df)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         kpi_card("Conso totale actuelle", f"{kpis['conso_instant']:,.1f} kWh", "Instantanee flotte", "blue")
