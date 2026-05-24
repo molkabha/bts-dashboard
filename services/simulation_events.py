@@ -133,8 +133,8 @@ def filter_events(
     current_ts: pd.Timestamp | None = None,
 ) -> list[dict]:
     out = list(events or [])
-    if station and station != "Toutes":
-        out = [e for e in out if str(e.get("station_id")) == station]
+    if station and str(station).strip().lower() not in {"toutes", "none", "nan", ""}:
+        out = [e for e in out if str(e.get("station_id")) == str(station)]
     if severity and severity != "Toutes":
         out = [e for e in out if str(e.get("severity")) == severity]
     if event_type and event_type != "Toutes":

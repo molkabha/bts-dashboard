@@ -12,16 +12,6 @@ _DEFAULT_CIVIL = {
     (1, 1), (3, 20), (4, 9), (5, 1), (7, 25), (8, 13), (10, 15), (12, 17),
 }
 
-SCENARIO_PRESETS: dict[str, dict] = {
-    "Jour ouvert (aujourd'hui)": {"offset_days": 0},
-    "Ferie 20 mars": {"month": 3, "day": 20},
-    "Ferie 1er mai": {"month": 5, "day": 1},
-    "Vendredi type": {"weekday": 4},
-    "Week-end": {"weekday": 5},
-    "Ramadan (ex. mars)": {"month": 3, "day": 15},
-}
-
-
 def _load_civil_holidays() -> frozenset[tuple[int, int]]:
     path = Path(ROOT) / "config" / "holidays_tn.yaml"
     if not path.exists():
@@ -81,25 +71,6 @@ def calendar_label(d: date) -> str:
     if ctx.get("est_weekend"):
         parts.append("Week-end")
     return ", ".join(parts) if parts else "Jour ouvre"
-
-
-def resolve_preset_date(preset_name: str, ref: date | None = None) -> date:
-    ref = ref or date.today()
-    spec = SCENARIO_PRESETS.get(preset_name)
-    if not spec:
-        return ref
-    if "offset_days" in spec:
-        return ref + timedelta(days=int(spec["offset_days"]))
-    if "month" in spec and "day" in spec:
-        try:
-            return date(ref.year, int(spec["month"]), int(spec["day"]))
-        except ValueError:
-            return ref
-    if "weekday" in spec:
-        target = int(spec["weekday"])
-        delta = (target - ref.weekday()) % 7
-        return ref + timedelta(days=delta)
-    return ref
 
 
 def scenario_timestamps(
