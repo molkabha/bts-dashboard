@@ -93,16 +93,21 @@ def station_options(role: str) -> list[str]:
     return stations
 
 
+def init_sim_stations(stations: list[str]) -> None:
+    default_pick = [s for s in clean_station_list(stations[:1]) if s in stations]
+    if "sim_stations" not in st.session_state:
+        st.session_state["sim_stations"] = default_pick
+        return
+    cleaned = [s for s in clean_station_list(st.session_state["sim_stations"]) if s in stations]
+    if not cleaned:
+        st.session_state["sim_stations"] = default_pick
+
+
 def resolve_selected_stations(stations: list[str]) -> list[str]:
     default_pick = [s for s in clean_station_list(stations[:1]) if s in stations]
-    current = clean_station_list(st.session_state.get("sim_stations") or default_pick)
-    current = [s for s in current if s in stations] or default_pick
-    st.session_state["sim_stations"] = current
-    selected = clean_station_list(st.session_state.get("sim_stations") or current)
-    if not selected:
-        st.session_state["sim_stations"] = default_pick
-        return default_pick
-    return selected
+    selected = clean_station_list(st.session_state.get("sim_stations") or [])
+    selected = [s for s in selected if s in stations]
+    return selected or default_pick
 
 
 def sim_params() -> tuple[date, int, int]:

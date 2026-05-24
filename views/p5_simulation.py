@@ -20,6 +20,7 @@ from views import simulation_common as sim
 
 
 def _render_top_bar(stations: list[str]) -> list[str]:
+    sim.init_sim_stations(stations)
     c1, c2, c3 = st.columns([2.2, 1.2, 1])
     with c1:
         st.multiselect("Stations", stations, key="sim_stations")
