@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from services.calendar_tn import calendar_context
-from services.data_service import artifact_path, read_parquet_fast, resolve_nb2_seuil_ensemble
+from services.data_service import artifact_is_ready, artifact_path, read_parquet_fast, resolve_nb2_seuil_ensemble
 from services.nb3_runtime import apply_nb3_decisions
 
 NB3_STUB_CLASSES = ("MoteurDecisionEnergie", "StrategieOptimisation")
@@ -58,32 +58,105 @@ def load_pipeline_bundle() -> dict[str, Any] | None:
         return None
 
 
+def _config_features() -> list[str]:
+    config = _load_joblib("config.joblib")
+    if not isinstance(config, dict):
+        bundle = load_pipeline_bundle()
+        config = bundle.get("config") if bundle else {}
+    return list(config.get("features") or []) if isinstance(config, dict) else []
+
+
+def _station_meta_table() -> pd.DataFrame:
+    """Metadonnees stations (leger) pour templates synthetiques."""
+    for name in ("streamlit_score_stations.parquet", "streamlit_carte_stations.parquet"):
+        path = artifact_path(name)
+        if not artifact_is_ready(path):
+            continue
+        df = read_parquet_fast(
+            path,
+            ["station_id", "technologie", "type_zone", "gouvernorat", "latitude", "longitude"],
+        )
+        if not df.empty and "station_id" in df.columns:
+            return df.drop_duplicates(subset=["station_id"])
+    return pd.DataFrame()
+
+
+def _synthetic_feature_templates(feat_cols: list[str]) -> pd.DataFrame:
+    """Grille station × heure avec valeurs par defaut (sans parquet 100 Mo)."""
+    if not feat_cols:
+        return pd.DataFrame()
+    meta = _station_meta_table()
+    stations = meta["station_id"].astype(str).tolist() if not meta.empty else []
+    if not stations:
+        stations = ["DEFAULT"]
+
+    skip = {
+        "technologie_enc", "type_zone_enc", "gouvernorat_enc", "station_enc",
+        "heure_sin", "heure_cos", "jour_sin", "jour_cos", "mois_sin", "mois_cos",
+        "mois_annee", "est_weekend", "est_vendredi", "est_ramadan", "est_ferie",
+    }
+    defaults: dict[str, float] = {
+        "conso_lag_1h": 8.0,
+        "conso_lag_24h": 8.0,
+        "conso_moy_station": 8.0,
+        "conso_moy_horaire": 8.0,
+        "conso_std_station": 1.5,
+        "nb_secteurs_actifs": 1.0,
+        "charge_cpu_pct": 40.0,
+        "temperature_ambiante": 22.0,
+        "trafic_data_mbps": 100.0,
+        "taux_charge_voix": 0.5,
+        "taux_charge_data": 0.5,
+        "score_qos": 0.85,
+        "eei": 100.0,
+        "ecart_pct": 0.0,
+        "ecart_vs_profil_horaire": 0.0,
+    }
+    rows: list[dict] = []
+    for sid in stations:
+        base_meta: dict = {"station_id": sid}
+        if not meta.empty:
+            hit = meta[meta["station_id"].astype(str) == sid]
+            if not hit.empty:
+                for col in ("technologie", "type_zone", "gouvernorat"):
+                    if col in hit.columns and pd.notna(hit.iloc[0][col]):
+                        base_meta[col] = hit.iloc[0][col]
+        for hour in range(24):
+            feat = {**base_meta, "heure": hour}
+            for col in feat_cols:
+                if col in skip or col.endswith("_enc"):
+                    continue
+                if col not in feat:
+                    feat[col] = defaults.get(col, 0.0)
+            rows.append(feat)
+    return pd.DataFrame(rows)
+
+
 @lru_cache(maxsize=1)
 def _feature_templates() -> pd.DataFrame:
-    """Profil moyen NB1 (65 features) par station × heure."""
-    cols = ["station_id", "heure"]
-    path = artifact_path("streamlit_data.parquet")
-    if not path.exists():
-        path = artifact_path("df_full_processed.parquet")
-    if not path.exists():
-        return pd.DataFrame()
-
-    config = _load_joblib("config.joblib")
-    feat_cols = list(config.get("features", [])) if isinstance(config, dict) else []
+    """Profil moyen NB1 par station × heure (parquet Hub ou grille synthetique)."""
+    feat_cols = _config_features()
     if not feat_cols:
         return pd.DataFrame()
 
+    cols = ["station_id", "heure"]
     read_cols = list(dict.fromkeys(cols + feat_cols + ["technologie", "type_zone", "gouvernorat"]))
-    df = read_parquet_fast(path, read_cols)
-    if df.empty or "station_id" not in df.columns:
-        return pd.DataFrame()
+    for name in ("streamlit_data.parquet", "df_full_processed.parquet"):
+        path = artifact_path(name)
+        if not artifact_is_ready(path):
+            continue
+        df = read_parquet_fast(path, read_cols)
+        if df.empty or "station_id" not in df.columns:
+            continue
+        work = df.copy()
+        work["station_id"] = work["station_id"].astype(str)
+        work["heure"] = pd.to_numeric(work.get("heure"), errors="coerce")
+        work = work.dropna(subset=["heure"])
+        numeric = [c for c in feat_cols if c in work.columns]
+        if numeric:
+            return work.groupby(["station_id", "heure"], as_index=False)[numeric].mean(numeric_only=True)
 
-    work = df.copy()
-    work["station_id"] = work["station_id"].astype(str)
-    work["heure"] = pd.to_numeric(work.get("heure"), errors="coerce")
-    work = work.dropna(subset=["heure"])
-    numeric = [c for c in feat_cols if c in work.columns]
-    return work.groupby(["station_id", "heure"], as_index=False)[numeric].mean(numeric_only=True)
+    return _synthetic_feature_templates(feat_cols)
 
 
 def clear_nb_inference_cache() -> None:
@@ -217,6 +290,10 @@ def _predict_nb1(
     feature_names = list(config.get("features") or [])
     model = (bundle or {}).get("modele_lgbm") or _load_joblib("best_model.joblib")
     quantiles = (bundle or {}).get("quantiles") or _load_joblib("quantile_models.joblib") or {}
+    if model is None or not feature_names:
+        n = len(feature_df)
+        empty = np.array([])
+        return empty, empty, empty
 
     matrix = np.vstack([
         _encode_row(feature_df.iloc[i], encodeurs, feature_names)[0]
@@ -370,6 +447,8 @@ def run_nb_pipeline(df: pd.DataFrame) -> pd.DataFrame:
         return out
 
     preds, q10, q90 = _predict_nb1(feat_rows, bundle)
+    if preds.size == 0:
+        return out
     out["conso_predite"] = preds
     out["pred_q10"] = q10
     out["pred_q90"] = q90

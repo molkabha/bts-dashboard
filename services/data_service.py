@@ -30,6 +30,36 @@ except ImportError:
 
 _HF_DISABLED_UNTIL = 0.0
 
+
+def hf_hub_token() -> str | None:
+    """Token HF : settings, env, ou secrets Streamlit."""
+    token = settings.HF_TOKEN
+    if token:
+        return str(token).strip() or None
+    import os
+
+    env = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
+    if env:
+        return str(env).strip() or None
+    try:
+        if hasattr(st, "secrets"):
+            direct = st.secrets.get("HF_TOKEN")
+            if direct:
+                return str(direct).strip() or None
+            hub = st.secrets.get("huggingface")
+            if isinstance(hub, dict) and hub.get("token"):
+                return str(hub["token"]).strip() or None
+    except Exception:
+        pass
+    return None
+
+
+def artifact_is_ready(path: Path, min_bytes: int = 64) -> bool:
+    try:
+        return path.is_file() and path.stat().st_size >= min_bytes
+    except OSError:
+        return False
+
 # Mapping for notebook outputs
 NOTEBOOK_OUTPUTS = {
     "NB1": settings.NB1_OUTPUT,
@@ -309,6 +339,7 @@ def artifact_path(filename: str) -> Path:
         if not filename.startswith("streamlit_"):
             possible_filenames.append(f"streamlit_{filename}")
 
+        token = hf_hub_token()
         for hf_filename in possible_filenames:
             try:
                 downloaded = hf_hub_download(
@@ -316,9 +347,13 @@ def artifact_path(filename: str) -> Path:
                     filename=hf_filename,
                     cache_dir=str(settings.HF_CACHE_DIR),
                     local_files_only=False,
-                    etag_timeout=5,
+                    etag_timeout=30,
+                    token=token,
+                    resume_download=True,
                 )
                 hf_path = Path(downloaded)
+                if not artifact_is_ready(hf_path):
+                    continue
 
                 local_best = best_local_candidate(candidates)
                 if local_best and artifact_quality(local_best) > artifact_quality(hf_path):
@@ -326,9 +361,9 @@ def artifact_path(filename: str) -> Path:
                 return hf_path
             except Exception as exc:
                 exc_name = exc.__class__.__name__
-                if "EntryNotFound" not in exc_name and "RepositoryNotFound" not in exc_name:
-                    _HF_DISABLED_UNTIL = time.time() + 60
-                    break
+                if "EntryNotFound" in exc_name or "RepositoryNotFound" in exc_name:
+                    continue
+                # Erreur reseau/SSL : ne pas couper tout le Hub pour les autres fichiers.
                 continue
 
     # Local fallback for development/offline runs.

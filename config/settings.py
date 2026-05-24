@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     USE_HF_HUB: bool = Field(default=True)
     HF_REPO_ID: str = Field(default="molkab/dashboard")
     HF_CACHE_DIR: Path = Field(default=ROOT / ".cache" / "huggingface")
+    HF_TOKEN: str | None = Field(default=None)
 
     # Domain Constants
     FACTEUR_CO2_TN: float = Field(default=0.53)

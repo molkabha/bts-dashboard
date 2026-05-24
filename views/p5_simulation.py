@@ -168,6 +168,15 @@ def page_simulation():
     )
     sim.maybe_autorefresh()
 
+    if not st.session_state.get("_sim_ml_warmed"):
+        with st.spinner("Chargement des modeles ML (Hub)…"):
+            from services.sim_inference import ml_status_for_ui
+
+            status = ml_status_for_ui()
+        st.session_state["_sim_ml_warmed"] = True
+        if not status.get("ready"):
+            st.info(status.get("detail", "Modeles ML en cours de chargement ou indisponibles."))
+
     role = st.session_state.get("role", "")
     stations = sim.station_options(role)
     if not stations:

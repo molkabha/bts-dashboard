@@ -90,9 +90,21 @@ def inference_label(df: pd.DataFrame) -> str:
         return ""
     modes = df["inference_pipeline"].dropna().astype(str).unique().tolist()
     if any("lgbm" in m for m in modes):
-        return "Prédiction : modèle LightGBM (NB1)"
+        return "Prediction : modele LightGBM (NB1-NB2-NB3)"
     if any("profil" in m for m in modes):
-        return "Prédiction : profil historique (artefacts ML absents sur le serveur)"
+        try:
+            from services.sim_inference import ml_status_for_ui
+
+            st_info = ml_status_for_ui()
+            detail = st_info.get("detail") or "artefacts ML non charges"
+            if st_info.get("use_hf_hub") and not st_info.get("hf_token_set"):
+                detail = (
+                    f"{detail} Verifiez USE_HF_HUB=True et le telechargement depuis "
+                    f"{st_info.get('hf_repo', 'molkab/dashboard')}."
+                )
+            return f"Prediction : profil historique ({detail})"
+        except Exception:
+            return "Prediction : profil historique (artefacts ML absents ou non charges)"
     return ""
 
 
