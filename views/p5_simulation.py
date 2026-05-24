@@ -403,18 +403,15 @@ def page_simulation():
     col_ctrl, col_main, col_events = st.columns([1, 2.2, 1.35])
 
     with col_ctrl:
-        default_pick = _clean_station_list(
-            st.session_state.get("sim_stations") or stations[:1]
-        )
-        default_pick = [s for s in default_pick if s in stations] or stations[:1]
-        selected_stations = st.multiselect(
-            "Stations",
-            stations,
-            default=default_pick,
-            key="sim_stations",
-            min_selections=1,
-        )
-        selected_stations = _clean_station_list(selected_stations)
+        default_pick = [s for s in _clean_station_list(stations[:1]) if s in stations]
+        current = _clean_station_list(st.session_state.get("sim_stations") or default_pick)
+        current = [s for s in current if s in stations] or default_pick
+        st.session_state["sim_stations"] = current
+        selected_stations = st.multiselect("Stations", stations, key="sim_stations")
+        selected_stations = _clean_station_list(selected_stations) or default_pick
+        if not selected_stations:
+            st.session_state["sim_stations"] = default_pick
+            selected_stations = default_pick
 
         sim_base_date = st.date_input("Jour", value=datetime.now().date(), key="sim_date")
         start_hour = st.slider("Heure debut", 0, 23, 0, key="sim_start_hour")
