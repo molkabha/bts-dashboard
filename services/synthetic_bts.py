@@ -240,14 +240,8 @@ def hourly_snapshot(
         seed = hash((str(sid), target_date.isoformat(), hour)) % (2**31)
         scale = _calendar_scale(ctx, hour)
         conso = _jitter(float(base.get("consommation_kwh") or 8.0) * scale, seed=seed)
-        pred = _jitter(float(base.get("conso_predite") or conso) * scale, seed=seed + 1)
-        if pred <= 0:
-            pred = conso
-        ecart = (conso - pred) / pred * 100.0 if pred else 0.0
 
         score_qos = float(base.get("score_qos") or 0.85)
-        score_anom = float(base.get("anomalie_score_ensemble") or 0.05)
-        score_anom = min(1.0, max(0.0, score_anom + abs(ecart) * 0.002 * anomaly_sensitivity))
 
         row = {
             "timestamp": ts,
@@ -255,36 +249,53 @@ def hourly_snapshot(
             "heure": hour,
             **ctx,
             "consommation_kwh": conso,
-            "conso_predite": pred,
-            "pred_q10": pred * 0.9,
-            "pred_q90": pred * 1.1,
-            "ecart_pct": ecart,
             "score_qos": score_qos,
-            "anomalie_score_ensemble": score_anom,
-            "nb_votes_anomalie": int(base.get("nb_votes_anomalie") or 0),
+            "taux_charge_voix": float(base.get("taux_charge_voix") or 0.5),
+            "taux_charge_data": float(base.get("taux_charge_data") or 0.5),
+            "trafic_data_mbps": float(base.get("trafic_data_mbps") or 100),
             "charge_cpu_pct": float(base.get("charge_cpu_pct") or 40),
             "temperature_ambiante": float(base.get("temperature_ambiante") or 22),
             "source_decision_nb3": "scenario",
+            "inference_pipeline": "nb1_nb2_nb3",
         }
         for col in ("gouvernorat", "technologie", "type_zone", "latitude", "longitude"):
             if col in base and pd.notna(base.get(col)):
                 row[col] = base[col]
-        row = _apply_decision_rules(row, seuil, qos_seuil, anomaly_sensitivity)
         rows.append(row)
 
     out = pd.DataFrame(rows)
     if use_ml and not out.empty:
         enriched = enrich_with_pipeline(out)
-        for i, sid in enumerate(station_ids):
-            if i >= len(enriched):
-                break
-            merged = enriched.iloc[i].to_dict()
-            if merged.get("mode_operation") in (None, "", "NORMAL") and rows[i].get("mode_operation"):
-                merged["mode_operation"] = rows[i]["mode_operation"]
-            rows[i] = {**rows[i], **{k: merged[k] for k in merged if pd.notna(merged.get(k))}}
-        out = pd.DataFrame(rows)
+        if not enriched.empty and "conso_predite" in enriched.columns:
+            out = enriched
+            if "source_decision_nb3" not in out.columns:
+                out["source_decision_nb3"] = "nb1_nb2_nb3"
+        else:
+            out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
+            out["source_decision_nb3"] = "scenario_rules"
+    else:
+        out = _fill_fallback_predictions(out)
         out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
     return harmonize_nb3_economies(out)
+
+
+def _fill_fallback_predictions(df: pd.DataFrame) -> pd.DataFrame:
+    """Si les artefacts ML sont absents, aligner prédit sur le réel simulé."""
+    if df.empty:
+        return df
+    out = df.copy()
+    conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
+    if "conso_predite" not in out.columns:
+        out["conso_predite"] = conso
+    out["pred_q10"] = out.get("pred_q10", conso * 0.9)
+    out["pred_q90"] = out.get("pred_q90", conso * 1.1)
+    pred = pd.to_numeric(out["conso_predite"], errors="coerce")
+    out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+    if "anomalie_score_ensemble" not in out.columns:
+        out["anomalie_score_ensemble"] = 0.05
+    if "nb_votes_anomalie" not in out.columns:
+        out["nb_votes_anomalie"] = 0
+    return out
 
 
 def _apply_decision_rules_batch(
