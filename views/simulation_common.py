@@ -251,20 +251,6 @@ def row_by_station(latest_all: pd.DataFrame, station_id: str) -> pd.Series:
     return hit.iloc[0]
 
 
-def status_banner(latest_ts, sim_base_date: date, n_alerts: int, n_decisions: int) -> None:
-    from views import simulation_ui as ui
-    ui.render_clock(latest_ts)
-    ui.status_pills(
-        bool(st.session_state.get("sim_running")),
-        int(st.session_state.get("sim_tick", 0)),
-        int(st.session_state.get("sim_total_ticks") or 0),
-        len(st.session_state.get("sim_stations") or []),
-        sim_base_date,
-        n_alerts,
-        n_decisions,
-    )
-
-
 def render_station_table(latest_all: pd.DataFrame) -> None:
     if latest_all.empty:
         return
@@ -296,8 +282,7 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
         ui.empty_state("Aucune alerte", "Les alertes apparaitront lorsque le scenario detectera une anomalie.")
         return
 
-    ui.filter_panel("Filtres alertes")
-    f1, f2, f3 = st.columns(3)
+    f1, f2, f3, f4 = st.columns(4)
     severities = ["Toutes", "ATTENTION", "CRITIQUE"]
     types = ["Toutes", "anomalie_sans_action", "qos_risque"]
     with f1:
@@ -307,9 +292,9 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
     with f2:
         sev_sel = st.selectbox("Severite", severities, key="sim_alert_sev")
     with f3:
+        type_sel = st.selectbox("Type", types, key="sim_alert_type")
+    with f4:
         hour_only = st.checkbox("Heure courante", key="sim_alert_hour_only")
-    type_sel = st.selectbox("Type", types, key="sim_alert_type")
-    ui.close_filter_panel()
 
     filtered = filter_events(
         raw,
@@ -324,13 +309,17 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
 
     from ui.components import section
 
-    if pending:
+    col_pending, col_journal = st.columns([1, 1.2])
+
+    with col_pending:
         with section("A traiter"):
+            if not pending:
+                st.caption("Rien en attente.")
             for item in pending:
                 ui.render_alert_card(item)
-                c1, c2 = st.columns(2)
                 ref = item.get("alert_ref", "")
-                with c1:
+                b1, b2 = st.columns(2)
+                with b1:
                     if st.button("Acquitter", key=f"ack_ok_{ref}", use_container_width=True):
                         user = st.session_state.get("username") or st.session_state.get("user", "engineer")
                         init_db()
@@ -338,7 +327,7 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
                         acked.add(ref)
                         st.session_state["sim_ack_refs"] = acked
                         st.rerun()
-                with c2:
+                with b2:
                     if st.button("Faux positif", key=f"ack_fp_{ref}", use_container_width=True):
                         user = st.session_state.get("username") or st.session_state.get("user", "engineer")
                         init_db()
@@ -348,14 +337,15 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
                         st.rerun()
 
     df = events_to_dataframe(filtered)
-    if df.empty:
-        ui.empty_state("Aucun resultat", "Modifiez les filtres ou avancez la simulation.")
-        return
-    with section("Journal"):
-        show = df[["timestamp", "station_id", "severity", "type", "message"]].copy()
-        show["timestamp"] = show["timestamp"].astype(str).str[:19]
-        st.dataframe(show, width="stretch", hide_index=True, height=240)
-        download_df_button(show, "alertes_simulation.csv", "Exporter alertes")
+    with col_journal:
+        with section("Journal"):
+            if df.empty:
+                st.caption("Aucune entree.")
+            else:
+                show = df[["timestamp", "station_id", "severity", "type", "message"]].copy()
+                show["timestamp"] = show["timestamp"].astype(str).str[:19]
+                st.dataframe(show, width="stretch", hide_index=True, height=360)
+                download_df_button(show, "alertes_simulation.csv", "Exporter")
 
 
 def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
@@ -368,7 +358,6 @@ def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
         ui.empty_state("Aucune decision", "Les actions d optimisation s afficheront ici pendant le scenario.")
         return
 
-    ui.filter_panel("Filtres decisions")
     f1, f2 = st.columns(2)
     with f1:
         st_sel = station_opts[0] if len(station_opts) == 1 else st.selectbox(
@@ -376,7 +365,6 @@ def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
         )
     with f2:
         hour_only = st.checkbox("Heure courante", key="sim_dec_hour_only")
-    ui.close_filter_panel()
 
     filtered = filter_events(
         raw,
