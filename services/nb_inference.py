@@ -357,6 +357,55 @@ def _normalize_nb3_action_labels(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _nb3_component_usable(obj: Any, method: str) -> bool:
+    """True si l'objet joblib expose une methode NB3 executable (pas un stub vide)."""
+    if obj is None:
+        return False
+    fn = getattr(obj, method, None)
+    return callable(fn)
+
+
+def _merge_nb3_rl_profile(df: pd.DataFrame) -> pd.DataFrame:
+    """Profil station x heure : economies / actions RL depuis streamlit_data (export NB3)."""
+    if df.empty or "heure" not in df.columns or "station_id" not in df.columns:
+        return df
+    path = _local_parquet_path("streamlit_data.parquet")
+    if path is None:
+        return df
+    cols = ["station_id", "heure", "economie_rl_kwh", "action_rl", "meilleur_agent_rl"]
+    try:
+        src = read_parquet_fast(path, cols)
+    except Exception:
+        return df
+    if src.empty:
+        return df
+
+    work = src.copy()
+    work["station_id"] = work["station_id"].astype(str)
+    work["heure"] = pd.to_numeric(work["heure"], errors="coerce")
+    work = work.dropna(subset=["heure"])
+    agg: dict[str, str] = {}
+    if "economie_rl_kwh" in work.columns:
+        agg["economie_rl_kwh"] = "mean"
+    if "action_rl" in work.columns:
+        agg["action_rl"] = "last"
+    if "meilleur_agent_rl" in work.columns:
+        agg["meilleur_agent_rl"] = "last"
+    if not agg:
+        return df
+
+    prof = work.groupby(["station_id", "heure"], as_index=False).agg(agg)
+    from services.nb_metrics import merge_business_columns
+
+    return merge_business_columns(
+        df,
+        prof,
+        list(agg.keys()),
+        ["station_id", "heure"],
+        zero_as_missing=True,
+    )
+
+
 def _merge_nb3_decisions(df: pd.DataFrame) -> pd.DataFrame:
     """Fusion action_rl / economies depuis decisions_par_station.parquet (export NB3)."""
     if df.empty or "heure" not in df.columns or "station_id" not in df.columns:
@@ -409,12 +458,14 @@ def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None)
                 moteur = candidate
                 break
 
-    if moteur is not None and hasattr(moteur, "appliquer_sur_dataset"):
+    if _nb3_component_usable(moteur, "appliquer_sur_dataset"):
         try:
             out = moteur.appliquer_sur_dataset(out)
             source = "pipeline_moteur_nb3"
         except Exception:
             moteur = None
+    else:
+        moteur = None
 
     if moteur is None:
         cfg = (bundle or {}).get("config") if bundle else {}
@@ -429,18 +480,23 @@ def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None)
                 strategie = candidate
                 break
 
-    if strategie is not None and hasattr(strategie, "appliquer"):
+    if _nb3_component_usable(strategie, "appliquer"):
         try:
             out = strategie.appliquer(out)
             source = "pipeline_strategie_nb3"
         except Exception:
             strategie = None
+    else:
+        strategie = None
 
     if strategie is None:
         out = StrategieOptimisation().appliquer(out)
+        if source == "moteur_decision_nb3":
+            source = "moteur_strategie_nb3"
 
     out = _normalize_nb3_action_labels(out)
     out = _merge_nb3_decisions(out)
+    out = _merge_nb3_rl_profile(out)
 
     from ui.formatting import is_no_named_action
 
