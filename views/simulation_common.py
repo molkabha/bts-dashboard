@@ -48,14 +48,16 @@ def plot_template() -> str:
     return PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
 
 
+SIM_AUTO_INTERVAL_DEFAULT_S = 30
+
+
 def maybe_autorefresh() -> None:
     if (
-        st.session_state.get("sim_auto")
-        and st.session_state.get("sim_running")
+        st.session_state.get("sim_running")
         and not st.session_state.get("sim_paused")
         and st_autorefresh
     ):
-        interval = int(st.session_state.get("sim_auto_interval", 3)) * 1000
+        interval = int(st.session_state.get("sim_auto_interval", SIM_AUTO_INTERVAL_DEFAULT_S)) * 1000
         st_autorefresh(interval=interval, key="sim_autorefresh")
 
 
@@ -246,7 +248,7 @@ def process_tick(selected_stations: list[str]) -> None:
     if st.session_state.get("sim_paused"):
         return
     sim_base_date, start_hour, num_days = sim_params()
-    auto = st.session_state.get("sim_auto") and st.session_state.get("sim_running")
+    auto = bool(st.session_state.get("sim_running"))
     if st.session_state.pop("sim_advance", False) or auto:
         advance_simulation(
             selected_stations, sim_base_date, start_hour,

@@ -42,12 +42,10 @@ def _toolbar(stations: list[str]) -> list[str]:
             key="sim_start_hour",
         )
     with c4:
-        b1, b2, b3, b4 = st.columns(4)
+        b1, b2, b3 = st.columns(3)
         with b1:
             start = st.button("Demarrer", type="primary", use_container_width=True)
         with b2:
-            step = st.button("+1 h", use_container_width=True)
-        with b3:
             if st.session_state.get("sim_paused"):
                 pause_btn = st.button("Reprendre", use_container_width=True)
             else:
@@ -56,7 +54,7 @@ def _toolbar(stations: list[str]) -> list[str]:
                     use_container_width=True,
                     disabled=not st.session_state.get("sim_running"),
                 )
-        with b4:
+        with b3:
             stop = st.button("Stop", use_container_width=True)
 
     selected = sim.resolve_selected_stations(stations)
@@ -72,14 +70,13 @@ def _toolbar(stations: list[str]) -> list[str]:
             "sim_decisions": [],
             "sim_ack_refs": set(),
             "sim_advance": True,
+            "sim_auto_interval": sim.SIM_AUTO_INTERVAL_DEFAULT_S,
+            "sim_speed": 1,
         })
         st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
         st.rerun()
     if pause_btn:
         st.session_state["sim_paused"] = not st.session_state.get("sim_paused")
-        st.rerun()
-    if step and st.session_state.get("sim_running") and not st.session_state.get("sim_paused"):
-        st.session_state["sim_advance"] = True
         st.rerun()
     if stop:
         sim.reset_simulation()
@@ -183,11 +180,16 @@ def page_simulation():
         o1, o2 = st.columns(2)
         with o1:
             st.slider("Duree (jours)", 1, 7, int(st.session_state.get("sim_num_days", 1)), key="sim_num_days")
-            st.select_slider("Pas", [1, 2, 5], value=2, key="sim_speed")
         with o2:
-            st.checkbox("Avance automatique", key="sim_auto")
-            if st.session_state.get("sim_auto"):
-                st.slider("Intervalle (s)", 1, 10, int(st.session_state.get("sim_auto_interval", 3)), key="sim_auto_interval")
+            st.slider(
+                "Intervalle (+1 h)",
+                10,
+                120,
+                int(st.session_state.get("sim_auto_interval", sim.SIM_AUTO_INTERVAL_DEFAULT_S)),
+                5,
+                key="sim_auto_interval",
+                help="Avance automatique d'une heure toutes les N secondes (pause possible).",
+            )
         if st.button("Calculer toute la journee", use_container_width=True):
             d, h, n = sim.sim_params()
             sim.run_full_period(selected, d, h, n)
@@ -204,7 +206,8 @@ def page_simulation():
         ui.empty_state(
             "Pret a demarrer",
             "Selectionnez vos stations, la date et l heure de debut, puis cliquez sur Demarrer. "
-            "Utilisez +1 h pour avancer dans la journee.",
+            "La simulation avance d une heure toutes les 30 secondes (modifiable dans Options avancees). "
+            "Utilisez Pause pour interrompre.",
         )
         return
 
@@ -214,6 +217,9 @@ def page_simulation():
     n_alert = _unack_alerts_count()
 
     pause_tag = " · **EN PAUSE**" if st.session_state.get("sim_paused") else ""
+    if st.session_state.get("sim_running") and not st.session_state.get("sim_paused"):
+        interval = int(st.session_state.get("sim_auto_interval", sim.SIM_AUTO_INTERVAL_DEFAULT_S))
+        pause_tag = f"{pause_tag} · +1 h / {interval} s"
     st.info(
         f"**{hour_label}** · {calendar_label(sim_date)} · "
         f"{len(selected)} station(s) · progression {tick}/{total}{pause_tag}" if total else
