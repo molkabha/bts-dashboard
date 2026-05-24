@@ -61,20 +61,23 @@ def _toolbar(stations: list[str]) -> list[str]:
     base_date, start_hour, num_days = sim.sim_params()
 
     if start:
-        st.session_state.update({
-            "sim_running": True,
-            "sim_paused": False,
-            "sim_tick": 0,
-            "sim_data": pd.DataFrame(),
-            "sim_alerts": [],
-            "sim_decisions": [],
-            "sim_ack_refs": set(),
-            "sim_auto_interval": sim.SIM_AUTO_INTERVAL_DEFAULT_S,
-            "sim_speed": 1,
-        })
-        st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
-        st.session_state.pop("_sim_ar_count", None)
-        sim.bootstrap_simulation(selected)
+        with st.spinner("Demarrage de la simulation (premiere heure)…"):
+            st.session_state.update({
+                "sim_running": True,
+                "sim_paused": False,
+                "sim_tick": 0,
+                "sim_data": pd.DataFrame(),
+                "sim_alerts": [],
+                "sim_decisions": [],
+                "sim_ack_refs": set(),
+                "sim_auto_interval": sim.SIM_AUTO_INTERVAL_DEFAULT_S,
+                "sim_speed": 1,
+            })
+            st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
+            st.session_state.pop("_sim_ar_count", None)
+            ok = sim.bootstrap_simulation(selected)
+            if not ok:
+                st.session_state["sim_running"] = False
         st.rerun()
     if pause_btn:
         st.session_state["sim_paused"] = not st.session_state.get("sim_paused")
@@ -205,6 +208,10 @@ def page_simulation():
 
     sim.maybe_autorefresh()
     sim.process_tick(selected)
+
+    err = st.session_state.get("sim_bootstrap_error")
+    if err:
+        st.error(str(err))
 
     sim_data, latest, latest_ts, sim_date = sim.latest_snapshot()
     if latest.empty:

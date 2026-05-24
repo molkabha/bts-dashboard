@@ -8,13 +8,22 @@ from datetime import date
 from functools import lru_cache
 from typing import Any
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
+from config.settings import settings
 from services.calendar_tn import calendar_context
 from services.data_service import artifact_path, read_parquet_fast, resolve_nb2_seuil_ensemble
 from services.decision_service import MoteurDecisionEnergie
 from services.optimization_service import StrategieOptimisation
+
+try:
+    from huggingface_hub import hf_hub_download
+except ImportError:
+    hf_hub_download = None
+
 
 NB3_STUB_CLASSES = ("MoteurDecisionEnergie", "StrategieOptimisation")
 
@@ -352,8 +361,8 @@ def _merge_nb3_decisions(df: pd.DataFrame) -> pd.DataFrame:
     """Fusion action_rl / economies depuis decisions_par_station.parquet (export NB3)."""
     if df.empty or "heure" not in df.columns or "station_id" not in df.columns:
         return df
-    path = artifact_path("decisions_par_station.parquet")
-    if not path.exists():
+    path = _local_parquet_path("decisions_par_station.parquet")
+    if path is None:
         return df
     dec_cols = [
         "station_id", "heure", "action_rl", "economie_rl_kwh", "meilleur_agent_rl",
@@ -432,6 +441,85 @@ def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None)
     out = _merge_nb3_decisions(out)
     out["source_decision_nb3"] = source
     return out
+
+
+def _local_parquet_path(filename: str) -> Path | None:
+    """Parquet deja present (disque ou cache HF) — pas de telechargement reseau."""
+    from services.data_service import NOTEBOOK_OUTPUTS, artifact_is_ready
+
+    for base in [settings.OUTPUTS_DIR, *NOTEBOOK_OUTPUTS.values()]:
+        path = base / filename
+        if artifact_is_ready(path):
+            return path
+    if hf_hub_download is None:
+        return None
+    for hf_name in (filename, f"streamlit_{filename}"):
+        try:
+            downloaded = hf_hub_download(
+                repo_id=settings.HF_REPO_ID,
+                filename=hf_name,
+                cache_dir=str(settings.HF_CACHE_DIR),
+                local_files_only=True,
+            )
+            path = Path(downloaded)
+            if artifact_is_ready(path):
+                return path
+        except Exception:
+            continue
+    return None
+
+
+def apply_offline_nb23(df: pd.DataFrame) -> pd.DataFrame:
+    """NB2/NB3 sans joblib : scores profil Hub + moteur/strategie notebook."""
+    if df.empty:
+        return df
+    out = df.copy()
+    out = _merge_nb2_profile_scores(out)
+    out = _apply_nb3_moteur_strategie(out, None)
+    out["inference_pipeline"] = "nb23_offline_hf"
+    return out
+
+
+def _merge_nb2_profile_scores(df: pd.DataFrame) -> pd.DataFrame:
+    """Remplit anomalie/QoS depuis df_avec_anomalies (station × heure) si disponible en cache."""
+    if df.empty or "heure" not in df.columns or "station_id" not in df.columns:
+        return df
+    path = _local_parquet_path(settings.ANOMALY_DATASET)
+    if path is None:
+        return df
+    cols = ["station_id", "heure", "anomalie_score_ensemble", "nb_votes_anomalie", "score_qos"]
+    try:
+        from services.data_service import read_parquet_fast
+
+        nb2 = read_parquet_fast(path, cols)
+    except Exception:
+        return df
+    if nb2.empty:
+        return df
+    merged = df.merge(
+        nb2.drop_duplicates(subset=["station_id", "heure"], keep="last"),
+        on=["station_id", "heure"],
+        how="left",
+        suffixes=("", "_prof"),
+    )
+    for col in ("anomalie_score_ensemble", "nb_votes_anomalie", "score_qos"):
+        prof = f"{col}_prof"
+        if prof in merged.columns:
+            if col not in merged.columns:
+                merged[col] = merged[prof]
+            else:
+                missing = merged[col].isna()
+                merged.loc[missing, col] = merged.loc[missing, prof]
+            merged.drop(columns=[prof], inplace=True, errors="ignore")
+    if "anomalie_score_ensemble" not in merged.columns:
+        merged["anomalie_score_ensemble"] = 0.05
+    if "nb_votes_anomalie" not in merged.columns:
+        merged["nb_votes_anomalie"] = 0
+    conso = pd.to_numeric(merged.get("consommation_kwh"), errors="coerce")
+    pred = pd.to_numeric(merged.get("conso_predite"), errors="coerce")
+    if "ecart_pct" not in merged.columns or merged["ecart_pct"].isna().all():
+        merged["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+    return merged
 
 
 def run_nb_pipeline(df: pd.DataFrame) -> pd.DataFrame:

@@ -250,14 +250,18 @@ def default_sim_date() -> date:
 
 
 def purge_stale_sim_session() -> None:
-    """Efface les ticks issus d'une ancienne version (profil_historique / pipeline ML separe)."""
+    """Ne pas effacer une simulation en cours (y compris repli profil / pipeline actuel)."""
+    if st.session_state.get("sim_running"):
+        return
     sim_data = st.session_state.get("sim_data")
     if not isinstance(sim_data, pd.DataFrame) or sim_data.empty:
         return
     if "inference_pipeline" not in sim_data.columns:
         return
-    legacy = sim_data["inference_pipeline"].astype(str).str.contains(
-        "profil_historique", case=False, na=False,
+    legacy = sim_data["inference_pipeline"].astype(str).str.fullmatch(
+        r"profil_historique|scenario_rules|dashboard_lgbm_hf",
+        case=False,
+        na=False,
     )
     if legacy.any():
         reset_simulation()
@@ -371,6 +375,9 @@ def reset_simulation() -> None:
 
 def bootstrap_simulation(selected_stations: list[str]) -> bool:
     """Premier tick immediat au clic Demarrer (affichage sans attendre l auto-refresh)."""
+    if not selected_stations:
+        st.session_state["sim_bootstrap_error"] = "Selectionnez au moins une station."
+        return False
     sim_base_date, start_hour, num_days = sim_params()
     max_rows = max(72, 24 * num_days) * len(selected_stations)
     engine = sim_engine()
@@ -378,11 +385,16 @@ def bootstrap_simulation(selected_stations: list[str]) -> bool:
         selected_stations, sim_base_date, start_hour, 0, 1, num_days, engine=engine,
     )
     if processed.empty:
+        st.session_state["sim_bootstrap_error"] = (
+            "Impossible de generer la premiere heure. Verifiez la connexion Hub "
+            "ou relancez avec Stop puis Demarrer."
+        )
         return False
     append_sim_data(processed, max_rows)
     record_events(processed)
     st.session_state["sim_tick"] = max(1, n)
     st.session_state.pop("sim_advance", None)
+    st.session_state.pop("sim_bootstrap_error", None)
     return True
 
 
