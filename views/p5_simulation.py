@@ -29,33 +29,34 @@ def _unack_alerts_count() -> int:
 
 def _toolbar(stations: list[str]) -> list[str]:
     sim.init_sim_stations(stations)
-    c1, c2, c3, c4 = st.columns([2.0, 1, 0.7, 2.1])
-    with c1:
+    c_st, c_date, c_h, c_go, c_pause, c_stop = st.columns(
+        [2.9, 1.05, 0.72, 0.68, 0.68, 0.68],
+        vertical_alignment="bottom",
+    )
+    with c_st:
         st.multiselect("Stations a simuler", stations, key="sim_stations")
-    with c2:
+    with c_date:
         st.date_input("Date", value=datetime.now().date(), key="sim_date")
-    with c3:
+    with c_h:
         st.selectbox(
             "Debut",
             list(range(24)),
             format_func=lambda h: f"{h:02d}h",
             key="sim_start_hour",
         )
-    with c4:
-        b1, b2, b3 = st.columns(3)
-        with b1:
-            start = st.button("Demarrer", type="primary", use_container_width=True)
-        with b2:
-            if st.session_state.get("sim_paused"):
-                pause_btn = st.button("Reprendre", use_container_width=True)
-            else:
-                pause_btn = st.button(
-                    "Pause",
-                    use_container_width=True,
-                    disabled=not st.session_state.get("sim_running"),
-                )
-        with b3:
-            stop = st.button("Stop", use_container_width=True)
+    with c_go:
+        start = st.button("Demarrer", type="primary", use_container_width=True)
+    with c_pause:
+        if st.session_state.get("sim_paused"):
+            pause_btn = st.button("Reprendre", use_container_width=True)
+        else:
+            pause_btn = st.button(
+                "Pause",
+                use_container_width=True,
+                disabled=not st.session_state.get("sim_running"),
+            )
+    with c_stop:
+        stop = st.button("Stop", use_container_width=True)
 
     selected = sim.resolve_selected_stations(stations)
     base_date, start_hour, num_days = sim.sim_params()

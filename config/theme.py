@@ -389,6 +389,18 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .sim-empty-body { font-size:13px; color:var(--tt-muted); line-height:1.55; }
 .sim-hero-time { font-size:32px; font-weight:850; letter-spacing:1px; color:var(--tt-text); line-height:1.1; }
 .sim-hero-sub { font-size:13px; color:var(--tt-muted); margin-top:4px; }
+/* Barre simulation : multiselect hauteur fixe (scroll si beaucoup de stations) */
+section.main div[data-testid="stMultiSelect"] div[data-baseweb="select"] > div {
+  max-height: 2.75rem !important;
+  min-height: 2.75rem !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  align-content: flex-start !important;
+}
+section.main div[data-testid="stMultiSelect"] span[data-baseweb="tag"] {
+  margin: 1px 2px !important;
+  font-size: 0.78rem !important;
+}
 .decision-card .dc-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
 .decision-card .dc-station { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:var(--tt-muted); }
 </style>
