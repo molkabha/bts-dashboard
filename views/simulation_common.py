@@ -114,12 +114,16 @@ def inference_label(df: pd.DataFrame) -> str:
     if "inference_pipeline" in df.columns:
         modes = df["inference_pipeline"].dropna().astype(str).unique().tolist()
 
-    if has_pred or any("dashboard" in m or "lgbm" in m for m in modes):
+    if has_pred or any(
+        token in m
+        for m in modes
+        for token in ("nb1_nb2_nb3", "dashboard", "lgbm", "nb1")
+    ):
         r2 = prod.get("r2")
         extra = f" · R²={float(r2):.3f}" if r2 is not None else ""
         return (
-            f"Prediction : {model_name} "
-            f"(Hub · reel et predit sous meme contexte calendrier{extra})"
+            f"Pipeline : {model_name} (NB1) + detecteurs NB2 + moteur NB3 "
+            f"(artefacts Hub{extra})"
         )
     if any("profil" in m for m in modes):
         return (

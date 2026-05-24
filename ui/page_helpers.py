@@ -242,15 +242,24 @@ def render_nb3_rl_agents(nb3: dict, template: str) -> None:
 
 
 def mode_explanation(row: pd.Series) -> str:
+    from ui.formatting import format_action_label
+
     mode = str(row.get("mode_operation", "NORMAL"))
     score = float(row.get("anomalie_score_ensemble", 0) or 0)
-    if mode == "ECO":
-        return "Heure creuse ou faible charge — reduction possible."
+    ecart = float(row.get("ecart_pct", 0) or 0)
+    action = format_action_label(
+        row.get("action_rl") or row.get("action_proposee") or row.get("action_principale"),
+        default="",
+    )
     if mode == "CRITIQUE":
-        return f"Anomalie forte (score {score:.2f}) — intervention rapide."
+        return f"Situation critique (score {score:.2f}) — {action or 'intervention'}."
     if mode == "ATTENTION":
-        return f"Ecart ou score eleve ({score:.2f}) — surveillance renforcee."
-    return "Fonctionnement nominal."
+        return f"Surveillance renforcee (score {score:.2f}, ecart {ecart:+.1f} %)."
+    if mode == "ECO" and action:
+        return f"Optimisation active : {action} (ecart {ecart:+.1f} % vs predit)."
+    if mode == "ECO":
+        return "Optimisation energie selon creneau ou contexte calendaire."
+    return "Fonctionnement nominal — aucune action requise."
 
 
 def render_executive_report_export(kpis: dict) -> None:

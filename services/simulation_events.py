@@ -51,8 +51,43 @@ def classify_tick_rows(
         action_raw = row.get("action_rl") or row.get("action_proposee") or row.get("action_principale")
         action = resolve_row_action(row, prefer_rl=True)
         eco = float(eco_series.iloc[i]) if i < len(eco_series) else 0.0
+        ecart = float(row.get("ecart_pct") or 0)
 
-        if score >= seuil and qos >= qos_seuil and is_no_named_action(action_raw):
+        if mode == "CRITIQUE":
+            item = {
+                "timestamp": ts,
+                "station_id": station,
+                "severity": "CRITIQUE",
+                "type": "mode_critique",
+                "message": (
+                    f"Mode CRITIQUE — {action}. "
+                    f"Anomalie {score:.2f}, QoS {qos:.2f}."
+                ),
+                "score_anomalie": score,
+                "score_qos": qos,
+                "mode": mode,
+            }
+            item["alert_ref"] = alert_ref(item)
+            alerts.append(item)
+        elif abs(ecart) >= 18 and qos >= qos_seuil:
+            severity = "ATTENTION" if abs(ecart) < 28 else "CRITIQUE"
+            direction = "au-dessus" if ecart > 0 else "en-dessous"
+            item = {
+                "timestamp": ts,
+                "station_id": station,
+                "severity": severity,
+                "type": "ecart_conso",
+                "message": (
+                    f"Ecart {ecart:+.1f} % vs LightGBM ({direction} du predit). "
+                    f"Action : {action}."
+                ),
+                "score_anomalie": score,
+                "score_qos": qos,
+                "mode": mode,
+            }
+            item["alert_ref"] = alert_ref(item)
+            alerts.append(item)
+        elif score >= seuil and qos >= qos_seuil and is_no_named_action(action_raw):
             severity = "CRITIQUE" if score >= seuil * 2.4 else "ATTENTION"
             item = {
                 "timestamp": ts,
