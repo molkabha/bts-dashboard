@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 from datetime import date, datetime
 
 import pandas as pd
@@ -253,19 +252,17 @@ def row_by_station(latest_all: pd.DataFrame, station_id: str) -> pd.Series:
 
 
 def status_banner(latest_ts, sim_base_date: date, n_alerts: int, n_decisions: int) -> None:
-    st.markdown(
-        f"**{pd.Timestamp(latest_ts).strftime('%Y-%m-%d %H:%M') if latest_ts is not None else '—'}** "
-        f"| {calendar_label(sim_base_date)} "
-        f"| Alertes: **{n_alerts}** | Decisions: **{n_decisions}**"
+    from views import simulation_ui as ui
+    ui.render_clock(latest_ts)
+    ui.status_pills(
+        bool(st.session_state.get("sim_running")),
+        int(st.session_state.get("sim_tick", 0)),
+        int(st.session_state.get("sim_total_ticks") or 0),
+        len(st.session_state.get("sim_stations") or []),
+        sim_base_date,
+        n_alerts,
+        n_decisions,
     )
-
-
-def render_compact_status() -> None:
-    running = st.session_state.get("sim_running")
-    tick = int(st.session_state.get("sim_tick", 0))
-    total = int(st.session_state.get("sim_total_ticks") or 0)
-    label = "En cours" if running else "Arrete"
-    st.caption(f"Etat: {label} | Progression: {tick}/{total}" if total else f"Etat: {label}")
 
 
 def render_station_table(latest_all: pd.DataFrame) -> None:
@@ -291,11 +288,15 @@ def event_station_filter_options(selected_stations: list[str], events: list[dict
 
 
 def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
+    from views import simulation_ui as ui
+
     raw = st.session_state.get("sim_alerts", [])
     station_opts = event_station_filter_options(selected_stations, raw)
-    if not station_opts:
-        st.caption("Aucune alerte.")
+    if not station_opts and not raw:
+        ui.empty_state("Aucune alerte", "Les alertes apparaitront lorsque le scenario detectera une anomalie.")
         return
+
+    ui.filter_panel("Filtres alertes")
     f1, f2, f3 = st.columns(3)
     severities = ["Toutes", "ATTENTION", "CRITIQUE"]
     types = ["Toutes", "anomalie_sans_action", "qos_risque"]
@@ -308,6 +309,8 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
     with f3:
         hour_only = st.checkbox("Heure courante", key="sim_alert_hour_only")
     type_sel = st.selectbox("Type", types, key="sim_alert_type")
+    ui.close_filter_panel()
+
     filtered = filter_events(
         raw,
         station=st_sel,
@@ -318,49 +321,54 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
     )
     acked = st.session_state.get("sim_ack_refs", set())
     pending = [e for e in filtered if e.get("alert_ref") not in acked][:12]
-    for item in pending:
-        sev = str(item.get("severity", ""))
-        color = "#dc2626" if sev == "CRITIQUE" else "#ca8a04"
-        st.markdown(
-            f'<div style="border-left:4px solid {color};padding:6px 8px;margin-bottom:6px;">'
-            f'<small>{html.escape(str(item.get("station_id","")))} — {html.escape(str(item.get("timestamp",""))[:19])}</small><br>'
-            f'{html.escape(str(item.get("message","")))}</div>',
-            unsafe_allow_html=True,
-        )
-        c1, c2 = st.columns(2)
-        ref = item.get("alert_ref", "")
-        with c1:
-            if st.button("Acquitter", key=f"ack_ok_{ref}", use_container_width=True):
-                user = st.session_state.get("username") or st.session_state.get("user", "engineer")
-                init_db()
-                persist_alert_ack(user, str(item.get("station_id")), ref, "acquitte")
-                acked.add(ref)
-                st.session_state["sim_ack_refs"] = acked
-                st.rerun()
-        with c2:
-            if st.button("Faux positif", key=f"ack_fp_{ref}", use_container_width=True):
-                user = st.session_state.get("username") or st.session_state.get("user", "engineer")
-                init_db()
-                persist_alert_ack(user, str(item.get("station_id")), ref, "faux_positif")
-                acked.add(ref)
-                st.session_state["sim_ack_refs"] = acked
-                st.rerun()
+
+    from ui.components import section
+
+    if pending:
+        with section("A traiter"):
+            for item in pending:
+                ui.render_alert_card(item)
+                c1, c2 = st.columns(2)
+                ref = item.get("alert_ref", "")
+                with c1:
+                    if st.button("Acquitter", key=f"ack_ok_{ref}", use_container_width=True):
+                        user = st.session_state.get("username") or st.session_state.get("user", "engineer")
+                        init_db()
+                        persist_alert_ack(user, str(item.get("station_id")), ref, "acquitte")
+                        acked.add(ref)
+                        st.session_state["sim_ack_refs"] = acked
+                        st.rerun()
+                with c2:
+                    if st.button("Faux positif", key=f"ack_fp_{ref}", use_container_width=True):
+                        user = st.session_state.get("username") or st.session_state.get("user", "engineer")
+                        init_db()
+                        persist_alert_ack(user, str(item.get("station_id")), ref, "faux_positif")
+                        acked.add(ref)
+                        st.session_state["sim_ack_refs"] = acked
+                        st.rerun()
+
     df = events_to_dataframe(filtered)
     if df.empty:
-        st.caption("Aucune alerte pour ces filtres.")
+        ui.empty_state("Aucun resultat", "Modifiez les filtres ou avancez la simulation.")
         return
-    show = df[["timestamp", "station_id", "severity", "type", "message"]].copy()
-    show["timestamp"] = show["timestamp"].astype(str).str[:19]
-    st.dataframe(show, width="stretch", hide_index=True, height=240)
-    download_df_button(show, "alertes_simulation.csv", "Exporter alertes")
+    with section("Journal"):
+        show = df[["timestamp", "station_id", "severity", "type", "message"]].copy()
+        show["timestamp"] = show["timestamp"].astype(str).str[:19]
+        st.dataframe(show, width="stretch", hide_index=True, height=240)
+        download_df_button(show, "alertes_simulation.csv", "Exporter alertes")
 
 
 def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
+    from ui.components import section
+    from views import simulation_ui as ui
+
     raw = st.session_state.get("sim_decisions", [])
     station_opts = event_station_filter_options(selected_stations, raw)
-    if not station_opts:
-        st.caption("Aucune decision.")
+    if not station_opts and not raw:
+        ui.empty_state("Aucune decision", "Les actions d optimisation s afficheront ici pendant le scenario.")
         return
+
+    ui.filter_panel("Filtres decisions")
     f1, f2 = st.columns(2)
     with f1:
         st_sel = station_opts[0] if len(station_opts) == 1 else st.selectbox(
@@ -368,6 +376,8 @@ def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
         )
     with f2:
         hour_only = st.checkbox("Heure courante", key="sim_dec_hour_only")
+    ui.close_filter_panel()
+
     filtered = filter_events(
         raw,
         station=st_sel,
@@ -376,14 +386,15 @@ def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
     )
     df = events_to_dataframe(filtered)
     if df.empty:
-        st.caption("Aucune decision pour ces filtres.")
+        ui.empty_state("Aucun resultat", "Modifiez les filtres ou avancez la simulation.")
         return
-    show = df[["timestamp", "station_id", "mode", "action", "economie_kwh", "message"]].copy()
-    show["timestamp"] = show["timestamp"].astype(str).str[:19]
-    if "economie_kwh" in show.columns:
-        show["economie_kwh"] = pd.to_numeric(show["economie_kwh"], errors="coerce").round(3)
-    st.dataframe(show, width="stretch", hide_index=True, height=280)
-    download_df_button(show, "decisions_simulation.csv", "Exporter decisions")
+    with section("Journal des decisions"):
+        show = df[["timestamp", "station_id", "mode", "action", "economie_kwh", "message"]].copy()
+        show["timestamp"] = show["timestamp"].astype(str).str[:19]
+        if "economie_kwh" in show.columns:
+            show["economie_kwh"] = pd.to_numeric(show["economie_kwh"], errors="coerce").round(3)
+        st.dataframe(show, width="stretch", hide_index=True, height=280)
+        download_df_button(show, "decisions_simulation.csv", "Exporter decisions")
 
 
 def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None) -> None:

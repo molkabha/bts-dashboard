@@ -352,6 +352,29 @@ div[data-testid="stVerticalBlock"] { gap:0.75rem; }
 .pipeline-step.done .step-icon { color:var(--tt-success); }
 .pipeline-step.active .step-icon { color:var(--tt-warning); }
 .pipeline-step.pending .step-icon { color:var(--tt-muted); }
+
+/* Simulation cockpit */
+.sim-toolbar { border:1px solid var(--tt-border); border-left:4px solid var(--tt-red); border-radius:10px; background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); padding:14px 16px 10px 16px; margin-bottom:14px; box-shadow:0 2px 8px rgba(15,23,42,0.04); }
+.sim-toolbar-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+.sim-toolbar-title { font-size:11px; font-weight:850; letter-spacing:0.9px; text-transform:uppercase; color:var(--tt-red); }
+.sim-status-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.sim-status-pill { display:inline-flex; align-items:center; gap:6px; padding:5px 11px; border-radius:999px; border:1px solid var(--tt-border); background:#fff; font-size:11.5px; font-weight:750; color:var(--tt-muted); }
+.sim-status-pill strong { color:var(--tt-text); font-weight:850; }
+.sim-status-pill.live { border-color:#86efac; background:#ecfdf5; color:#047857; }
+.sim-status-pill.idle { background:#f8fafc; }
+.sim-panel { border:1px solid var(--tt-border); border-radius:10px; background:var(--tt-card); padding:16px 18px; margin-bottom:12px; box-shadow:0 1px 3px rgba(15,23,42,0.04); }
+.sim-panel-title { font-size:12px; font-weight:850; text-transform:uppercase; letter-spacing:0.55px; color:var(--tt-muted); margin-bottom:12px; }
+.sim-command-hint { font-size:12px; color:var(--tt-muted); margin-top:10px; line-height:1.45; }
+.sim-empty { text-align:center; padding:42px 20px; border:1px dashed var(--tt-border); border-radius:10px; background:#f8fafc; }
+.sim-empty-title { font-size:15px; font-weight:820; color:var(--tt-text); margin-bottom:6px; }
+.sim-empty-body { font-size:13px; color:var(--tt-muted); max-width:420px; margin:0 auto; line-height:1.5; }
+.sim-clock { font-family:'Courier New',Consolas,monospace; font-size:26px; font-weight:850; letter-spacing:1.5px; color:var(--tt-text); text-align:center; padding:12px 16px; background:var(--tt-card); border:1px solid var(--tt-border); border-radius:8px; margin-bottom:12px; }
+.sim-filter-bar { border:1px solid var(--tt-border); border-radius:8px; background:#f8fafc; padding:12px 14px; margin-bottom:12px; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { gap:4px; background:#f1f5f9; padding:5px; border-radius:10px; border:1px solid var(--tt-border); }
+[data-testid="stTabs"] [data-baseweb="tab"] { border-radius:7px; padding:8px 14px; font-weight:780; font-size:12.5px; }
+[data-testid="stTabs"] [aria-selected="true"] { background:#fff !important; box-shadow:0 1px 3px rgba(15,23,42,0.08); }
+.decision-card .dc-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+.decision-card .dc-station { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:var(--tt-muted); }
 </style>
 """
 
@@ -375,5 +398,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { backg
 .login-panel, [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] { background:#111827 !important; border-color:#1f2937 !important; }
 .login-heading, .form-title { color:var(--tt-text); }
 .login-points span { background:#0f172a; border-color:#1f2937; color:#e5e7eb; }
+.sim-toolbar { background:linear-gradient(180deg,#111827 0%,#0f172a 100%) !important; border-left-color:#f87171 !important; }
+.sim-status-pill { background:#0f172a !important; border-color:#1f2937 !important; }
+.sim-status-pill.live { background:#022c22 !important; border-color:#14532d !important; color:#86efac !important; }
+.sim-panel, .sim-filter-bar { background:var(--tt-card) !important; }
+.sim-empty { background:#0f172a !important; }
+[data-testid="stTabs"] [data-baseweb="tab-list"] { background:#0f172a !important; border-color:#1f2937 !important; }
+[data-testid="stTabs"] [aria-selected="true"] { background:#1f2937 !important; }
 </style>
 """
