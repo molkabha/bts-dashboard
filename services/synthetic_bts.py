@@ -282,7 +282,8 @@ def hourly_snapshot(
         scale = _calendar_scale(ctx, hour)
         conso = _jitter(float(base.get("consommation_kwh") or 8.0) * scale, seed=seed)
         pred_seed = float(base.get("conso_predite") or base.get("consommation_kwh") or 8.0)
-        conso_pred = _jitter(pred_seed * scale, seed=seed + 1)
+        # Ecart volontaire predit/reel pour NB1 visible (sinon courbes superposees).
+        conso_pred = _jitter(pred_seed * scale, pct=0.09, seed=seed + 1)
 
         row: dict[str, Any] = {
             "timestamp": ts,

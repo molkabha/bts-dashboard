@@ -72,6 +72,7 @@ def _toolbar(stations: list[str]) -> list[str]:
                 "sim_ack_refs": set(),
                 "sim_auto_interval": sim.SIM_AUTO_INTERVAL_DEFAULT_S,
                 "sim_speed": 1,
+                "sim_schema_version": sim.SIM_SCHEMA_VERSION,
             })
             st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
             st.session_state.pop("_sim_ar_count", None)

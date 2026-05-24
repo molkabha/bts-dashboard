@@ -20,6 +20,9 @@ def numeric_series(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.Se
     return pd.to_numeric(df[column], errors="coerce").fillna(default)
 
 
+# Plafond combine expert + RL (aligne strategie dashboard / simulation).
+NB3_MAX_ECO_FRAC = 0.48
+
 NB3_ZERO_AS_MISSING = frozenset({
     "economie_estimee_kwh",
     "economie_rl_kwh",
@@ -132,7 +135,9 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
     out["economie_kwh"] = np.maximum(est, rl)
     if "consommation_kwh" in out.columns:
         conso = numeric_series(out, "consommation_kwh", np.nan)
-        out["economie_kwh"] = np.where(conso > 0, np.minimum(out["economie_kwh"], conso), out["economie_kwh"])
+        eco = numeric_series(out, "economie_kwh", 0.0)
+        cap = conso * NB3_MAX_ECO_FRAC
+        out["economie_kwh"] = np.where(conso > 0, np.minimum(eco, cap), eco)
         out["conso_optimisee_kwh"] = np.maximum(conso - numeric_series(out, "economie_kwh", 0.0), 0.0)
 
     if "action_proposee" in out.columns:

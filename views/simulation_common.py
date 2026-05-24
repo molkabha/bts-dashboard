@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -41,6 +42,7 @@ except ImportError:
     st_autorefresh = None
 
 _INVALID_STATION = frozenset({"", "none", "nan", "<na>", "null"})
+SIM_SCHEMA_VERSION = 3
 SIM_RESET_KEYS = (
     "sim_data", "sim_running", "sim_paused", "sim_tick", "sim_total_ticks",
     "sim_alerts", "sim_decisions", "sim_ack_refs",
@@ -254,13 +256,18 @@ def default_sim_date() -> date:
 
 
 def purge_stale_sim_session() -> None:
-    """Ne pas effacer une simulation en cours (y compris repli profil / pipeline actuel)."""
+    """Purge donnees sim obsolete (ancien pipeline ou schema economie / optimisee)."""
     if st.session_state.get("sim_running"):
+        return
+    if st.session_state.get("sim_schema_version") != SIM_SCHEMA_VERSION:
+        if st.session_state.get("sim_data") is not None:
+            reset_simulation()
         return
     sim_data = st.session_state.get("sim_data")
     if not isinstance(sim_data, pd.DataFrame) or sim_data.empty:
         return
     if "inference_pipeline" not in sim_data.columns:
+        reset_simulation()
         return
     legacy = sim_data["inference_pipeline"].astype(str).str.fullmatch(
         r"profil_historique|scenario_rules|dashboard_lgbm_hf",
@@ -268,6 +275,15 @@ def purge_stale_sim_session() -> None:
         na=False,
     )
     if legacy.any():
+        reset_simulation()
+        return
+    work = harmonize_nb3_economies(sim_data)
+    if "conso_optimisee_kwh" not in work.columns:
+        reset_simulation()
+        return
+    conso = _num(work, "consommation_kwh", 0)
+    opt = conso_optimisee_kwh_series(work)
+    if len(work) > 0 and (opt <= 0).all() and (conso > 0.1).any():
         reset_simulation()
 
 
@@ -350,6 +366,7 @@ def advance_simulation(
     append_sim_data(processed, max_rows)
     record_events(processed)
     st.session_state["sim_tick"] = tick + max(1, n)
+    st.session_state["sim_schema_version"] = SIM_SCHEMA_VERSION
     return True
 
 
@@ -368,6 +385,7 @@ def run_full_period(
         len(processed["timestamp"].drop_duplicates()) if "timestamp" in processed.columns else 0
     )
     st.session_state["sim_running"] = False
+    st.session_state["sim_schema_version"] = SIM_SCHEMA_VERSION
     record_events(processed)
 
 
@@ -397,6 +415,7 @@ def bootstrap_simulation(selected_stations: list[str]) -> bool:
     append_sim_data(processed, max_rows)
     record_events(processed)
     st.session_state["sim_tick"] = max(1, n)
+    st.session_state["sim_schema_version"] = SIM_SCHEMA_VERSION
     st.session_state.pop("sim_advance", None)
     st.session_state.pop("sim_bootstrap_error", None)
     return True
@@ -580,7 +599,7 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
     hist = harmonize_nb3_economies(hist)
     hist["conso"] = _num(hist, "consommation_kwh", 0)
     hist["eco"] = effective_economie_kwh(hist)
-    hist["conso_opt"] = conso_optimisee_kwh_series(hist)
+    hist["conso_opt"] = np.maximum(hist["conso"] - hist["eco"], 0.0)
     hist["pred"] = (
         pd.to_numeric(hist["conso_predite"], errors="coerce")
         if "conso_predite" in hist.columns
@@ -661,13 +680,30 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
         st.caption(pipe_hint)
     if len(agg) >= 1:
         last = agg.iloc[-1]
-        if pd.notna(last.get("pred")) and pd.notna(last.get("conso")):
-            same = abs(float(last["conso"]) - float(last["pred"])) < 0.02
-            if same:
-                st.warning(
-                    "Courbes superposees : le predit est identique ou quasi identique au reel simule. "
-                    "Verifiez que conso_predite est bien present dans le dataset enrichi (page Prediction)."
-                )
+        c_last = float(last.get("conso") or 0)
+        o_last = float(last.get("conso_opt") or 0)
+        if c_last > 0.05 and o_last <= 0.01:
+            st.warning(
+                "Courbe optimisee a 0 : relancez avec Stop puis Demarrer pour recalculer le scenario "
+                "(pipeline NB1+NB2+NB3)."
+            )
+        elif pd.notna(last.get("pred")) and pd.notna(last.get("conso")):
+            pred_last = float(last["pred"])
+            if pred_last > 0 and abs(c_last - pred_last) / pred_last < 0.008:
+                modes = hist.get("inference_pipeline", pd.Series(dtype=object)).astype(str).unique()
+                if not any("nb1_nb2_nb3" in m for m in modes):
+                    st.caption(
+                        "Ecart reel/predit faible sur cette heure (variation simulee limitee). "
+                        "Le modele LightGBM reste actif si le pipeline NB1 est charge."
+                    )
+
+    ymax = float(
+        max(
+            agg[["conso", "pred", "conso_opt"]].max(numeric_only=True).max(),
+            0.5,
+        )
+    )
+    fig.update_yaxes(range=[0, ymax * 1.12])
 
     st.plotly_chart(fig, width="stretch", key=f"sim_chart_{focus_station or 'all'}")
 

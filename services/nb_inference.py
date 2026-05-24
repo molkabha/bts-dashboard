@@ -483,53 +483,14 @@ def _merge_nb3_decisions(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None) -> pd.DataFrame:
-    """NB3 : moteur de modes + strategie d'optimisation (logique notebook, pas regles ad hoc)."""
+    """NB3 : moteur de modes + strategie expert (dashboard) + fusion RL (parquets Hub)."""
     out = df.copy()
-    source = "moteur_decision_nb3"
-
-    moteur = None
-    if bundle:
-        for key in ("moteur_decision", "moteur", "moteur_energie"):
-            candidate = bundle.get(key)
-            if candidate is not None:
-                moteur = candidate
-                break
-
-    if _nb3_component_usable(moteur, "appliquer_sur_dataset"):
-        try:
-            out = moteur.appliquer_sur_dataset(out)
-            source = "pipeline_moteur_nb3"
-        except Exception:
-            moteur = None
-    else:
-        moteur = None
-
-    if moteur is None:
-        cfg = (bundle or {}).get("config") if bundle else {}
-        seuils = cfg.get("seuils_decision") if isinstance(cfg, dict) else None
-        out = MoteurDecisionEnergie(seuils).appliquer_sur_dataset(out)
-
-    strategie = None
-    if bundle:
-        for key in ("strategie", "strategie_optimisation", "strategie_opt"):
-            candidate = bundle.get(key)
-            if candidate is not None:
-                strategie = candidate
-                break
-
-    if _nb3_component_usable(strategie, "appliquer"):
-        try:
-            out = strategie.appliquer(out)
-            source = "pipeline_strategie_nb3"
-        except Exception:
-            strategie = None
-    else:
-        strategie = None
-
-    if strategie is None:
-        out = StrategieOptimisation().appliquer(out)
-        if source == "moteur_decision_nb3":
-            source = "moteur_strategie_nb3"
+    cfg = (bundle or {}).get("config") if bundle else {}
+    seuils = cfg.get("seuils_decision") if isinstance(cfg, dict) else None
+    # Toujours le moteur / strategie Python du repo (joblib notebook sans plafonds realistes).
+    out = MoteurDecisionEnergie(seuils).appliquer_sur_dataset(out)
+    out = StrategieOptimisation().appliquer(out)
+    source = "moteur_strategie_nb3"
 
     out = _normalize_nb3_action_labels(out)
     out = _merge_nb3_decisions(out)
