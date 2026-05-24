@@ -138,6 +138,51 @@ def init_sim_stations(stations: list[str]) -> None:
         st.session_state["sim_stations"] = default_pick
 
 
+def station_picker_summary(selected: list[str], all_stations: list[str]) -> str:
+    n = len(selected)
+    total = len(all_stations)
+    if n == 0:
+        return "Stations"
+    if n == 1:
+        return str(selected[0])
+    if total and n >= total:
+        return f"Toutes ({n})"
+    return f"{n} stations"
+
+
+def render_sim_station_picker(stations: list[str]) -> None:
+    """Selecteur compact (une ligne) : resume + panneau avec liste scrollable."""
+    init_sim_stations(stations)
+    selected = [
+        s for s in clean_station_list(st.session_state.get("sim_stations") or [])
+        if s in stations
+    ]
+    summary = station_picker_summary(selected, stations)
+    with st.popover(
+        summary,
+        use_container_width=True,
+        help="Selectionner les stations a inclure dans la simulation",
+    ):
+        quick1, quick2 = st.columns(2)
+        with quick1:
+            if st.button("Tout", key="sim_pick_all", use_container_width=True):
+                st.session_state["sim_stations"] = list(stations)
+                st.rerun()
+        with quick2:
+            if st.button("Reinit.", key="sim_pick_reset", use_container_width=True):
+                st.session_state["sim_stations"] = [
+                    s for s in clean_station_list(stations[:1]) if s in stations
+                ]
+                st.rerun()
+        st.multiselect(
+            "Stations",
+            stations,
+            key="sim_stations",
+            label_visibility="collapsed",
+            placeholder="Rechercher une station…",
+        )
+
+
 def resolve_selected_stations(stations: list[str]) -> list[str]:
     default_pick = [s for s in clean_station_list(stations[:1]) if s in stations]
     selected = clean_station_list(st.session_state.get("sim_stations") or [])

@@ -28,13 +28,12 @@ def _unack_alerts_count() -> int:
 
 
 def _toolbar(stations: list[str]) -> list[str]:
-    sim.init_sim_stations(stations)
     c_st, c_date, c_h, c_go, c_pause, c_stop = st.columns(
         [2.9, 1.05, 0.72, 0.68, 0.68, 0.68],
         vertical_alignment="bottom",
     )
     with c_st:
-        st.multiselect("Stations a simuler", stations, key="sim_stations")
+        sim.render_sim_station_picker(stations)
     with c_date:
         st.date_input("Date", value=datetime.now().date(), key="sim_date")
     with c_h:
