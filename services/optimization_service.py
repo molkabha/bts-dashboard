@@ -3,14 +3,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from config.settings import settings
+
 
 class StrategieOptimisation:
     """Strategies d'economie NB3 (sleep, reduction, free cooling, alertes)."""
 
     ECO_SLEEP_PAR_TECHNO = {"2G": 0.062, "3G": 1.608, "4G": 1.845, "4G+": 2.040}
-    # Plafond horaire : evite economie >= conso (courbe optimisee a 0 en simulation).
     MAX_ECO_FRAC_DEFAULT = 0.42
-    MAX_ECO_FRAC_SLEEP = 0.48
+    MAX_ECO_FRAC_SLEEP = float(settings.NB3_MAX_ECO_FRAC)
 
     def _col(self, df: pd.DataFrame, col: str, default):
         if col in df.columns:

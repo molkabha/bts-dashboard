@@ -13,26 +13,19 @@ from config.theme import (
     PLOTLY_DARK,
     PLOTLY_LIGHT,
     action_color_discrete_map,
-    mode_color,
-    mode_kpi_class,
     normalize_mode_key,
 )
-from services.calendar_tn import calendar_label, scenario_timestamps
+from services.calendar_tn import scenario_timestamps
 from services.data_service import engineer_assigned_stations, init_db
 from services.nb_metrics import (
     conso_optimisee_kwh_series,
+    ecart_pct_series as nb_ecart_pct_series,
     effective_economie_kwh,
     harmonize_nb3_economies,
 )
-from services.simulation_events import (
-    classify_tick_rows,
-    events_to_dataframe,
-    filter_events,
-    merge_event_log,
-    persist_alert_ack,
-)
+from services.simulation_events import classify_tick_rows, merge_event_log
 from services.synthetic_bts import clear_sim_engine_cache, generate_period, hourly_snapshot, sim_engine
-from ui.formatting import display_text, resolve_row_action
+from ui.formatting import resolve_row_action
 from ui.page_helpers import get_station_map_data, load_dashboard_df, mode_explanation
 from ui.utils import download_df_button
 
@@ -42,11 +35,10 @@ except ImportError:
     st_autorefresh = None
 
 _INVALID_STATION = frozenset({"", "none", "nan", "<na>", "null"})
-SIM_SCHEMA_VERSION = 3
+SIM_SCHEMA_VERSION = settings.SIM_SCHEMA_VERSION
 SIM_RESET_KEYS = (
     "sim_data", "sim_running", "sim_paused", "sim_tick", "sim_total_ticks",
-    "sim_alerts", "sim_decisions", "sim_ack_refs",
-    "sim_data_source", "sim_mode", "sim_compare_hist", "sim_source_df",
+    "sim_alerts", "sim_decisions", "sim_ack_refs", "sim_schema_version",
 )
 
 
@@ -92,11 +84,7 @@ def kwh_to_dt(kwh: float) -> float:
 
 
 def ecart_pct_series(df: pd.DataFrame) -> pd.Series:
-    conso = _num(df, "consommation_kwh", 0)
-    if "conso_predite" not in df.columns:
-        return pd.Series(0.0, index=df.index)
-    pred = pd.to_numeric(df["conso_predite"], errors="coerce")
-    return ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+    return nb_ecart_pct_series(df)
 
 
 def total_gain_kwh(df: pd.DataFrame) -> float:
@@ -270,7 +258,7 @@ def purge_stale_sim_session() -> None:
         reset_simulation()
         return
     legacy = sim_data["inference_pipeline"].astype(str).str.fullmatch(
-        r"profil_historique|scenario_rules|dashboard_lgbm_hf",
+        r"profil_historique(_hf)?|scenario_rules|dashboard_lgbm_hf|nb23_offline_hf",
         case=False,
         na=False,
     )
@@ -366,7 +354,6 @@ def advance_simulation(
     append_sim_data(processed, max_rows)
     record_events(processed)
     st.session_state["sim_tick"] = tick + max(1, n)
-    st.session_state["sim_schema_version"] = SIM_SCHEMA_VERSION
     return True
 
 
@@ -429,7 +416,7 @@ def process_tick(selected_stations: list[str]) -> None:
     sim_base_date, start_hour, num_days = sim_params()
     advance_simulation(
         selected_stations, sim_base_date, start_hour,
-        int(st.session_state.get("sim_speed", 1)), num_days,
+        1, num_days,
     )
 
 
@@ -438,7 +425,6 @@ def latest_snapshot() -> tuple[pd.DataFrame, pd.DataFrame, object, date]:
     sim_data = st.session_state.get("sim_data")
     if not isinstance(sim_data, pd.DataFrame) or sim_data.empty:
         return pd.DataFrame(), pd.DataFrame(), None, sim_base_date
-    sim_data = harmonize_nb3_economies(sim_data)
     latest_ts = sim_data["timestamp"].max()
     latest_all = sim_data[sim_data["timestamp"] == latest_ts]
     latest_all = latest_all[latest_all["station_id"].map(valid_station_id).notna()]
@@ -452,140 +438,6 @@ def row_by_station(latest_all: pd.DataFrame, station_id: str) -> pd.Series:
     if hit.empty:
         return latest_all.iloc[0]
     return hit.iloc[0]
-
-
-def render_station_table(latest_all: pd.DataFrame) -> None:
-    if latest_all.empty:
-        return
-    work = latest_all.copy()
-    work["station_id"] = work["station_id"].map(valid_station_id)
-    work = work.dropna(subset=["station_id"])
-    work["Mode"] = work.get("mode_operation", "NORMAL").astype(str)
-    work["Action"] = work.apply(lambda r: resolve_row_action(r, prefer_rl=True), axis=1)
-    work["Conso"] = _num(work, "consommation_kwh", 0).round(2)
-    work["QoS"] = _num(work, "score_qos", 0).round(2)
-    work["Anomalie"] = _num(work, "anomalie_score_ensemble", 0).round(2)
-    cols = ["station_id", "Mode", "Conso", "QoS", "Anomalie", "Action"]
-    show = work[[c for c in cols if c in work.columns]]
-    st.dataframe(show, width="stretch", hide_index=True, height=min(42 + 35 * len(show), 320))
-
-
-def event_station_filter_options(selected_stations: list[str], events: list[dict]) -> list[str]:
-    from_events = {valid_station_id(e.get("station_id")) for e in events}
-    from_events.discard(None)
-    return sorted(set(selected_stations) | from_events)
-
-
-def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
-    from views import simulation_ui as ui
-
-    raw = st.session_state.get("sim_alerts", [])
-    station_opts = event_station_filter_options(selected_stations, raw)
-    if not station_opts and not raw:
-        ui.empty_state("Aucune alerte", "Les alertes apparaitront lorsque le scenario detectera une anomalie.")
-        return
-
-    f1, f2, f3, f4 = st.columns(4)
-    severities = ["Toutes", "ATTENTION", "CRITIQUE"]
-    types = ["Toutes", "anomalie_sans_action", "qos_risque"]
-    with f1:
-        st_sel = station_opts[0] if len(station_opts) == 1 else st.selectbox(
-            "Station", station_opts, key="sim_alert_station",
-        )
-    with f2:
-        sev_sel = st.selectbox("Severite", severities, key="sim_alert_sev")
-    with f3:
-        type_sel = st.selectbox("Type", types, key="sim_alert_type")
-    with f4:
-        hour_only = st.checkbox("Heure courante", key="sim_alert_hour_only")
-
-    filtered = filter_events(
-        raw,
-        station=st_sel,
-        severity=sev_sel,
-        event_type=type_sel,
-        current_hour_only=hour_only,
-        current_ts=pd.Timestamp(current_ts) if current_ts is not None else None,
-    )
-    acked = st.session_state.get("sim_ack_refs", set())
-    pending = [e for e in filtered if e.get("alert_ref") not in acked][:12]
-
-    from ui.components import section
-
-    col_pending, col_journal = st.columns([1, 1.2])
-
-    with col_pending:
-        with section("A traiter"):
-            if not pending:
-                st.caption("Rien en attente.")
-            for item in pending:
-                ui.render_alert_card(item)
-                ref = item.get("alert_ref", "")
-                b1, b2 = st.columns(2)
-                with b1:
-                    if st.button("Traité", key=f"ack_ok_{ref}", use_container_width=True):
-                        user = st.session_state.get("username") or st.session_state.get("user", "engineer")
-                        init_db()
-                        persist_alert_ack(user, str(item.get("station_id")), ref, "acquitte")
-                        acked.add(ref)
-                        st.session_state["sim_ack_refs"] = acked
-                        st.rerun()
-                with b2:
-                    if st.button("Ignorer", key=f"ack_fp_{ref}", use_container_width=True):
-                        user = st.session_state.get("username") or st.session_state.get("user", "engineer")
-                        init_db()
-                        persist_alert_ack(user, str(item.get("station_id")), ref, "faux_positif")
-                        acked.add(ref)
-                        st.session_state["sim_ack_refs"] = acked
-                        st.rerun()
-
-    df = events_to_dataframe(filtered)
-    with col_journal:
-        with section("Journal"):
-            if df.empty:
-                st.caption("Aucune entree.")
-            else:
-                show = df[["timestamp", "station_id", "severity", "type", "message"]].copy()
-                show["timestamp"] = show["timestamp"].astype(str).str[:19]
-                st.dataframe(show, width="stretch", hide_index=True, height=360)
-                download_df_button(show, "alertes_simulation.csv", "Exporter")
-
-
-def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
-    from ui.components import section
-    from views import simulation_ui as ui
-
-    raw = st.session_state.get("sim_decisions", [])
-    station_opts = event_station_filter_options(selected_stations, raw)
-    if not station_opts and not raw:
-        ui.empty_state("Aucune decision", "Les actions d optimisation s afficheront ici pendant le scenario.")
-        return
-
-    f1, f2 = st.columns(2)
-    with f1:
-        st_sel = station_opts[0] if len(station_opts) == 1 else st.selectbox(
-            "Station", station_opts, key="sim_dec_station",
-        )
-    with f2:
-        hour_only = st.checkbox("Heure courante", key="sim_dec_hour_only")
-
-    filtered = filter_events(
-        raw,
-        station=st_sel,
-        current_hour_only=hour_only,
-        current_ts=pd.Timestamp(current_ts) if current_ts is not None else None,
-    )
-    df = events_to_dataframe(filtered)
-    if df.empty:
-        ui.empty_state("Aucun resultat", "Modifiez les filtres ou avancez la simulation.")
-        return
-    with section("Journal des decisions"):
-        show = df[["timestamp", "station_id", "mode", "action", "economie_kwh", "message"]].copy()
-        show["timestamp"] = show["timestamp"].astype(str).str[:19]
-        if "economie_kwh" in show.columns:
-            show["economie_kwh"] = pd.to_numeric(show["economie_kwh"], errors="coerce").round(3)
-        st.dataframe(show, width="stretch", hide_index=True, height=280)
-        download_df_button(show, "decisions_simulation.csv", "Exporter decisions")
 
 
 def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None) -> None:
@@ -620,9 +472,9 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
         agg_spec["q90"] = ("pred_q90", "sum")
     agg = hist.groupby("timestamp", as_index=False).agg(**agg_spec).tail(48)
 
-    label_mesure = "Mesuree" if not multi else "Mesuree (total reseau)"
-    label_pred = "Predite" if not multi else "Predite (total reseau)"
-    label_opt = "Optimisee" if not multi else "Optimisee (total reseau)"
+    label_mesure = "Mesurée" if not multi else "Mesurée (total réseau)"
+    label_pred = "Prédite" if not multi else "Prédite (total réseau)"
+    label_opt = "Optimisée" if not multi else "Optimisée (total réseau)"
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"], name=label_mesure, line=dict(color="#94a3b8")))

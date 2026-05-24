@@ -15,7 +15,8 @@ import pandas as pd
 
 from config.settings import settings
 from services.calendar_tn import calendar_context
-from services.data_service import artifact_path, read_parquet_fast, resolve_nb2_seuil_ensemble
+from services.data_service import artifact_path, read_parquet_fast, resolve_cached_artifact
+from services.nb_metrics import compute_ecart_pct
 from services.decision_service import MoteurDecisionEnergie
 from services.optimization_service import StrategieOptimisation
 
@@ -256,7 +257,7 @@ def _nb2_features(df: pd.DataFrame, template: pd.DataFrame | None = None) -> pd.
                 out[col] = template[col].values
     conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
     pred = pd.to_numeric(out["conso_predite"], errors="coerce")
-    out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+    out["ecart_pct"] = compute_ecart_pct(conso, pred)
     if "eei" not in out.columns:
         out["eei"] = 100.0 + out["ecart_pct"] * 0.65
     if "ecart_vs_profil_horaire" not in out.columns:
@@ -374,7 +375,12 @@ _RL_ECO_FRAC: dict[str, float] = {
 }
 
 
-def _cap_rl_economie_to_conso(df: pd.DataFrame, max_frac: float = 0.48) -> pd.DataFrame:
+def _cap_rl_economie_to_conso(
+    df: pd.DataFrame,
+    max_frac: float | None = None,
+) -> pd.DataFrame:
+    if max_frac is None:
+        max_frac = float(settings.NB3_MAX_ECO_FRAC)
     if df.empty or "economie_rl_kwh" not in df.columns or "consommation_kwh" not in df.columns:
         return df
     out = df.copy()
@@ -514,28 +520,7 @@ def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None)
 
 def _local_parquet_path(filename: str) -> Path | None:
     """Parquet deja present (disque ou cache HF) — pas de telechargement reseau."""
-    from services.data_service import NOTEBOOK_OUTPUTS, artifact_is_ready
-
-    for base in [settings.OUTPUTS_DIR, *NOTEBOOK_OUTPUTS.values()]:
-        path = base / filename
-        if artifact_is_ready(path):
-            return path
-    if hf_hub_download is None:
-        return None
-    for hf_name in (filename, f"streamlit_{filename}"):
-        try:
-            downloaded = hf_hub_download(
-                repo_id=settings.HF_REPO_ID,
-                filename=hf_name,
-                cache_dir=str(settings.HF_CACHE_DIR),
-                local_files_only=True,
-            )
-            path = Path(downloaded)
-            if artifact_is_ready(path):
-                return path
-        except Exception:
-            continue
-    return None
+    return resolve_cached_artifact(filename)
 
 
 def apply_offline_nb23(df: pd.DataFrame) -> pd.DataFrame:
@@ -587,7 +572,7 @@ def _merge_nb2_profile_scores(df: pd.DataFrame) -> pd.DataFrame:
     conso = pd.to_numeric(merged.get("consommation_kwh"), errors="coerce")
     pred = pd.to_numeric(merged.get("conso_predite"), errors="coerce")
     if "ecart_pct" not in merged.columns or merged["ecart_pct"].isna().all():
-        merged["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+        merged["ecart_pct"] = compute_ecart_pct(conso, pred)
     return merged
 
 
@@ -618,7 +603,7 @@ def run_nb_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
     pred = pd.to_numeric(out.get("conso_predite"), errors="coerce")
     if pred is not None and pred.notna().any():
-        out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+        out["ecart_pct"] = compute_ecart_pct(conso, pred)
 
     out = _apply_nb3_moteur_strategie(out, bundle)
     if bundle and bundle.get("best_agent_name"):

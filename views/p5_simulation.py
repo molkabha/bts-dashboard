@@ -38,13 +38,13 @@ def _toolbar(stations: list[str]) -> list[str]:
         st.date_input("Date", key="sim_date")
     with c_h:
         st.selectbox(
-            "Debut",
+            "Début",
             list(range(24)),
             format_func=lambda h: f"{h:02d}h",
             key="sim_start_hour",
         )
     with c_go:
-        start = st.button("Demarrer", type="primary", use_container_width=True)
+        start = st.button("Démarrer", type="primary", use_container_width=True)
     with c_pause:
         if st.session_state.get("sim_paused"):
             pause_btn = st.button("Reprendre", use_container_width=True)
@@ -61,7 +61,7 @@ def _toolbar(stations: list[str]) -> list[str]:
     base_date, start_hour, num_days = sim.sim_params()
 
     if start:
-        with st.spinner("Demarrage de la simulation (premiere heure)…"):
+        with st.spinner("Démarrage de la simulation (première heure)…"):
             st.session_state.update({
                 "sim_running": True,
                 "sim_paused": False,
@@ -71,7 +71,6 @@ def _toolbar(stations: list[str]) -> list[str]:
                 "sim_decisions": [],
                 "sim_ack_refs": set(),
                 "sim_auto_interval": sim.SIM_AUTO_INTERVAL_DEFAULT_S,
-                "sim_speed": 1,
                 "sim_schema_version": sim.SIM_SCHEMA_VERSION,
             })
             st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
@@ -98,14 +97,14 @@ def _ops_table(latest: pd.DataFrame) -> pd.DataFrame:
     t["Mode"] = t.get("mode_operation", "NORMAL").astype(str)
     t["Conso (kWh)"] = sim._num(t, "consommation_kwh", 0).round(2)
     t["Pred (kWh)"] = sim._num(t, "conso_predite", 0).round(2)
-    t["Ecart %"] = sim.ecart_pct_series(t).round(1)
+    t["Écart %"] = sim.ecart_pct_series(t).round(1)
     eco = effective_economie_kwh(t)
     t["Gain (DT)"] = (eco * settings.PRIX_KWH_TN).round(2)
     t["QoS"] = sim._num(t, "score_qos", 0).round(2)
     t["Anomalie"] = sim._num(t, "anomalie_score_ensemble", 0).round(2)
     t["Action"] = t.apply(lambda r: resolve_row_action(r, prefer_rl=True), axis=1)
     return t[[
-        "Station", "Mode", "Conso (kWh)", "Pred (kWh)", "Ecart %",
+        "Station", "Mode", "Conso (kWh)", "Prédit (kWh)", "Écart %",
         "Gain (DT)", "QoS", "Anomalie", "Action",
     ]]
 
@@ -117,7 +116,7 @@ def _render_journal(selected: list[str], latest_ts) -> None:
 
     pending = [a for a in alerts if a.get("alert_ref") not in acked]
     if pending:
-        st.markdown("**Alertes a verifier**")
+        st.markdown("**Alertes à vérifier**")
         st.caption("Traité : alerte prise en charge · Ignorer : pas utile / fausse alerte")
         for item in pending[-6:]:
             st.warning(f"**{item.get('station_id')}** — {item.get('message', '')}")
@@ -143,7 +142,7 @@ def _render_journal(selected: list[str], latest_ts) -> None:
         st.caption("Aucune alerte en attente.")
 
     if decisions:
-        st.markdown("**Actions appliquees**")
+        st.markdown("**Actions appliquées**")
         df = pd.DataFrame(decisions).tail(20)
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.strftime("%d/%m %H:%M")
@@ -163,14 +162,14 @@ def _render_journal(selected: list[str], latest_ts) -> None:
             show["Gain (DT)"] = pd.to_numeric(show["Gain (DT)"], errors="coerce").round(2)
         st.dataframe(show, use_container_width=True, hide_index=True)
     else:
-        st.caption("Aucune action enregistree pour l instant.")
+        st.caption("Aucune action enregistrée pour l'instant.")
 
 
 def page_simulation():
     security_middleware.enforce()
     header(
         "Simulation",
-        "Parc BTS a une date donnee, heure par heure",
+        "Parc BTS à une date donnée, heure par heure",
     )
     sim.purge_stale_sim_session()
     if "sim_date" not in st.session_state:
@@ -180,7 +179,7 @@ def page_simulation():
     role = st.session_state.get("role", "")
     stations = sim.station_options(role)
     if not stations:
-        st.warning("Aucune station disponible sur votre perimetre.")
+        st.warning("Aucune station disponible sur votre périmètre.")
         return
 
     selected = _toolbar(stations)
@@ -188,7 +187,7 @@ def page_simulation():
     with st.expander("Options avancees", expanded=False):
         o1, o2 = st.columns(2)
         with o1:
-            st.slider("Duree (jours)", 1, 7, int(st.session_state.get("sim_num_days", 1)), key="sim_num_days")
+            st.slider("Durée (jours)", 1, 7, int(st.session_state.get("sim_num_days", 1)), key="sim_num_days")
         with o2:
             st.slider(
                 "Intervalle (+1 h)",
@@ -199,7 +198,7 @@ def page_simulation():
                 key="sim_auto_interval",
                 help="Avance automatique d'une heure toutes les N secondes (pause possible).",
             )
-        if st.button("Calculer toute la journee", use_container_width=True):
+        if st.button("Calculer toute la journée", use_container_width=True):
             d, h, n = sim.sim_params()
             sim.run_full_period(selected, d, h, n)
             st.rerun()
@@ -218,9 +217,9 @@ def page_simulation():
     sim_data, latest, latest_ts, sim_date = sim.latest_snapshot()
     if latest.empty:
         ui.empty_state(
-            "Pret a demarrer",
-            "Selectionnez vos stations, la date et l heure de debut, puis cliquez sur Demarrer. "
-            "La simulation avance d une heure toutes les 30 secondes (modifiable dans Options avancees). "
+            "Prêt à démarrer",
+            "Sélectionnez vos stations, la date et l'heure de début, puis cliquez sur Démarrer. "
+            "La simulation avance d'une heure toutes les 30 secondes (modifiable dans Options avancées). "
             "Utilisez Pause pour interrompre.",
         )
         return
@@ -250,13 +249,13 @@ def page_simulation():
     gain_cumul_kwh = sim.total_gain_kwh(sim_data) if not sim_data.empty else 0.0
 
     m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Heure simulee", hour_label)
+    m1.metric("Heure simulée", hour_label)
     m2.metric("Conso reseau", f"{conso:.1f} kWh", f"Pred {pred:.1f} · {ecart_net:+.1f} %")
     m3.metric("Gain heure", f"{gain_heure_dt:.2f} DT")
     m4.metric("Gain cumule", f"{gain_cumul_dt:.2f} DT", f"{gain_cumul_kwh:.1f} kWh")
     m5.metric("Alertes ouvertes", str(n_alert))
 
-    st.subheader("Etat du parc")
+    st.subheader("État du parc")
     table = _ops_table(latest)
     st.dataframe(
         table,
@@ -268,7 +267,7 @@ def page_simulation():
     station_ids = table["Station"].tolist() if not table.empty else []
     chart_station: str | None = None
     if station_ids:
-        chart_station = st.selectbox("Detail d une station", station_ids, key="sim_detail_station")
+        chart_station = st.selectbox("Détail d'une station", station_ids, key="sim_detail_station")
         row = sim.row_by_station(latest, chart_station)
         eco_row = float(effective_economie_kwh(pd.DataFrame([row])).iloc[0])
         ecart_row = float(sim.ecart_pct_series(pd.DataFrame([row])).iloc[0])
@@ -286,7 +285,7 @@ def page_simulation():
 
     with tab_courbe:
         if sim_data.empty:
-            st.caption("Pas encore de donnees.")
+            st.caption("Pas encore de données.")
         else:
             sim.build_chart(sim_data, sim.plot_template(), chart_station)
 

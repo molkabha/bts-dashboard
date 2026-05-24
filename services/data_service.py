@@ -69,6 +69,32 @@ NOTEBOOK_OUTPUTS = {
     "NB3": settings.NB3_OUTPUT,
 }
 
+
+def resolve_cached_artifact(filename: str) -> Path | None:
+    """Artefact present sur disque ou cache HF (sans telechargement reseau)."""
+    candidates = [settings.OUTPUTS_DIR / filename]
+    for base in NOTEBOOK_OUTPUTS.values():
+        candidates.append(base / filename)
+    for path in candidates:
+        if artifact_is_ready(path):
+            return path
+    if not settings.USE_HF_HUB or hf_hub_download is None:
+        return None
+    for hf_name in (filename, f"streamlit_{filename}"):
+        try:
+            downloaded = hf_hub_download(
+                repo_id=settings.HF_REPO_ID,
+                filename=hf_name,
+                cache_dir=str(settings.HF_CACHE_DIR),
+                local_files_only=True,
+            )
+            path = Path(downloaded)
+            if artifact_is_ready(path):
+                return path
+        except Exception:
+            continue
+    return None
+
 ARTIFACT_REGISTRY: dict[str, dict[str, str]] = {
     "agents_rl_7.pkl": {"notebook": "NB3", "type": "modele", "usage": "Agents RL entraines"},
     "autoencoder.keras": {"notebook": "NB2", "type": "modele", "usage": "Autoencoder anomalies"},

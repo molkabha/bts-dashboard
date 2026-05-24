@@ -13,7 +13,8 @@ from services.data_service import (
     load_enriched_base_dataset,
 )
 from services.calendar_tn import calendar_context, scenario_timestamps
-from services.nb_metrics import harmonize_nb3_economies
+from services.nb_inference import apply_offline_nb23
+from services.nb_metrics import compute_ecart_pct, harmonize_nb3_economies
 from services.sim_inference import clear_inference_cache, enrich_with_pipeline
 
 PROFILE_KEYS_BASE = ["station_id", "heure", "mois", "est_weekend"]
@@ -228,36 +229,12 @@ def _jitter(value: float, pct: float = 0.04, seed: int = 0) -> float:
     return float(value * (1.0 + rng.uniform(-pct, pct)))
 
 
-def _fill_fallback_predictions(df: pd.DataFrame) -> pd.DataFrame:
-    """Si les artefacts ML Hub sont absents, repli minimal (profil historique)."""
-    if df.empty:
-        return df
-    out = df.copy()
-    conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
-    if "conso_predite" not in out.columns or out["conso_predite"].isna().all():
-        out["conso_predite"] = conso
-    if "pred_q10" not in out.columns:
-        out["pred_q10"] = conso * 0.9
-    if "pred_q90" not in out.columns:
-        out["pred_q90"] = conso * 1.1
-    pred = pd.to_numeric(out["conso_predite"], errors="coerce")
-    out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
-    if "anomalie_score_ensemble" not in out.columns:
-        out["anomalie_score_ensemble"] = 0.05
-    if "nb_votes_anomalie" not in out.columns:
-        out["nb_votes_anomalie"] = 0
-    out["inference_pipeline"] = "profil_historique_hf"
-    return out
-
-
 def hourly_snapshot(
     target_date: date,
     hour: int,
     station_ids: list[str],
     *,
-    anomaly_sensitivity: float = 1.0,
     engine: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None,
-    use_ml: bool = True,
 ) -> pd.DataFrame:
     if not station_ids:
         return pd.DataFrame()
@@ -294,7 +271,7 @@ def hourly_snapshot(
             "conso_predite": conso_pred,
             "pred_q10": conso_pred * 0.9,
             "pred_q90": conso_pred * 1.1,
-            "ecart_pct": ((conso - conso_pred) / conso_pred * 100) if conso_pred else 0.0,
+            "ecart_pct": float(compute_ecart_pct(pd.Series([conso]), pd.Series([conso_pred])).iloc[0]),
             "score_qos": float(base.get("score_qos") or 0.85),
             "taux_charge_voix": float(base.get("taux_charge_voix") or 0.5),
             "taux_charge_data": float(base.get("taux_charge_data") or 0.5),
@@ -316,26 +293,9 @@ def hourly_snapshot(
     if out.empty:
         return out
 
-    if use_ml:
-        enriched = enrich_with_pipeline(out)
-        if (
-            not enriched.empty
-            and "conso_predite" in enriched.columns
-            and pd.to_numeric(enriched["conso_predite"], errors="coerce").notna().any()
-        ):
-            out = enriched
-            if "source_decision_nb3" not in out.columns:
-                out["source_decision_nb3"] = "nb1_nb2_nb3"
-    else:
-        from services.nb_inference import apply_offline_nb23
-
-        out = apply_offline_nb23(_fill_fallback_predictions(out))
-
+    out = enrich_with_pipeline(out)
     if "mode_operation" not in out.columns or out["mode_operation"].isna().all():
-        from services.nb_inference import apply_offline_nb23
-
         out = apply_offline_nb23(out)
-
     return harmonize_nb3_economies(out)
 
 
@@ -344,19 +304,11 @@ def generate_period(
     start_hour: int,
     num_days: int,
     station_ids: list[str],
-    *,
-    anomaly_sensitivity: float = 1.0,
-    use_ml: bool = True,
 ) -> pd.DataFrame:
     engine = sim_engine()
     frames = []
     for ts in scenario_timestamps(start_date, start_hour, num_days):
-        batch = hourly_snapshot(
-            ts.date(), ts.hour, station_ids,
-            anomaly_sensitivity=anomaly_sensitivity,
-            engine=engine,
-            use_ml=use_ml,
-        )
+        batch = hourly_snapshot(ts.date(), ts.hour, station_ids, engine=engine)
         if not batch.empty:
             frames.append(batch)
     if not frames:

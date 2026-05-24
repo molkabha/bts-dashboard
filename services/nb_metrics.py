@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from config.settings import settings
+
 
 def blank_mask(series: pd.Series) -> pd.Series:
     """Rows where a business column has no usable value."""
@@ -19,9 +21,6 @@ def numeric_series(df: pd.DataFrame, column: str, default: float = 0.0) -> pd.Se
         return pd.Series(default, index=df.index, dtype=float)
     return pd.to_numeric(df[column], errors="coerce").fillna(default)
 
-
-# Plafond combine expert + RL (aligne strategie dashboard / simulation).
-NB3_MAX_ECO_FRAC = 0.48
 
 NB3_ZERO_AS_MISSING = frozenset({
     "economie_estimee_kwh",
@@ -102,6 +101,20 @@ def merge_business_columns(
     return merged
 
 
+def compute_ecart_pct(conso: pd.Series, pred: pd.Series) -> pd.Series:
+    """Ecart relatif conso vs prediction (%, aligne NB1)."""
+    c = pd.to_numeric(conso, errors="coerce")
+    p = pd.to_numeric(pred, errors="coerce")
+    return ((c - p) / p.replace(0, pd.NA) * 100).fillna(0.0)
+
+
+def ecart_pct_series(df: pd.DataFrame) -> pd.Series:
+    """Ecart % par ligne depuis consommation_kwh et conso_predite."""
+    if df.empty or "conso_predite" not in df.columns:
+        return pd.Series(0.0, index=df.index, dtype=float)
+    return compute_ecart_pct(df["consommation_kwh"], df["conso_predite"])
+
+
 def cap_economies_to_consumption(df: pd.DataFrame) -> pd.DataFrame:
     """Une économie horaire ne peut pas dépasser la conso de la même ligne."""
     if df.empty or "consommation_kwh" not in df.columns:
@@ -136,7 +149,7 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
     if "consommation_kwh" in out.columns:
         conso = numeric_series(out, "consommation_kwh", np.nan)
         eco = numeric_series(out, "economie_kwh", 0.0)
-        cap = conso * NB3_MAX_ECO_FRAC
+        cap = conso * float(settings.NB3_MAX_ECO_FRAC)
         out["economie_kwh"] = np.where(conso > 0, np.minimum(eco, cap), eco)
         out["conso_optimisee_kwh"] = np.maximum(conso - numeric_series(out, "economie_kwh", 0.0), 0.0)
 
@@ -149,14 +162,6 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
                 out.loc[missing_action, "action_rl"] = out.loc[missing_action, "action_proposee"]
 
     return out
-
-
-def economie_rl_kwh_series(df: pd.DataFrame) -> pd.Series:
-    """Hourly RL economy (expert fallback when RL is empty/zero)."""
-    if df.empty:
-        return pd.Series(dtype=float)
-    harmonized = harmonize_nb3_economies(df)
-    return numeric_series(harmonized, "economie_rl_kwh", 0.0)
 
 
 def effective_economie_kwh(df: pd.DataFrame) -> pd.Series:
