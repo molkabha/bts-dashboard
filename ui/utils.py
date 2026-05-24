@@ -63,6 +63,9 @@ def clear_dashboard_data_cache() -> None:
         clear_synthetic_cache()
     except Exception:
         pass
+    for key in list(st.session_state.keys()):
+        if key.startswith("sim_stations_"):
+            st.session_state.pop(key, None)
 
 
 def reset_global_filters() -> None:

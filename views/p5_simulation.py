@@ -35,7 +35,7 @@ def _toolbar(stations: list[str]) -> list[str]:
     with c_st:
         sim.render_sim_station_picker(stations)
     with c_date:
-        st.date_input("Date", value=datetime.now().date(), key="sim_date")
+        st.date_input("Date", key="sim_date")
     with c_h:
         st.selectbox(
             "Debut",
@@ -69,11 +69,12 @@ def _toolbar(stations: list[str]) -> list[str]:
             "sim_alerts": [],
             "sim_decisions": [],
             "sim_ack_refs": set(),
-            "sim_advance": True,
             "sim_auto_interval": sim.SIM_AUTO_INTERVAL_DEFAULT_S,
             "sim_speed": 1,
         })
         st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
+        st.session_state.pop("_sim_ar_count", None)
+        sim.bootstrap_simulation(selected)
         st.rerun()
     if pause_btn:
         st.session_state["sim_paused"] = not st.session_state.get("sim_paused")
@@ -166,7 +167,10 @@ def page_simulation():
         "Simulation",
         "Parc BTS a une date donnee, heure par heure",
     )
-    sim.maybe_autorefresh()
+    sim.purge_stale_sim_session()
+    if "sim_date" not in st.session_state:
+        st.session_state["sim_date"] = sim.default_sim_date()
+    sim.ensure_sim_engine()
 
     role = st.session_state.get("role", "")
     stations = sim.station_options(role)
@@ -199,6 +203,7 @@ def page_simulation():
             exp_date, _, _ = sim.sim_params()
             sim.render_simulation_exports(export, exp_date, selected)
 
+    sim.maybe_autorefresh()
     sim.process_tick(selected)
 
     sim_data, latest, latest_ts, sim_date = sim.latest_snapshot()

@@ -26,7 +26,7 @@ from services.simulation_events import (
     merge_event_log,
     persist_alert_ack,
 )
-from services.synthetic_bts import generate_period, hourly_snapshot
+from services.synthetic_bts import clear_sim_engine_cache, generate_period, hourly_snapshot, sim_engine
 from ui.formatting import display_text, resolve_row_action
 from ui.page_helpers import get_station_map_data, load_dashboard_df, mode_explanation
 from ui.utils import download_df_button
@@ -51,14 +51,28 @@ def plot_template() -> str:
 SIM_AUTO_INTERVAL_DEFAULT_S = 30
 
 
+def ensure_sim_engine() -> None:
+    """Precharge les profils Hub (une fois) pour accelerer Demarrer et les ticks."""
+    try:
+        sim_engine()
+    except Exception:
+        pass
+
+
 def maybe_autorefresh() -> None:
-    if (
-        st.session_state.get("sim_running")
-        and not st.session_state.get("sim_paused")
-        and st_autorefresh
-    ):
-        interval = int(st.session_state.get("sim_auto_interval", SIM_AUTO_INTERVAL_DEFAULT_S)) * 1000
-        st_autorefresh(interval=interval, key="sim_autorefresh")
+    if not st_autorefresh:
+        return
+    if not st.session_state.get("sim_running") or st.session_state.get("sim_paused"):
+        return
+    interval = int(st.session_state.get("sim_auto_interval", SIM_AUTO_INTERVAL_DEFAULT_S)) * 1000
+    count = st_autorefresh(interval=interval, key="sim_autorefresh")
+    last = st.session_state.get("_sim_ar_count")
+    if last is None:
+        st.session_state["_sim_ar_count"] = count
+        return
+    if count != last:
+        st.session_state["_sim_ar_count"] = count
+        st.session_state["sim_advance"] = True
 
 
 def _num(df: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
@@ -86,14 +100,36 @@ def total_gain_kwh(df: pd.DataFrame) -> float:
 
 
 def inference_label(df: pd.DataFrame) -> str:
-    if df.empty or "inference_pipeline" not in df.columns:
+    if df.empty:
         return ""
-    modes = df["inference_pipeline"].dropna().astype(str).unique().tolist()
-    if any("dashboard" in m for m in modes):
-        return "Prediction : donnees NB (meme source Hub que le dashboard)"
+    from services.data_service import load_nb1_production_metrics
+
+    prod = load_nb1_production_metrics()
+    model_name = str(prod.get("model") or "LightGBM")
+    has_pred = (
+        "conso_predite" in df.columns
+        and pd.to_numeric(df["conso_predite"], errors="coerce").notna().any()
+    )
+    modes: list[str] = []
+    if "inference_pipeline" in df.columns:
+        modes = df["inference_pipeline"].dropna().astype(str).unique().tolist()
+
+    if has_pred or any("dashboard" in m or "lgbm" in m for m in modes):
+        r2 = prod.get("r2")
+        extra = f" · R²={float(r2):.3f}" if r2 is not None else ""
+        return (
+            f"Prediction : {model_name} "
+            f"(meme source Hub que la page Prediction{extra})"
+        )
     if any("profil" in m for m in modes):
-        return "Prediction : profils horaires (dataset enrichi incomplet)"
-    return ""
+        return (
+            f"Prediction : profils horaires — relancez avec Stop puis Demarrer "
+            f"(attendu : {model_name} via dataset enrichi)"
+        )
+    return (
+        f"Prediction : en attente — cliquez Demarrer "
+        f"(source : {model_name} / Hub molkab/dashboard)"
+    )
 
 
 def valid_station_id(value) -> str | None:
@@ -115,16 +151,22 @@ def clean_station_list(ids) -> list[str]:
 
 
 def station_options(role: str) -> list[str]:
-    df = load_dashboard_df(["station_id"])
-    if df.empty or "station_id" not in df.columns:
-        if role == "admin":
-            from services.data_service import available_stations
-            return clean_station_list(available_stations())
-        return clean_station_list(engineer_assigned_stations())
-    stations = clean_station_list(df["station_id"].unique())
+    from services.data_service import dataset_cache_key, load_filter_dimension_options
+
+    cache_key = f"sim_stations_{dataset_cache_key()}|{role}"
+    cached = st.session_state.get(cache_key)
+    if isinstance(cached, list) and cached:
+        return cached
+    opts = load_filter_dimension_options(dataset_cache_key())
+    stations = clean_station_list(opts.get("stations") or [])
+    if not stations:
+        df = load_dashboard_df(["station_id"])
+        if not df.empty and "station_id" in df.columns:
+            stations = clean_station_list(df["station_id"].unique())
     if role != "admin":
         assigned = {str(s) for s in engineer_assigned_stations()}
         stations = [s for s in stations if s in assigned]
+    st.session_state[cache_key] = stations
     return stations
 
 
@@ -190,10 +232,37 @@ def resolve_selected_stations(stations: list[str]) -> list[str]:
     return selected or default_pick
 
 
+def default_sim_date() -> date:
+    from ui.utils import merged_active_filters
+
+    gf = merged_active_filters()
+    dr = gf.get("date_range")
+    if dr and len(dr) >= 1:
+        return dr[0] if isinstance(dr[0], date) else pd.Timestamp(dr[0]).date()
+    sb_from = st.session_state.get("sb_date_from")
+    if sb_from is not None:
+        return sb_from if isinstance(sb_from, date) else pd.Timestamp(sb_from).date()
+    return datetime.now().date()
+
+
+def purge_stale_sim_session() -> None:
+    """Efface les ticks issus d'une ancienne version (profil_historique / pipeline ML separe)."""
+    sim_data = st.session_state.get("sim_data")
+    if not isinstance(sim_data, pd.DataFrame) or sim_data.empty:
+        return
+    if "inference_pipeline" not in sim_data.columns:
+        return
+    legacy = sim_data["inference_pipeline"].astype(str).str.contains(
+        "profil_historique", case=False, na=False,
+    )
+    if legacy.any():
+        reset_simulation()
+
+
 def sim_params() -> tuple[date, int, int]:
     sim_base_date = st.session_state.get("sim_date")
     if sim_base_date is None:
-        sim_base_date = datetime.now().date()
+        sim_base_date = default_sim_date()
     start_hour = int(st.session_state.get("sim_start_hour", 0))
     num_days = int(st.session_state.get("sim_num_days", 1))
     return sim_base_date, start_hour, num_days
@@ -225,15 +294,20 @@ def advance_scenario(
     tick: int,
     steps: int,
     num_days: int,
+    *,
+    engine: tuple | None = None,
 ) -> tuple[pd.DataFrame, int]:
     frames = []
     stamps = scenario_timestamps(sim_base_date, start_hour, num_days)
+    eng = engine if engine is not None else sim_engine()
     for step in range(max(1, steps)):
         idx = tick + step
         if idx >= len(stamps):
             break
         ts = stamps[idx]
-        batch = hourly_snapshot(ts.date(), ts.hour, selected_stations)
+        batch = hourly_snapshot(
+            ts.date(), ts.hour, selected_stations, engine=eng,
+        )
         if not batch.empty:
             frames.append(batch)
     if not frames:
@@ -256,6 +330,7 @@ def advance_simulation(
         return False
     processed, n = advance_scenario(
         selected_stations, sim_base_date, start_hour, tick, steps, num_days,
+        engine=sim_engine(),
     )
     if processed.empty:
         st.session_state["sim_running"] = False
@@ -287,20 +362,36 @@ def run_full_period(
 def reset_simulation() -> None:
     for key in SIM_RESET_KEYS:
         st.session_state.pop(key, None)
+    st.session_state.pop("_sim_ar_count", None)
+
+
+def bootstrap_simulation(selected_stations: list[str]) -> bool:
+    """Premier tick immediat au clic Demarrer (affichage sans attendre l auto-refresh)."""
+    sim_base_date, start_hour, num_days = sim_params()
+    max_rows = max(72, 24 * num_days) * len(selected_stations)
+    engine = sim_engine()
+    processed, n = advance_scenario(
+        selected_stations, sim_base_date, start_hour, 0, 1, num_days, engine=engine,
+    )
+    if processed.empty:
+        return False
+    append_sim_data(processed, max_rows)
+    record_events(processed)
+    st.session_state["sim_tick"] = max(1, n)
+    st.session_state.pop("sim_advance", None)
+    return True
 
 
 def process_tick(selected_stations: list[str]) -> None:
-    if st.session_state.get("sim_paused"):
+    if st.session_state.get("sim_paused") or not st.session_state.get("sim_running"):
+        return
+    if not st.session_state.pop("sim_advance", False):
         return
     sim_base_date, start_hour, num_days = sim_params()
-    auto = bool(st.session_state.get("sim_running"))
-    if st.session_state.pop("sim_advance", False) or auto:
-        advance_simulation(
-            selected_stations, sim_base_date, start_hour,
-            int(st.session_state.get("sim_speed", 1)), num_days,
-        )
-        if auto and st.session_state.get("sim_running"):
-            st.rerun()
+    advance_simulation(
+        selected_stations, sim_base_date, start_hour,
+        int(st.session_state.get("sim_speed", 1)), num_days,
+    )
 
 
 def latest_snapshot() -> tuple[pd.DataFrame, pd.DataFrame, object, date]:
@@ -577,7 +668,8 @@ def render_chart_kpis(hist: pd.DataFrame, focus_station: str | None) -> None:
     gain_kwh = total_gain_kwh(snap)
     gain_dt = kwh_to_dt(gain_kwh)
     c1, c2, c3, c4 = st.columns(4)
-    pred_title = "Prédit NB (kWh)" if "Hub" in inference_label(work) else "Prédit (kWh)"
+    lbl = inference_label(work)
+    pred_title = "Prédit LightGBM (kWh)" if lbl and "LightGBM" in lbl else "Prédit (kWh)"
     c1.metric("Réel (kWh)", f"{conso:.2f}")
     c2.metric(pred_title, f"{pred:.2f}")
     c3.metric("Écart réel / prédit", f"{ecart:+.1f} %")
