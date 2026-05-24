@@ -48,10 +48,13 @@ def classify_tick_rows(
         score = float(row.get("anomalie_score_ensemble") or 0)
         qos = float(row.get("score_qos") or 0)
         mode = str(row.get("mode_operation", "NORMAL"))
-        action_raw = row.get("action_rl") or row.get("action_proposee") or row.get("action_principale")
         action = resolve_row_action(row, prefer_rl=True)
+        action_expert = resolve_row_action(row, prefer_rl=False)
         eco = float(eco_series.iloc[i]) if i < len(eco_series) else 0.0
         ecart = float(row.get("ecart_pct") or 0)
+        has_named_action = not is_no_named_action(
+            row.get("action_proposee") or row.get("action_rl") or row.get("action_principale")
+        )
 
         if mode == "CRITIQUE":
             item = {
@@ -87,7 +90,7 @@ def classify_tick_rows(
             }
             item["alert_ref"] = alert_ref(item)
             alerts.append(item)
-        elif score >= seuil and qos >= qos_seuil and is_no_named_action(action_raw):
+        elif score >= seuil and qos >= qos_seuil and not has_named_action:
             severity = "CRITIQUE" if score >= seuil * 2.4 else "ATTENTION"
             item = {
                 "timestamp": ts,
@@ -121,23 +124,31 @@ def classify_tick_rows(
             item["alert_ref"] = alert_ref(item)
             alerts.append(item)
 
-        if not is_no_named_action(action_raw) and str(action_raw).strip().lower() not in {"maintien", "maintien_conso"}:
+        journal_action = action_expert if not is_no_named_action(row.get("action_proposee")) else action
+        if has_named_action and str(journal_action).strip().lower() not in {
+            "maintien", "maintien_conso", "—",
+        }:
+            detail = f"{journal_action}"
+            if eco > 0.01:
+                detail += f" — economie estimee {eco:.2f} kWh"
+            elif mode != "NORMAL":
+                detail += f" — mode {mode}"
             decisions.append({
                 "timestamp": ts,
                 "station_id": station,
                 "mode": mode,
-                "action": action,
+                "action": journal_action,
                 "economie_kwh": eco,
-                "message": f"{action} — economie estimee {eco:.2f} kWh",
+                "message": detail,
             })
-        elif eco > 0.01 and mode in {"ECO", "ATTENTION", "CRITIQUE"}:
+        elif eco > 0.05 and mode in {"ECO", "ATTENTION", "CRITIQUE"}:
             decisions.append({
                 "timestamp": ts,
                 "station_id": station,
                 "mode": mode,
-                "action": action,
+                "action": journal_action,
                 "economie_kwh": eco,
-                "message": f"{action} — economie estimee {eco:.2f} kWh",
+                "message": f"{journal_action} — economie estimee {eco:.2f} kWh (mode {mode})",
             })
 
     return alerts, decisions

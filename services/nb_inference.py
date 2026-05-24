@@ -376,12 +376,20 @@ def _merge_nb3_decisions(df: pd.DataFrame) -> pd.DataFrame:
         how="left",
         suffixes=("", "_nb3"),
     )
+    from ui.formatting import is_no_named_action
+
     for col in ("action_rl", "economie_rl_kwh", "meilleur_agent_rl"):
         nb3_col = f"{col}_nb3"
-        if nb3_col in merged.columns:
-            mask = merged[nb3_col].notna()
-            merged.loc[mask, col] = merged.loc[mask, nb3_col]
-            merged.drop(columns=[nb3_col], inplace=True)
+        if nb3_col not in merged.columns:
+            continue
+        src = merged[nb3_col]
+        mask = src.notna() & (src.astype(str).str.strip() != "")
+        if col == "action_rl" and "action_proposee" in merged.columns:
+            proposee_named = ~merged["action_proposee"].map(is_no_named_action)
+            rl_named = ~src.map(is_no_named_action)
+            mask = mask & (rl_named | ~proposee_named)
+        merged.loc[mask, col] = merged.loc[mask, nb3_col]
+        merged.drop(columns=[nb3_col], inplace=True, errors="ignore")
     has = merged.get("action_rl", pd.Series(dtype=object)).notna()
     if has.any():
         merged.loc[has, "source_decision_nb3"] = "decisions_par_station"
@@ -432,13 +440,19 @@ def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None)
         out = StrategieOptimisation().appliquer(out)
 
     out = _normalize_nb3_action_labels(out)
-    if "action_rl" not in out.columns:
-        out["action_rl"] = out["action_proposee"]
-    else:
-        missing_rl = out["action_rl"].isna() | (out["action_rl"].astype(str).str.strip() == "")
-        out.loc[missing_rl, "action_rl"] = out.loc[missing_rl, "action_proposee"]
-
     out = _merge_nb3_decisions(out)
+
+    from ui.formatting import is_no_named_action
+
+    if "action_proposee" in out.columns:
+        if "action_rl" not in out.columns:
+            out["action_rl"] = out["action_proposee"]
+        else:
+            rl_blank = out["action_rl"].isna() | (out["action_rl"].astype(str).str.strip() == "")
+            rl_none = out["action_rl"].map(is_no_named_action)
+            prop_named = ~out["action_proposee"].map(is_no_named_action)
+            fill = rl_blank | (rl_none & prop_named)
+            out.loc[fill, "action_rl"] = out.loc[fill, "action_proposee"]
     out["source_decision_nb3"] = source
     return out
 

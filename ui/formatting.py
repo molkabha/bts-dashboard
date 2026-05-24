@@ -39,6 +39,8 @@ ACTION_LABELS_FR: dict[str, str] = {
     "sleep_mode_secteur": "Veille secteur",
     "free_cooling": "Free cooling",
     "eco_calendaire": "Éco calendaire",
+    "optimisation_adaptative": "Éco calendaire",
+    "monitoring_standard": "Aucune action",
 }
 
 
@@ -71,20 +73,26 @@ def row_has_no_named_action(row: Any) -> bool:
 
 
 def resolve_row_action(row: Any, *, prefer_rl: bool = True, default: str = "—") -> str:
-    """Choisit la meilleure colonne d'action disponible sur une ligne enrichie NB3."""
+    """Choisit la meilleure colonne d'action (ignore RL vide / aucune_action si expert nomme)."""
     order = (
         ("action_rl", "action_proposee", "action_principale")
         if prefer_rl
         else ("action_proposee", "action_principale", "action_rl")
     )
+    fallback = default
     for col in order:
         try:
             val = row.get(col) if hasattr(row, "get") else None
         except Exception:
             val = None
-        if not is_missing(val):
-            return format_action_label(val, default=default)
-    return default
+        if is_missing(val):
+            continue
+        if is_no_named_action(val):
+            if fallback == default:
+                fallback = format_action_label(val, default=default)
+            continue
+        return format_action_label(val, default=default)
+    return fallback
 
 
 def display_number(
