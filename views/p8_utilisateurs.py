@@ -48,7 +48,10 @@ def _render_user_list():
             return
 
         # Search bar
-        search = st.text_input("Rechercher un utilisateur", placeholder="Nom ou email...")
+        search = st.text_input(
+            "Rechercher un utilisateur",
+            placeholder="Identifiant, nom ou courriel…",
+        )
         if search:
             users_df = users_df[
                 users_df["username"].str.contains(search, case=False, na=False) |
@@ -167,17 +170,40 @@ def _perform_delete(user_data):
 
 def _render_add_user():
     with section("Créer un nouvel utilisateur"):
+        st.caption(
+            "Renseignez les informations du compte. Un mot de passe temporaire sera envoyé "
+            "à l'adresse courriel indiquée."
+        )
         with st.form("add_user_form", clear_on_submit=True):
             col1, col2 = st.columns(2)
             with col1:
-                new_username = st.text_input("Identifiant", placeholder="ex. : m.alaya")
-                new_display = st.text_input("Nom complet", placeholder="ex. : Molka Alaya")
-                new_email = st.text_input("Courriel", placeholder="ex. : m.alaya@tt.tn")
+                new_username = st.text_input(
+                    "Identifiant",
+                    placeholder="prenom.nom (connexion au tableau de bord)",
+                    help="Lettres, chiffres et point — sans espaces.",
+                )
+                new_display = st.text_input(
+                    "Nom complet",
+                    placeholder="Prénom Nom (affiché dans l'application)",
+                )
+                new_email = st.text_input(
+                    "Courriel professionnel",
+                    placeholder="prenom.nom@tunisietelecom.tn",
+                    help="Adresse utilisée pour la connexion et l'envoi du mot de passe.",
+                )
             with col2:
-                new_role = st.selectbox("Rôle", ["ingenieur", "admin"], format_func=lambda r: "Ingénieur" if r == "ingenieur" else "Administrateur")
-                st.info("Un mot de passe temporaire sera généré et envoyé par courriel a l'utilisateur.")
+                new_role = st.selectbox(
+                    "Rôle",
+                    ["ingenieur", "admin"],
+                    format_func=lambda r: "Ingénieur réseau" if r == "ingenieur" else "Administrateur",
+                    help="Les ingénieurs voient uniquement les stations qui leur sont affectées.",
+                )
+                st.info(
+                    "Après création, l'utilisateur reçoit un courriel avec un mot de passe "
+                    "temporaire à changer à la première connexion."
+                )
 
-            submit = st.form_submit_button("Creer le compte", type="primary", width="stretch")
+            submit = st.form_submit_button("Créer le compte", type="primary", width="stretch")
 
             if submit:
                 if not new_username or not new_display:
