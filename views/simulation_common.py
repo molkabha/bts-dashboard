@@ -38,7 +38,7 @@ except ImportError:
 
 _INVALID_STATION = frozenset({"", "none", "nan", "<na>", "null"})
 SIM_RESET_KEYS = (
-    "sim_data", "sim_running", "sim_tick", "sim_total_ticks",
+    "sim_data", "sim_running", "sim_paused", "sim_tick", "sim_total_ticks",
     "sim_alerts", "sim_decisions", "sim_ack_refs",
     "sim_data_source", "sim_mode", "sim_compare_hist", "sim_source_df",
 )
@@ -49,7 +49,12 @@ def plot_template() -> str:
 
 
 def maybe_autorefresh() -> None:
-    if st.session_state.get("sim_auto") and st.session_state.get("sim_running") and st_autorefresh:
+    if (
+        st.session_state.get("sim_auto")
+        and st.session_state.get("sim_running")
+        and not st.session_state.get("sim_paused")
+        and st_autorefresh
+    ):
         interval = int(st.session_state.get("sim_auto_interval", 3)) * 1000
         st_autorefresh(interval=interval, key="sim_autorefresh")
 
@@ -147,16 +152,12 @@ def sim_params() -> tuple[date, int, int]:
     return sim_base_date, start_hour, num_days
 
 
-def sensitivity() -> float:
-    return float(st.session_state.get("sim_anomaly_sensitivity", 1.0))
-
-
 def total_ticks(sim_base_date: date, start_hour: int, num_days: int) -> int:
     return len(scenario_timestamps(sim_base_date, start_hour, num_days))
 
 
 def record_events(processed: pd.DataFrame) -> None:
-    alerts, decisions = classify_tick_rows(processed, anomaly_sensitivity=sensitivity())
+    alerts, decisions = classify_tick_rows(processed)
     st.session_state["sim_alerts"] = merge_event_log(st.session_state.get("sim_alerts", []), alerts)
     st.session_state["sim_decisions"] = merge_event_log(st.session_state.get("sim_decisions", []), decisions)
 
@@ -185,10 +186,7 @@ def advance_scenario(
         if idx >= len(stamps):
             break
         ts = stamps[idx]
-        batch = hourly_snapshot(
-            ts.date(), ts.hour, selected_stations,
-            anomaly_sensitivity=sensitivity(),
-        )
+        batch = hourly_snapshot(ts.date(), ts.hour, selected_stations)
         if not batch.empty:
             frames.append(batch)
     if not frames:
@@ -227,10 +225,7 @@ def run_full_period(
     start_hour: int,
     num_days: int,
 ) -> None:
-    processed = generate_period(
-        sim_base_date, start_hour, num_days, selected_stations,
-        anomaly_sensitivity=sensitivity(),
-    )
+    processed = generate_period(sim_base_date, start_hour, num_days, selected_stations)
     if processed.empty:
         return
     max_rows = max(72, 24 * num_days) * len(selected_stations)
@@ -248,6 +243,8 @@ def reset_simulation() -> None:
 
 
 def process_tick(selected_stations: list[str]) -> None:
+    if st.session_state.get("sim_paused"):
+        return
     sim_base_date, start_hour, num_days = sim_params()
     auto = st.session_state.get("sim_auto") and st.session_state.get("sim_running")
     if st.session_state.pop("sim_advance", False) or auto:
@@ -540,32 +537,144 @@ def render_chart_kpis(hist: pd.DataFrame, focus_station: str | None) -> None:
     c4.metric("Gain optimisation", f"{gain_dt:.2f} DT", f"{gain_kwh:.2f} kWh économisés")
 
 
+def build_simulation_report(
+    sim_data: pd.DataFrame,
+    sim_date: date,
+    selected_stations: list[str],
+) -> pd.DataFrame:
+    """Rapport CSV : sommaires globaux, par station et par heure."""
+    rows: list[dict] = []
+
+    def _row(section: str, libelle: str, valeur, unite: str = "") -> None:
+        rows.append({
+            "Section": section,
+            "Libelle": libelle,
+            "Valeur": valeur,
+            "Unite": unite,
+        })
+
+    if sim_data.empty:
+        _row("Sommaire global", "Statut", "Aucune donnee", "")
+        return pd.DataFrame(rows)
+
+    work = harmonize_nb3_economies(sim_data.copy())
+    conso = float(_num(work, "consommation_kwh", 0).sum())
+    pred = float(_num(work, "conso_predite", 0).sum())
+    gain_kwh = total_gain_kwh(work)
+    gain_dt = kwh_to_dt(gain_kwh)
+    ecart_moy = float(ecart_pct_series(work).mean()) if not work.empty else 0.0
+    n_hours = int(work["timestamp"].nunique()) if "timestamp" in work.columns else 0
+    n_stations = int(work["station_id"].nunique()) if "station_id" in work.columns else 0
+    alerts_n = len(st.session_state.get("sim_alerts") or [])
+    decisions_n = len(st.session_state.get("sim_decisions") or [])
+
+    _row("Sommaire global", "Date scenario", str(sim_date), "")
+    _row("Sommaire global", "Stations selectionnees", ", ".join(selected_stations), "liste")
+    _row("Sommaire global", "Stations avec donnees", n_stations, "nombre")
+    _row("Sommaire global", "Heures simulees", n_hours, "nombre")
+    _row("Sommaire global", "Lignes totales", len(work), "nombre")
+    _row("Sommaire global", "Consommation reelle totale", round(conso, 3), "kWh")
+    _row("Sommaire global", "Consommation predite totale", round(pred, 3), "kWh")
+    _row("Sommaire global", "Ecart moyen reel/predit", round(ecart_moy, 2), "%")
+    _row("Sommaire global", "Gain energie total", round(gain_kwh, 3), "kWh")
+    _row("Sommaire global", "Gain financier total", round(gain_dt, 2), "DT")
+    _row("Sommaire global", "Prix kWh utilise", settings.PRIX_KWH_TN, "DT/kWh")
+    _row("Sommaire global", "Alertes generees", alerts_n, "nombre")
+    _row("Sommaire global", "Decisions journalisees", decisions_n, "nombre")
+
+    if "station_id" in work.columns:
+        for sid in sorted(work["station_id"].astype(str).unique()):
+            sub = work[work["station_id"].astype(str) == sid]
+            c = float(_num(sub, "consommation_kwh", 0).sum())
+            p = float(_num(sub, "conso_predite", 0).sum())
+            g = total_gain_kwh(sub)
+            _row(f"Station {sid}", "Consommation reelle", round(c, 3), "kWh")
+            _row(f"Station {sid}", "Consommation predite", round(p, 3), "kWh")
+            _row(f"Station {sid}", "Ecart moyen", round(float(ecart_pct_series(sub).mean()), 2), "%")
+            _row(f"Station {sid}", "Gain energie", round(g, 3), "kWh")
+            _row(f"Station {sid}", "Gain (DT)", round(kwh_to_dt(g), 2), "DT")
+            if "anomalie_score_ensemble" in sub.columns:
+                _row(
+                    f"Station {sid}",
+                    "Score anomalie max",
+                    round(float(sub["anomalie_score_ensemble"].max()), 3),
+                    "",
+                )
+
+    if "timestamp" in work.columns:
+        for ts in sorted(work["timestamp"].dropna().unique()):
+            sub = work[work["timestamp"] == ts]
+            label = pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M")
+            _row(f"Heure {label}", "Conso reelle", round(float(_num(sub, "consommation_kwh", 0).sum()), 3), "kWh")
+            _row(f"Heure {label}", "Conso predite", round(float(_num(sub, "conso_predite", 0).sum()), 3), "kWh")
+            _row(f"Heure {label}", "Gain (DT)", round(kwh_to_dt(total_gain_kwh(sub)), 2), "DT")
+
+    return pd.DataFrame(rows)
+
+
+def render_simulation_exports(
+    sim_data: pd.DataFrame,
+    sim_date: date,
+    selected_stations: list[str],
+) -> None:
+    if sim_data.empty:
+        return
+    report = build_simulation_report(sim_data, sim_date, selected_stations)
+    c1, c2 = st.columns(2)
+    with c1:
+        download_df_button(sim_data, "simulation_donnees.csv", "Donnees detaillees")
+    with c2:
+        download_df_button(report, "simulation_rapport_sommaire.csv", "Rapport sommaire")
+
+
 def render_mini_map(latest_all: pd.DataFrame) -> None:
     if latest_all.empty:
         st.info("Aucune donnee cartographique.")
         return
-    map_df = get_station_map_data(latest_all)
+
+    from services.data_service import resolve_nb2_seuil_ensemble
+
+    seuil, _ = resolve_nb2_seuil_ensemble()
+    anom = latest_all.copy()
+    if "anomalie_score_ensemble" in anom.columns:
+        scores = pd.to_numeric(anom["anomalie_score_ensemble"], errors="coerce").fillna(0)
+        anom = anom[scores >= float(seuil)]
+    if anom.empty:
+        st.info(f"Aucune station en anomalie a cette heure (seuil NB2 : {seuil:.2f}).")
+        return
+
+    st.caption(f"{len(anom)} station(s) en anomalie (score >= {seuil:.2f})")
+
+    map_df = get_station_map_data(anom)
     if map_df.empty or not {"latitude", "longitude"}.issubset(map_df.columns):
         st.info("Coordonnees GPS indisponibles.")
         return
     plot = map_df.copy()
-    if "mode_operation" in latest_all.columns:
-        modes = latest_all.set_index("station_id")["mode_operation"]
-        plot["mode_actuel"] = plot["station_id"].map(modes).fillna("NORMAL")
+    if "anomalie_score_ensemble" in anom.columns:
+        scores = anom.set_index("station_id")["anomalie_score_ensemble"]
+        plot["score_anomalie"] = plot["station_id"].map(scores)
+    if "mode_operation" in anom.columns:
+        modes = anom.set_index("station_id")["mode_operation"]
+        plot["mode_actuel"] = plot["station_id"].map(modes).fillna("ATTENTION")
     else:
-        plot["mode_actuel"] = "NORMAL"
-    plot["mode_actuel"] = plot["mode_actuel"].map(lambda m: normalize_mode_key(m) or "NORMAL")
+        plot["mode_actuel"] = "ATTENTION"
+    plot["mode_actuel"] = plot["mode_actuel"].map(lambda m: normalize_mode_key(m) or "ATTENTION")
     plot["latitude"] = pd.to_numeric(plot["latitude"], errors="coerce")
     plot["longitude"] = pd.to_numeric(plot["longitude"], errors="coerce")
     plot = plot.dropna(subset=["latitude", "longitude"])
     if plot.empty:
         st.info("Coordonnees GPS invalides.")
         return
+    if "score_anomalie" in plot.columns:
+        plot["score_anomalie"] = pd.to_numeric(plot["score_anomalie"], errors="coerce").fillna(seuil)
+        plot["taille"] = plot["score_anomalie"] * 40 + 12
     fig = px.scatter_mapbox(
         plot,
         lat="latitude",
         lon="longitude",
         color="mode_actuel",
+        size="taille" if "taille" in plot.columns else None,
+        size_max=28,
         hover_name="station_id",
         zoom=5.5,
         center={"lat": plot["latitude"].mean(), "lon": plot["longitude"].mean()},

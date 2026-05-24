@@ -14,7 +14,7 @@ from services.simulation_events import persist_alert_ack
 from ui.components import header
 from ui.formatting import display_text, resolve_row_action
 from ui.page_helpers import mode_explanation
-from ui.utils import active_filter_label, download_df_button
+from ui.utils import active_filter_label
 
 from views import simulation_common as sim
 from views import simulation_ui as ui
@@ -30,7 +30,7 @@ def _unack_alerts_count() -> int:
 
 def _toolbar(stations: list[str]) -> list[str]:
     sim.init_sim_stations(stations)
-    c1, c2, c3, c4 = st.columns([2.2, 1, 0.7, 1.6])
+    c1, c2, c3, c4 = st.columns([2.0, 1, 0.7, 2.1])
     with c1:
         st.multiselect("Stations a simuler", stations, key="sim_stations")
     with c2:
@@ -43,12 +43,21 @@ def _toolbar(stations: list[str]) -> list[str]:
             key="sim_start_hour",
         )
     with c4:
-        b1, b2, b3 = st.columns(3)
+        b1, b2, b3, b4 = st.columns(4)
         with b1:
             start = st.button("Demarrer", type="primary", use_container_width=True)
         with b2:
             step = st.button("+1 h", use_container_width=True)
         with b3:
+            if st.session_state.get("sim_paused"):
+                pause_btn = st.button("Reprendre", use_container_width=True)
+            else:
+                pause_btn = st.button(
+                    "Pause",
+                    use_container_width=True,
+                    disabled=not st.session_state.get("sim_running"),
+                )
+        with b4:
             stop = st.button("Stop", use_container_width=True)
 
     selected = sim.resolve_selected_stations(stations)
@@ -57,6 +66,7 @@ def _toolbar(stations: list[str]) -> list[str]:
     if start:
         st.session_state.update({
             "sim_running": True,
+            "sim_paused": False,
             "sim_tick": 0,
             "sim_data": pd.DataFrame(),
             "sim_alerts": [],
@@ -66,7 +76,10 @@ def _toolbar(stations: list[str]) -> list[str]:
         })
         st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
         st.rerun()
-    if step and st.session_state.get("sim_running"):
+    if pause_btn:
+        st.session_state["sim_paused"] = not st.session_state.get("sim_paused")
+        st.rerun()
+    if step and st.session_state.get("sim_running") and not st.session_state.get("sim_paused"):
         st.session_state["sim_advance"] = True
         st.rerun()
     if stop:
@@ -169,13 +182,11 @@ def page_simulation():
     selected = _toolbar(stations)
 
     with st.expander("Options avancees", expanded=False):
-        o1, o2, o3 = st.columns(3)
+        o1, o2 = st.columns(2)
         with o1:
             st.slider("Duree (jours)", 1, 7, int(st.session_state.get("sim_num_days", 1)), key="sim_num_days")
             st.select_slider("Pas", [1, 2, 5], value=2, key="sim_speed")
         with o2:
-            st.slider("Sensibilite anomalies", 0.5, 2.0, sim.sensitivity(), 0.1, key="sim_anomaly_sensitivity")
-        with o3:
             st.checkbox("Avance automatique", key="sim_auto")
             if st.session_state.get("sim_auto"):
                 st.slider("Intervalle (s)", 1, 10, int(st.session_state.get("sim_auto_interval", 3)), key="sim_auto_interval")
@@ -185,7 +196,8 @@ def page_simulation():
             st.rerun()
         export = st.session_state.get("sim_data")
         if isinstance(export, pd.DataFrame) and not export.empty:
-            download_df_button(export, "simulation.csv", "Telecharger les donnees")
+            exp_date, _, _ = sim.sim_params()
+            sim.render_simulation_exports(export, exp_date, selected)
 
     sim.process_tick(selected)
 
@@ -203,10 +215,11 @@ def page_simulation():
     total = int(st.session_state.get("sim_total_ticks") or 0)
     n_alert = _unack_alerts_count()
 
+    pause_tag = " · **EN PAUSE**" if st.session_state.get("sim_paused") else ""
     st.info(
         f"**{hour_label}** · {calendar_label(sim_date)} · "
-        f"{len(selected)} station(s) · progression {tick}/{total}" if total else
-        f"**{hour_label}** · {calendar_label(sim_date)} · {len(selected)} station(s)"
+        f"{len(selected)} station(s) · progression {tick}/{total}{pause_tag}" if total else
+        f"**{hour_label}** · {calendar_label(sim_date)} · {len(selected)} station(s){pause_tag}"
     )
     if total > 0:
         st.progress(min(1.0, tick / max(total, 1)))
