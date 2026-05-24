@@ -3,11 +3,30 @@
 from __future__ import annotations
 
 import io
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from fpdf import FPDF
 import pandas as pd
+
+
+def _pdf_safe(text: object) -> str:
+    """Helvetica FPDF : ASCII + accents courants remplaces."""
+    raw = str(text) if text is not None else ""
+    replacements = {
+        "—": "-", "–": "-", "’": "'", "“": '"', "”": '"',
+        "é": "e", "è": "e", "ê": "e", "ë": "e",
+        "à": "a", "â": "a", "ä": "a",
+        "ù": "u", "û": "u", "ü": "u",
+        "ô": "o", "ö": "o",
+        "î": "i", "ï": "i",
+        "ç": "c",
+        "É": "E", "È": "E", "À": "A", "Ç": "C",
+        "₂": "2",
+    }
+    for src, dst in replacements.items():
+        raw = raw.replace(src, dst)
+    return raw.encode("latin-1", errors="replace").decode("latin-1")
 
 
 class RapportPDF(FPDF):
@@ -42,7 +61,7 @@ class RapportPDF(FPDF):
     def section_title(self, title: str):
         self.set_font("Helvetica", "B", 12)
         self.set_text_color(30, 58, 138)
-        self.cell(0, 8, title, new_x="LMARGIN", new_y="NEXT")
+        self.cell(0, 8, _pdf_safe(title), new_x="LMARGIN", new_y="NEXT")
         self.set_text_color(0, 0, 0)
         self.ln(2)
 
@@ -54,19 +73,35 @@ class RapportPDF(FPDF):
             x = self.get_x()
             self.set_font("Helvetica", "", 8)
             self.set_text_color(100, 100, 100)
-            self.cell(col_w, 5, label, new_x="LMARGIN", new_y="NEXT")
+            self.cell(col_w, 5, _pdf_safe(label), new_x="LMARGIN", new_y="NEXT")
             self.set_x(x)
             self.set_font("Helvetica", "B", 14)
             self.set_text_color(0, 0, 0)
-            self.cell(col_w, 8, value, new_x="LMARGIN", new_y="NEXT")
+            self.cell(col_w, 8, _pdf_safe(value), new_x="LMARGIN", new_y="NEXT")
             self.set_xy(x + col_w, y)
         self.set_y(y + 16)
         self.ln(4)
 
     def text_block(self, text: str):
         self.set_font("Helvetica", "", 10)
-        self.multi_cell(0, 5, text)
+        self.multi_cell(0, 5, _pdf_safe(text))
         self.ln(3)
+
+    def table_rows(self, headers: tuple[str, ...], rows: list[tuple[str, ...]], col_widths: tuple[float, ...]):
+        self.set_font("Helvetica", "B", 9)
+        self.set_fill_color(240, 240, 245)
+        for header, width in zip(headers, col_widths):
+            self.cell(width, 7, _pdf_safe(header), border=1, fill=True)
+        self.ln()
+        self.set_font("Helvetica", "", 9)
+        fill = False
+        for row in rows:
+            if self.get_y() > 270:
+                self.add_page()
+            for value, width in zip(row, col_widths):
+                self.cell(width, 6, _pdf_safe(str(value)[:48]), border=1, fill=fill)
+            self.ln()
+            fill = not fill
 
     def anomaly_item(self, station: str, detail: str, severity: str):
         color_map = {"CRITIQUE": (220, 38, 38), "ATTENTION": (234, 179, 8), "FAIBLE": (100, 116, 139)}
@@ -119,6 +154,95 @@ def generate_report_pdf(kpis: dict, top_anomalies: list[dict] | None = None) -> 
         "3. Exploiter le free cooling pendant les periodes hivernales pour reduire la climatisation.\n"
         "4. Maintenir le score QoS au-dessus de 0.70 avant toute optimisation energetique."
     )
+
+    buf = io.BytesIO()
+    pdf.output(buf)
+    return buf.getvalue()
+
+
+def generate_simulation_sommaire_pdf(
+    report: pd.DataFrame,
+    *,
+    sim_date: date | None = None,
+    selected_stations: list[str] | None = None,
+) -> bytes:
+    """Rapport sommaire simulation (PDF) : global, par station, par heure."""
+    pdf = RapportPDF()
+    pdf.alias_nb_pages()
+    pdf.add_page()
+
+    pdf.section_title("Rapport sommaire - Simulation BTS")
+    date_label = str(sim_date) if sim_date else "—"
+    stations_label = ", ".join(selected_stations or []) or "—"
+    pdf.text_block(
+        f"Date du scenario : {date_label}\n"
+        f"Stations : {stations_label}\n"
+        f"Perimetre : consommation, prediction LightGBM, gains, alertes"
+    )
+
+    if report.empty:
+        pdf.text_block("Aucune donnee de simulation disponible.")
+        buf = io.BytesIO()
+        pdf.output(buf)
+        return buf.getvalue()
+
+    work = report.copy()
+    if "Section" not in work.columns:
+        buf = io.BytesIO()
+        pdf.output(buf)
+        return buf.getvalue()
+
+    global_rows = work[work["Section"].astype(str) == "Sommaire global"]
+    if not global_rows.empty:
+        pdf.section_title("Sommaire global")
+        pdf.table_rows(
+            ("Indicateur", "Valeur", "Unite"),
+            [
+                (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
+                for _, r in global_rows.iterrows()
+            ],
+            (95, 55, 30),
+        )
+        pdf.ln(4)
+
+    station_sections = sorted(
+        {s for s in work["Section"].astype(str).unique() if str(s).startswith("Station ")},
+    )
+    if station_sections:
+        pdf.section_title("Synthese par station")
+        for section in station_sections[:20]:
+            sub = work[work["Section"].astype(str) == section]
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(0, 6, _pdf_safe(section.replace("Station ", "Station : ")), new_x="LMARGIN", new_y="NEXT")
+            pdf.table_rows(
+                ("Indicateur", "Valeur", "Unite"),
+                [
+                    (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
+                    for _, r in sub.iterrows()
+                ],
+                (95, 55, 30),
+            )
+            pdf.ln(3)
+
+    hour_sections = sorted(
+        {s for s in work["Section"].astype(str).unique() if str(s).startswith("Heure ")},
+    )
+    if hour_sections:
+        pdf.add_page()
+        pdf.section_title("Synthese par heure simulee")
+        for section in hour_sections[:24]:
+            sub = work[work["Section"].astype(str) == section]
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(0, 6, _pdf_safe(section), new_x="LMARGIN", new_y="NEXT")
+            pdf.table_rows(
+                ("Indicateur", "Valeur", "Unite"),
+                [
+                    (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
+                    for _, r in sub.iterrows()
+                ],
+                (95, 55, 30),
+            )
+            pdf.ln(3)
 
     buf = io.BytesIO()
     pdf.output(buf)

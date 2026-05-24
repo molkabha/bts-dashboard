@@ -697,7 +697,7 @@ def build_simulation_report(
     sim_date: date,
     selected_stations: list[str],
 ) -> pd.DataFrame:
-    """Rapport CSV : sommaires globaux, par station et par heure."""
+    """Donnees du rapport sommaire (global, par station, par heure) pour export PDF."""
     rows: list[dict] = []
 
     def _row(section: str, libelle: str, valeur, unite: str = "") -> None:
@@ -774,12 +774,29 @@ def render_simulation_exports(
 ) -> None:
     if sim_data.empty:
         return
+    from datetime import datetime
+
+    from utils.pdf_export import generate_simulation_sommaire_pdf
+
     report = build_simulation_report(sim_data, sim_date, selected_stations)
+    pdf_bytes = generate_simulation_sommaire_pdf(
+        report,
+        sim_date=sim_date,
+        selected_stations=selected_stations,
+    )
     c1, c2 = st.columns(2)
     with c1:
-        download_df_button(sim_data, "simulation_donnees.csv", "Donnees detaillees")
+        download_df_button(sim_data, "simulation_donnees.csv", "Donnees detaillees (CSV)")
     with c2:
-        download_df_button(report, "simulation_rapport_sommaire.csv", "Rapport sommaire")
+        st.download_button(
+            "Télécharger le sommaire (PDF)",
+            data=pdf_bytes,
+            file_name=f"simulation_sommaire_{sim_date}_{datetime.now().strftime('%H%M')}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key="sim_sommaire_pdf",
+        )
+        st.caption("Rapport sommaire : synthese globale, par station et par heure.")
 
 
 def render_mini_map(latest_all: pd.DataFrame) -> None:
