@@ -60,6 +60,35 @@ def _num(df: pd.DataFrame, col: str, default: float = 0.0) -> pd.Series:
     return pd.to_numeric(df[col], errors="coerce").fillna(default)
 
 
+def kwh_to_dt(kwh: float) -> float:
+    return float(kwh) * float(settings.PRIX_KWH_TN)
+
+
+def ecart_pct_series(df: pd.DataFrame) -> pd.Series:
+    conso = _num(df, "consommation_kwh", 0)
+    if "conso_predite" not in df.columns:
+        return pd.Series(0.0, index=df.index)
+    pred = pd.to_numeric(df["conso_predite"], errors="coerce")
+    return ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
+
+
+def total_gain_kwh(df: pd.DataFrame) -> float:
+    if df.empty:
+        return 0.0
+    return float(effective_economie_kwh(df).sum())
+
+
+def inference_label(df: pd.DataFrame) -> str:
+    if df.empty or "inference_pipeline" not in df.columns:
+        return ""
+    modes = df["inference_pipeline"].dropna().astype(str).unique().tolist()
+    if any("lgbm" in m for m in modes):
+        return "Prédiction : modèle LightGBM (NB1)"
+    if any("profil" in m for m in modes):
+        return "Prédiction : profil historique (artefacts ML absents sur le serveur)"
+    return ""
+
+
 def valid_station_id(value) -> str | None:
     if value is None or (isinstance(value, float) and pd.isna(value)):
         return None
@@ -395,10 +424,12 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
 
     hist["conso"] = _num(hist, "consommation_kwh", 0)
     hist["eco"] = effective_economie_kwh(hist)
-    if "conso_predite" in hist.columns:
-        hist["pred"] = pd.to_numeric(hist["conso_predite"], errors="coerce").fillna(hist["conso"])
-    else:
-        hist["pred"] = hist["conso"]
+    hist["pred"] = (
+        pd.to_numeric(hist["conso_predite"], errors="coerce")
+        if "conso_predite" in hist.columns
+        else pd.Series(float("nan"), index=hist.index)
+    )
+    hist["ecart_pct"] = ecart_pct_series(hist)
 
     multi = hist["station_id"].nunique() > 1
     # Meme regle d agregation pour toutes les courbes (evite sum reel vs mean predit).
@@ -432,8 +463,23 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
         x=agg["timestamp"], y=agg["conso"] - agg["eco"], name=label_opt, line=dict(color="#059669"),
     ))
     fig.add_trace(go.Scatter(
-        x=agg["timestamp"], y=agg["pred"], name=label_pred, line=dict(dash="dot", color="#1e40af"),
+        x=agg["timestamp"],
+        y=agg["pred"],
+        name=label_pred,
+        line=dict(dash="dot", color="#1e40af", width=2),
     ))
+    if len(agg) >= 1 and agg["conso"].notna().any() and agg["pred"].notna().any():
+        last = agg.iloc[-1]
+        if pd.notna(last["pred"]) and last["pred"] != 0:
+            ecart_last = (float(last["conso"]) - float(last["pred"])) / float(last["pred"]) * 100
+            fig.add_annotation(
+                x=last["timestamp"],
+                y=max(float(last["conso"]), float(last["pred"])),
+                text=f"Écart {ecart_last:+.1f} %",
+                showarrow=True,
+                arrowhead=2,
+                font=dict(size=11),
+            )
     alert_ts = [
         pd.Timestamp(e.get("timestamp"))
         for e in st.session_state.get("sim_alerts", [])
@@ -447,9 +493,51 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
         margin=dict(l=0, r=0, t=8, b=0),
         yaxis_title="kWh",
     )
+    render_chart_kpis(hist, focus_station)
+
     if multi and not focus_station:
         st.caption("Plusieurs stations : les courbes affichent la somme horaire sur le parc selectionne.")
-    st.plotly_chart(fig, width="stretch")
+
+    pipe_hint = inference_label(hist)
+    if pipe_hint:
+        st.caption(pipe_hint)
+    if len(agg) >= 1:
+        last = agg.iloc[-1]
+        if pd.notna(last.get("pred")) and pd.notna(last.get("conso")):
+            same = abs(float(last["conso"]) - float(last["pred"])) < 0.02
+            if same:
+                st.warning(
+                    "Courbes superposées : le prédit est identique ou quasi identique au réel simulé. "
+                    "Vérifiez que les artefacts ML (pipeline NB1) sont bien déployés sur Streamlit Cloud."
+                )
+
+    st.plotly_chart(fig, width="stretch", key=f"sim_chart_{focus_station or 'all'}")
+
+
+def render_chart_kpis(hist: pd.DataFrame, focus_station: str | None) -> None:
+    """KPIs sous la courbe : réel, prédit, écart, gain."""
+    if hist.empty:
+        return
+    work = hist.copy()
+    if focus_station:
+        work = work[work["station_id"].astype(str) == str(focus_station)]
+    if work.empty:
+        return
+    latest_ts = work["timestamp"].max()
+    snap = work[work["timestamp"] == latest_ts]
+    conso = float(_num(snap, "consommation_kwh", 0).sum())
+    pred = float(pd.to_numeric(snap.get("conso_predite"), errors="coerce").sum())
+    if pd.isna(pred):
+        pred = 0.0
+    ecart = ((conso - pred) / pred * 100) if pred else 0.0
+    gain_kwh = total_gain_kwh(snap)
+    gain_dt = kwh_to_dt(gain_kwh)
+    c1, c2, c3, c4 = st.columns(4)
+    pred_title = "Prédit LGBM (kWh)" if "LightGBM" in inference_label(work) else "Prédit (kWh)"
+    c1.metric("Réel (kWh)", f"{conso:.2f}")
+    c2.metric(pred_title, f"{pred:.2f}")
+    c3.metric("Écart réel / prédit", f"{ecart:+.1f} %")
+    c4.metric("Gain optimisation", f"{gain_dt:.2f} DT", f"{gain_kwh:.2f} kWh économisés")
 
 
 def render_mini_map(latest_all: pd.DataFrame) -> None:

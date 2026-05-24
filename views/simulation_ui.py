@@ -18,9 +18,23 @@ def empty_state(title: str, body: str) -> None:
     )
 
 
-def decision_block(station: str, mode: str, action: str, detail: str) -> None:
+def decision_block(
+    station: str,
+    mode: str,
+    action: str,
+    detail: str,
+    *,
+    gain_dt: float | None = None,
+    gain_kwh: float | None = None,
+    ecart_pct: float | None = None,
+) -> None:
     color = mode_color(mode)
     badge = mode_badge_css(mode)
+    extra = ""
+    if ecart_pct is not None:
+        extra += f'<div class="dc-saving">Écart réel/prédit : {ecart_pct:+.1f} %</div>'
+    if gain_dt is not None and gain_kwh is not None and gain_kwh > 0:
+        extra += f'<div class="dc-saving">Gain estimé : {gain_dt:.2f} DT · {gain_kwh:.2f} kWh</div>'
     st.markdown(
         f"""
 <div class="decision-card" style="border-left-color:{color};">
@@ -28,6 +42,7 @@ def decision_block(station: str, mode: str, action: str, detail: str) -> None:
   <div class="dc-mode" style="color:{color};margin-top:8px;">{html.escape(station)}</div>
   <div class="dc-action">{html.escape(action)}</div>
   <div class="dc-reason">{html.escape(detail)}</div>
+  {extra}
 </div>""",
         unsafe_allow_html=True,
     )

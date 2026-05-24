@@ -5,9 +5,11 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
+from config.settings import settings
 from security.middleware import security_middleware
 from services.calendar_tn import calendar_label
 from services.data_service import init_db
+from services.nb_metrics import effective_economie_kwh
 from services.simulation_events import persist_alert_ack
 from ui.components import header
 from ui.formatting import display_text, resolve_row_action
@@ -81,10 +83,17 @@ def _ops_table(latest: pd.DataFrame) -> pd.DataFrame:
     t["Station"] = t["station_id"].astype(str)
     t["Mode"] = t.get("mode_operation", "NORMAL").astype(str)
     t["Conso (kWh)"] = sim._num(t, "consommation_kwh", 0).round(2)
+    t["Pred (kWh)"] = sim._num(t, "conso_predite", 0).round(2)
+    t["Ecart %"] = sim.ecart_pct_series(t).round(1)
+    eco = effective_economie_kwh(t)
+    t["Gain (DT)"] = (eco * settings.PRIX_KWH_TN).round(2)
     t["QoS"] = sim._num(t, "score_qos", 0).round(2)
     t["Anomalie"] = sim._num(t, "anomalie_score_ensemble", 0).round(2)
     t["Action"] = t.apply(lambda r: resolve_row_action(r, prefer_rl=True), axis=1)
-    return t[["Station", "Mode", "Conso (kWh)", "QoS", "Anomalie", "Action"]]
+    return t[[
+        "Station", "Mode", "Conso (kWh)", "Pred (kWh)", "Ecart %",
+        "Gain (DT)", "QoS", "Anomalie", "Action",
+    ]]
 
 
 def _render_journal(selected: list[str], latest_ts) -> None:
@@ -123,12 +132,20 @@ def _render_journal(selected: list[str], latest_ts) -> None:
         df = pd.DataFrame(decisions).tail(20)
         if "timestamp" in df.columns:
             df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.strftime("%d/%m %H:%M")
-        show = df[["timestamp", "station_id", "action", "message"]].rename(columns={
+        cols = ["timestamp", "station_id", "action", "message"]
+        if "economie_kwh" in df.columns:
+            df = df.copy()
+            df["gain_dt"] = pd.to_numeric(df["economie_kwh"], errors="coerce").fillna(0) * settings.PRIX_KWH_TN
+            cols.append("gain_dt")
+        show = df[cols].rename(columns={
             "timestamp": "Heure",
             "station_id": "Station",
             "action": "Action",
             "message": "Detail",
+            "gain_dt": "Gain (DT)",
         })
+        if "Gain (DT)" in show.columns:
+            show["Gain (DT)"] = pd.to_numeric(show["Gain (DT)"], errors="coerce").round(2)
         st.dataframe(show, use_container_width=True, hide_index=True)
     else:
         st.caption("Aucune action enregistree pour l instant.")
@@ -172,7 +189,7 @@ def page_simulation():
 
     sim.process_tick(selected)
 
-    _, latest, latest_ts, sim_date = sim.latest_snapshot()
+    sim_data, latest, latest_ts, sim_date = sim.latest_snapshot()
     if latest.empty:
         ui.empty_state(
             "Pret a demarrer",
@@ -195,11 +212,18 @@ def page_simulation():
         st.progress(min(1.0, tick / max(total, 1)))
 
     conso = float(sim._num(latest, "consommation_kwh", 0).sum())
+    pred = float(sim._num(latest, "conso_predite", 0).sum())
+    ecart_net = ((conso - pred) / pred * 100) if pred else 0.0
+    gain_heure_dt = sim.kwh_to_dt(sim.total_gain_kwh(latest))
+    gain_cumul_dt = sim.kwh_to_dt(sim.total_gain_kwh(sim_data)) if not sim_data.empty else 0.0
+    gain_cumul_kwh = sim.total_gain_kwh(sim_data) if not sim_data.empty else 0.0
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Heure simulee", hour_label)
-    m2.metric("Consommation reseau", f"{conso:.1f} kWh")
-    m3.metric("Alertes ouvertes", str(n_alert))
+    m2.metric("Conso reseau", f"{conso:.1f} kWh", f"Pred {pred:.1f} · {ecart_net:+.1f} %")
+    m3.metric("Gain heure", f"{gain_heure_dt:.2f} DT")
+    m4.metric("Gain cumule", f"{gain_cumul_dt:.2f} DT", f"{gain_cumul_kwh:.1f} kWh")
+    m5.metric("Alertes ouvertes", str(n_alert))
 
     st.subheader("Etat du parc")
     table = _ops_table(latest)
@@ -215,17 +239,21 @@ def page_simulation():
     if station_ids:
         chart_station = st.selectbox("Detail d une station", station_ids, key="sim_detail_station")
         row = sim.row_by_station(latest, chart_station)
+        eco_row = float(effective_economie_kwh(pd.DataFrame([row])).iloc[0])
+        ecart_row = float(sim.ecart_pct_series(pd.DataFrame([row])).iloc[0])
         ui.decision_block(
             chart_station,
             display_text(row.get("mode_operation"), "NORMAL"),
             resolve_row_action(row, prefer_rl=False),
             mode_explanation(row),
+            gain_dt=sim.kwh_to_dt(eco_row),
+            gain_kwh=eco_row,
+            ecart_pct=ecart_row,
         )
 
     tab_courbe, tab_journal, tab_carte = st.tabs(["Courbe", "Journal", "Carte"])
 
     with tab_courbe:
-        sim_data, _, _, _ = sim.latest_snapshot()
         if sim_data.empty:
             st.caption("Pas encore de donnees.")
         else:

@@ -240,6 +240,7 @@ def hourly_snapshot(
         seed = hash((str(sid), target_date.isoformat(), hour)) % (2**31)
         scale = _calendar_scale(ctx, hour)
         conso = _jitter(float(base.get("consommation_kwh") or 8.0) * scale, seed=seed)
+        profile_pred = _jitter(float(base.get("conso_predite") or conso) * scale, seed=seed + 1)
 
         score_qos = float(base.get("score_qos") or 0.85)
 
@@ -249,6 +250,7 @@ def hourly_snapshot(
             "heure": hour,
             **ctx,
             "consommation_kwh": conso,
+            "_profile_pred": profile_pred,
             "score_qos": score_qos,
             "taux_charge_voix": float(base.get("taux_charge_voix") or 0.5),
             "taux_charge_data": float(base.get("taux_charge_data") or 0.5),
@@ -266,30 +268,44 @@ def hourly_snapshot(
     out = pd.DataFrame(rows)
     if use_ml and not out.empty:
         enriched = enrich_with_pipeline(out)
-        if not enriched.empty and "conso_predite" in enriched.columns:
+        has_pred = (
+            not enriched.empty
+            and "conso_predite" in enriched.columns
+            and enriched["conso_predite"].notna().any()
+        )
+        if has_pred:
             out = enriched
             if "source_decision_nb3" not in out.columns:
                 out["source_decision_nb3"] = "nb1_nb2_nb3"
+            out["inference_pipeline"] = "nb1_nb2_nb3_lgbm"
         else:
+            out = _fill_fallback_predictions(out)
             out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
             out["source_decision_nb3"] = "scenario_rules"
+            out["inference_pipeline"] = "profil_historique"
     else:
         out = _fill_fallback_predictions(out)
         out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
+        out["inference_pipeline"] = "profil_historique"
+    out = out.drop(columns=["_profile_pred"], errors="ignore")
     return harmonize_nb3_economies(out)
 
 
 def _fill_fallback_predictions(df: pd.DataFrame) -> pd.DataFrame:
-    """Si les artefacts ML sont absents, aligner prédit sur le réel simulé."""
+    """Repli sans LGBM : prédit = profil historique (pas une copie du réel simulé)."""
     if df.empty:
         return df
     out = df.copy()
     conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
-    if "conso_predite" not in out.columns:
-        out["conso_predite"] = conso
-    out["pred_q10"] = out.get("pred_q10", conso * 0.9)
-    out["pred_q90"] = out.get("pred_q90", conso * 1.1)
+    if "_profile_pred" in out.columns:
+        out["conso_predite"] = pd.to_numeric(out["_profile_pred"], errors="coerce")
+    elif "conso_predite" not in out.columns:
+        out["conso_predite"] = conso * 0.97
     pred = pd.to_numeric(out["conso_predite"], errors="coerce")
+    if "pred_q10" not in out.columns:
+        out["pred_q10"] = pred * 0.9
+    if "pred_q90" not in out.columns:
+        out["pred_q90"] = pred * 1.1
     out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
     if "anomalie_score_ensemble" not in out.columns:
         out["anomalie_score_ensemble"] = 0.05
