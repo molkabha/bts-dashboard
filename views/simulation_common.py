@@ -89,22 +89,10 @@ def inference_label(df: pd.DataFrame) -> str:
     if df.empty or "inference_pipeline" not in df.columns:
         return ""
     modes = df["inference_pipeline"].dropna().astype(str).unique().tolist()
-    if any("lgbm" in m for m in modes):
-        return "Prediction : modele LightGBM (NB1-NB2-NB3)"
+    if any("dashboard" in m for m in modes):
+        return "Prediction : donnees NB (meme source Hub que le dashboard)"
     if any("profil" in m for m in modes):
-        try:
-            from services.sim_inference import ml_status_for_ui
-
-            st_info = ml_status_for_ui()
-            detail = st_info.get("detail") or "artefacts ML non charges"
-            if st_info.get("use_hf_hub") and not st_info.get("hf_token_set"):
-                detail = (
-                    f"{detail} Verifiez USE_HF_HUB=True et le telechargement depuis "
-                    f"{st_info.get('hf_repo', 'molkab/dashboard')}."
-                )
-            return f"Prediction : profil historique ({detail})"
-        except Exception:
-            return "Prediction : profil historique (artefacts ML absents ou non charges)"
+        return "Prediction : profils horaires (dataset enrichi incomplet)"
     return ""
 
 
@@ -563,8 +551,8 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
             same = abs(float(last["conso"]) - float(last["pred"])) < 0.02
             if same:
                 st.warning(
-                    "Courbes superposées : le prédit est identique ou quasi identique au réel simulé. "
-                    "Vérifiez que les artefacts ML (pipeline NB1) sont bien déployés sur Streamlit Cloud."
+                    "Courbes superposees : le predit est identique ou quasi identique au reel simule. "
+                    "Verifiez que conso_predite est bien present dans le dataset enrichi (page Prediction)."
                 )
 
     st.plotly_chart(fig, width="stretch", key=f"sim_chart_{focus_station or 'all'}")
@@ -589,7 +577,7 @@ def render_chart_kpis(hist: pd.DataFrame, focus_station: str | None) -> None:
     gain_kwh = total_gain_kwh(snap)
     gain_dt = kwh_to_dt(gain_kwh)
     c1, c2, c3, c4 = st.columns(4)
-    pred_title = "Prédit LGBM (kWh)" if "LightGBM" in inference_label(work) else "Prédit (kWh)"
+    pred_title = "Prédit NB (kWh)" if "Hub" in inference_label(work) else "Prédit (kWh)"
     c1.metric("Réel (kWh)", f"{conso:.2f}")
     c2.metric(pred_title, f"{pred:.2f}")
     c3.metric("Écart réel / prédit", f"{ecart:+.1f} %")

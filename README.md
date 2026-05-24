@@ -115,11 +115,6 @@ L'application principale se lance depuis `app.py`.
 - NB1 prépare les prévisions, NB2 prépare la détection d'anomalies, NB3 prépare l'optimisation décisionnelle.
 - La vue réseau et les KPIs utilisent à la fois la consommation réelle, les scores QoS et les scores d'anomalie.
 
-### Simulation ML sur Streamlit Cloud
+### Simulation et données NB
 
-La page **Simulation** charge les modèles depuis [Hugging Face `molkab/dashboard`](https://huggingface.co/molkab/dashboard) (`pipeline_inference.joblib`, `config.joblib`, etc.). Si vous voyez *profil historique* :
-
-1. Dans **Streamlit Cloud → Settings → Secrets**, assurez-vous d’avoir `USE_HF_HUB=True` (ou laissez la valeur par défaut).
-2. Au premier lancement, le téléchargement peut prendre 1–2 minutes (cache `.cache/huggingface`).
-3. Pour un dépôt privé, ajoutez `HF_TOKEN` dans les secrets.
-4. En local sans réseau, placez les `.joblib` dans `VF/NB3/output/` ou `VF/NB1/NB1-P/output/`.
+La page **Simulation** réutilise les mêmes sorties notebook que le reste du dashboard (`load_filtered_main_data` → `enrich_dashboard_data`, artefacts [Hugging Face `molkab/dashboard`](https://huggingface.co/molkab/dashboard)). Pas de second chargement de modèles `.joblib` : prédiction, anomalies et décisions proviennent des parquets déjà fusionnés sur les autres pages.

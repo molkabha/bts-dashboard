@@ -29,6 +29,7 @@ except ImportError:
     hf_hub_download = None
 
 _HF_DISABLED_UNTIL = 0.0
+_ARTIFACT_HIT_CACHE: dict[str, Path] = {}
 
 
 def hf_hub_token() -> str | None:
@@ -59,6 +60,7 @@ def artifact_is_ready(path: Path, min_bytes: int = 64) -> bool:
         return path.is_file() and path.stat().st_size >= min_bytes
     except OSError:
         return False
+
 
 # Mapping for notebook outputs
 NOTEBOOK_OUTPUTS = {
@@ -325,15 +327,16 @@ def best_local_candidate(candidates: list[Path]) -> Path | None:
     return max(existing, key=artifact_quality)
 
 
-@lru_cache(maxsize=64)
-def artifact_path(filename: str) -> Path:
+def _resolve_artifact_path(filename: str) -> Path:
     global _HF_DISABLED_UNTIL
     candidates = [settings.OUTPUTS_DIR / filename]
     for base in NOTEBOOK_OUTPUTS.values():
         candidates.append(base / filename)
 
-    # Prefer Hub artefacts when enabled, so deployments do not silently depend
-    # on stale bundled files. Local files remain a fallback for offline work.
+    local_best = best_local_candidate(candidates)
+    if local_best:
+        return local_best
+
     if settings.USE_HF_HUB and hf_hub_download is not None and time.time() >= _HF_DISABLED_UNTIL:
         possible_filenames = [filename]
         if not filename.startswith("streamlit_"):
@@ -352,26 +355,30 @@ def artifact_path(filename: str) -> Path:
                     resume_download=True,
                 )
                 hf_path = Path(downloaded)
-                if not artifact_is_ready(hf_path):
-                    continue
-
-                local_best = best_local_candidate(candidates)
-                if local_best and artifact_quality(local_best) > artifact_quality(hf_path):
-                    return local_best
-                return hf_path
+                if artifact_is_ready(hf_path):
+                    return hf_path
             except Exception as exc:
                 exc_name = exc.__class__.__name__
                 if "EntryNotFound" in exc_name or "RepositoryNotFound" in exc_name:
                     continue
-                # Erreur reseau/SSL : ne pas couper tout le Hub pour les autres fichiers.
                 continue
 
-    # Local fallback for development/offline runs.
-    local_best = best_local_candidate(candidates)
-    if local_best:
-        return local_best
-
     return candidates[0]
+
+
+def artifact_path(filename: str) -> Path:
+    """Chemin artefact : cache uniquement les fichiers deja presents (evite miss fige)."""
+    cached = _ARTIFACT_HIT_CACHE.get(filename)
+    if cached is not None and artifact_is_ready(cached):
+        return cached
+    resolved = _resolve_artifact_path(filename)
+    if artifact_is_ready(resolved):
+        _ARTIFACT_HIT_CACHE[filename] = resolved
+    return resolved
+
+
+def clear_artifact_path_cache() -> None:
+    _ARTIFACT_HIT_CACHE.clear()
 
 
 def artifact_url(filename: str) -> str:

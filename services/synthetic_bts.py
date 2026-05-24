@@ -10,7 +10,6 @@ from config.settings import settings
 from services.calendar_tn import calendar_context, scenario_timestamps
 from services.data_service import load_filtered_main_data, resolve_nb2_seuil_ensemble
 from services.nb_metrics import harmonize_nb3_economies
-from services.sim_inference import clear_inference_cache, enrich_with_pipeline
 
 PROFILE_KEYS_BASE = ["station_id", "heure", "mois", "est_weekend"]
 META_COLS = [
@@ -21,30 +20,56 @@ VALUE_COLS = [
     "consommation_kwh", "conso_predite", "pred_q10", "pred_q90",
     "charge_cpu_pct", "temperature_ambiante", "score_qos",
     "anomalie_score_ensemble", "nb_votes_anomalie",
-    "mode_operation", "action_proposee", "action_rl",
+    "mode_operation", "action_proposee", "action_rl", "action_principale",
     "economie_estimee_kwh", "economie_rl_kwh", "meilleur_agent_rl",
     "ecart_pct", "trafic_data_mbps", "pue", "taux_charge_data", "taux_charge_voix",
+]
+NB_FROM_DASHBOARD = [
+    "conso_predite", "pred_q10", "pred_q90",
+    "anomalie_score_ensemble", "nb_votes_anomalie",
+    "mode_operation", "action_proposee", "action_rl", "action_principale",
+    "economie_estimee_kwh", "economie_rl_kwh", "meilleur_agent_rl",
 ]
 
 
 def clear_synthetic_cache() -> None:
-    _reference_frame.cache_clear()
-    clear_inference_cache()
+    _reference_from_hub.cache_clear()
 
 
-@lru_cache(maxsize=2)
-def _reference_frame() -> pd.DataFrame:
-    cols = list(dict.fromkeys(
+def _ref_columns() -> list[str]:
+    return list(dict.fromkeys(
         ["timestamp", "station_id", "heure", "mois", "est_weekend", "est_ramadan",
          "est_ferie", "est_vendredi", "jour_semaine"] + META_COLS + VALUE_COLS
     ))
-    df = load_filtered_main_data(cols)
+
+
+def _subset_ref_columns(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
-    if "timestamp" in df.columns:
-        df = df.copy()
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-    return df
+    cols = [c for c in _ref_columns() if c in df.columns]
+    out = df[cols].copy() if cols else df.copy()
+    if "timestamp" in out.columns:
+        out["timestamp"] = pd.to_datetime(out["timestamp"], errors="coerce")
+    return out
+
+
+@lru_cache(maxsize=1)
+def _reference_from_hub() -> pd.DataFrame:
+    """Dataset enrichi (Hub) — meme chemin que load_dashboard_df / enrich_dashboard_data."""
+    return _subset_ref_columns(load_filtered_main_data(_ref_columns()))
+
+
+def _reference_frame() -> pd.DataFrame:
+    """Priorite au dataframe deja charge par le dashboard (session), sinon Hub."""
+    try:
+        import streamlit as st
+
+        cached = st.session_state.get("_dashboard_df")
+        if isinstance(cached, pd.DataFrame) and not cached.empty:
+            return _subset_ref_columns(cached)
+    except Exception:
+        pass
+    return _reference_from_hub()
 
 
 def _profile_keys(ref: pd.DataFrame) -> list[str]:
@@ -133,70 +158,49 @@ def _pick_profile(
     return _fallback_profile(ref, station_id, heure, mois, est_weekend)
 
 
-def _calendar_scale(ctx: dict, heure: int) -> float:
-    scale = 1.0
-    if ctx.get("est_ramadan"):
-        scale *= 0.94 if 0 <= heure <= 6 or heure >= 22 else 0.97
-    if ctx.get("est_ferie"):
-        scale *= 0.88
-    if ctx.get("est_vendredi") and 11 <= heure <= 14:
-        scale *= 1.03
-    if ctx.get("est_weekend"):
-        scale *= 0.92 if 9 <= heure <= 18 else 0.96
-    return scale
-
-
 def _apply_decision_rules(
     row: dict,
     seuil: float,
     qos_seuil: float,
-    anomaly_sensitivity: float = 1.0,
+    anomaly_sensitivity: float,
 ) -> dict:
-    sens = anomaly_sensitivity if anomaly_sensitivity > 0 else 1.0
-    effective_seuil = seuil / sens
-    score = float(row.get("anomalie_score_ensemble") or 0)
-    qos = float(row.get("score_qos") or 0)
-    heure = int(row.get("heure") or 0)
-    conso = float(row.get("consommation_kwh") or 0)
+    from services.nb3_runtime import apply_nb3_decisions
 
-    action = "maintien"
-    mode = "NORMAL"
-    eco_est = 0.0
-    eco_rl = 0.0
+    df = pd.DataFrame([row])
+    out = apply_nb3_decisions(
+        df,
+        qos_seuil=qos_seuil,
+        anomaly_seuil=float(seuil or 0.15) * float(anomaly_sensitivity or 1.0),
+    )
+    return out.iloc[0].to_dict()
 
-    if score >= effective_seuil * 2.4 and qos < qos_seuil:
-        mode = "CRITIQUE"
-        action = "alerte_qos"
-    elif score >= effective_seuil and qos >= qos_seuil:
-        mode = "ATTENTION"
-        action = "aucune_action"
-    elif score >= effective_seuil and qos < qos_seuil:
-        mode = "CRITIQUE"
-        action = "intervention"
-    elif heure <= 5 or heure >= 23:
-        mode = "ECO"
-        action = "reduction_puissance"
-        eco_est = min(conso * 0.12, conso)
-        eco_rl = eco_est
-    elif heure >= 10 and heure <= 16 and score < effective_seuil * 0.6:
-        mode = "ECO"
-        action = "mode_eco"
-        eco_est = min(conso * 0.08, conso)
-        eco_rl = eco_est * 0.95
-    elif score >= effective_seuil * 1.4:
-        mode = "ATTENTION"
-        action = "reduction_puissance"
-        eco_est = min(conso * 0.06, conso)
-        eco_rl = eco_est
 
-    row["mode_operation"] = mode
-    row["action_proposee"] = action
-    row["action_rl"] = action
-    row["action_principale"] = action
-    row["economie_estimee_kwh"] = eco_est
-    row["economie_rl_kwh"] = eco_rl
-    row["meilleur_agent_rl"] = row.get("meilleur_agent_rl") or "PPO"
-    return row
+def _apply_decision_rules_batch(
+    df: pd.DataFrame,
+    seuil: float,
+    qos_seuil: float,
+    anomaly_sensitivity: float,
+) -> pd.DataFrame:
+    rows = [
+        _apply_decision_rules(r.to_dict(), seuil, qos_seuil, anomaly_sensitivity)
+        for _, r in df.iterrows()
+    ]
+    return pd.DataFrame(rows)
+
+
+def _calendar_scale(ctx: dict, hour: int) -> float:
+    scale = 1.0
+    if ctx.get("est_ramadan"):
+        scale *= 0.92
+    if ctx.get("est_ferie"):
+        scale *= 0.88
+    if ctx.get("est_weekend"):
+        scale *= 0.95
+    if hour <= 5 or hour >= 23:
+        scale *= 0.85
+    elif 12 <= hour <= 14:
+        scale *= 1.05
+    return scale
 
 
 def _jitter(value: float, pct: float = 0.04, seed: int = 0) -> float:
@@ -206,13 +210,53 @@ def _jitter(value: float, pct: float = 0.04, seed: int = 0) -> float:
     return float(value * (1.0 + rng.uniform(-pct, pct)))
 
 
+def _apply_dashboard_nb_row(row: dict, base: dict, *, seed: int) -> dict:
+    """NB1/NB2/NB3 : colonnes deja fusionnees par enrich_dashboard_data (Hub)."""
+    conso = float(row["consommation_kwh"])
+    pred_raw = base.get("conso_predite")
+    if pred_raw is None or (isinstance(pred_raw, float) and pd.isna(pred_raw)):
+        pred_raw = base.get("consommation_kwh", conso)
+    pred = _jitter(float(pred_raw), seed=seed + 1)
+    row["conso_predite"] = pred
+
+    for col in NB_FROM_DASHBOARD:
+        if col == "conso_predite":
+            continue
+        if col in base and pd.notna(base.get(col)):
+            val = base[col]
+            if col in ("pred_q10", "pred_q90") and pd.notna(val):
+                row[col] = float(val)
+            elif col in (
+                "anomalie_score_ensemble", "nb_votes_anomalie",
+                "economie_estimee_kwh", "economie_rl_kwh",
+            ):
+                row[col] = val
+            else:
+                row[col] = val
+
+    if "pred_q10" not in row or pd.isna(row.get("pred_q10")):
+        row["pred_q10"] = pred * 0.9
+    if "pred_q90" not in row or pd.isna(row.get("pred_q90")):
+        row["pred_q90"] = pred * 1.1
+
+    row["ecart_pct"] = ((conso - pred) / pred * 100) if pred else 0.0
+    if "anomalie_score_ensemble" not in row:
+        row["anomalie_score_ensemble"] = float(base.get("anomalie_score_ensemble") or 0.05)
+    if "nb_votes_anomalie" not in row:
+        row["nb_votes_anomalie"] = int(base.get("nb_votes_anomalie") or 0)
+
+    has_nb3 = bool(base.get("mode_operation")) and pd.notna(base.get("mode_operation"))
+    row["source_decision_nb3"] = "NB3" if has_nb3 else "scenario"
+    row["inference_pipeline"] = "dashboard_hf"
+    return row
+
+
 def hourly_snapshot(
     target_date: date,
     hour: int,
     station_ids: list[str],
     *,
     anomaly_sensitivity: float = 1.0,
-    use_ml: bool = True,
 ) -> pd.DataFrame:
     ref = _reference_frame()
     if not station_ids:
@@ -240,9 +284,6 @@ def hourly_snapshot(
         seed = hash((str(sid), target_date.isoformat(), hour)) % (2**31)
         scale = _calendar_scale(ctx, hour)
         conso = _jitter(float(base.get("consommation_kwh") or 8.0) * scale, seed=seed)
-        profile_pred = _jitter(float(base.get("conso_predite") or conso) * scale, seed=seed + 1)
-
-        score_qos = float(base.get("score_qos") or 0.85)
 
         row = {
             "timestamp": ts,
@@ -250,81 +291,33 @@ def hourly_snapshot(
             "heure": hour,
             **ctx,
             "consommation_kwh": conso,
-            "_profile_pred": profile_pred,
-            "score_qos": score_qos,
+            "score_qos": float(base.get("score_qos") or 0.85),
             "taux_charge_voix": float(base.get("taux_charge_voix") or 0.5),
             "taux_charge_data": float(base.get("taux_charge_data") or 0.5),
             "trafic_data_mbps": float(base.get("trafic_data_mbps") or 100),
             "charge_cpu_pct": float(base.get("charge_cpu_pct") or 40),
             "temperature_ambiante": float(base.get("temperature_ambiante") or 22),
-            "source_decision_nb3": "scenario",
-            "inference_pipeline": "nb1_nb2_nb3",
         }
         for col in ("gouvernorat", "technologie", "type_zone", "latitude", "longitude"):
             if col in base and pd.notna(base.get(col)):
                 row[col] = base[col]
+
+        row = _apply_dashboard_nb_row(row, base, seed=seed)
         rows.append(row)
 
     out = pd.DataFrame(rows)
-    if use_ml and not out.empty:
-        enriched = enrich_with_pipeline(out)
-        has_pred = (
-            not enriched.empty
-            and "conso_predite" in enriched.columns
-            and enriched["conso_predite"].notna().any()
-        )
-        if has_pred:
-            out = enriched
-            if "source_decision_nb3" not in out.columns:
-                out["source_decision_nb3"] = "nb1_nb2_nb3"
-            out["inference_pipeline"] = "nb1_nb2_nb3_lgbm"
-        else:
-            out = _fill_fallback_predictions(out)
-            out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
-            out["source_decision_nb3"] = "scenario_rules"
-            out["inference_pipeline"] = "profil_historique"
-    else:
-        out = _fill_fallback_predictions(out)
+    if out.empty:
+        return out
+
+    needs_rules = (
+        "mode_operation" not in out.columns
+        or out["mode_operation"].isna().all()
+    )
+    if needs_rules:
         out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
-        out["inference_pipeline"] = "profil_historique"
-    out = out.drop(columns=["_profile_pred"], errors="ignore")
+        out["source_decision_nb3"] = "scenario_rules"
+
     return harmonize_nb3_economies(out)
-
-
-def _fill_fallback_predictions(df: pd.DataFrame) -> pd.DataFrame:
-    """Repli sans LGBM : prédit = profil historique (pas une copie du réel simulé)."""
-    if df.empty:
-        return df
-    out = df.copy()
-    conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
-    if "_profile_pred" in out.columns:
-        out["conso_predite"] = pd.to_numeric(out["_profile_pred"], errors="coerce")
-    elif "conso_predite" not in out.columns:
-        out["conso_predite"] = conso * 0.97
-    pred = pd.to_numeric(out["conso_predite"], errors="coerce")
-    if "pred_q10" not in out.columns:
-        out["pred_q10"] = pred * 0.9
-    if "pred_q90" not in out.columns:
-        out["pred_q90"] = pred * 1.1
-    out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
-    if "anomalie_score_ensemble" not in out.columns:
-        out["anomalie_score_ensemble"] = 0.05
-    if "nb_votes_anomalie" not in out.columns:
-        out["nb_votes_anomalie"] = 0
-    return out
-
-
-def _apply_decision_rules_batch(
-    df: pd.DataFrame,
-    seuil: float,
-    qos_seuil: float,
-    anomaly_sensitivity: float,
-) -> pd.DataFrame:
-    rows = [
-        _apply_decision_rules(r.to_dict(), seuil, qos_seuil, anomaly_sensitivity)
-        for _, r in df.iterrows()
-    ]
-    return pd.DataFrame(rows)
 
 
 def generate_period(
@@ -334,14 +327,12 @@ def generate_period(
     station_ids: list[str],
     *,
     anomaly_sensitivity: float = 1.0,
-    use_ml: bool = True,
 ) -> pd.DataFrame:
     frames = []
     for ts in scenario_timestamps(start_date, start_hour, num_days):
         batch = hourly_snapshot(
             ts.date(), ts.hour, station_ids,
             anomaly_sensitivity=anomaly_sensitivity,
-            use_ml=use_ml,
         )
         if not batch.empty:
             frames.append(batch)
