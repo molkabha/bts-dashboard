@@ -363,17 +363,33 @@ def run_full_period(
     start_hour: int,
     num_days: int,
 ) -> None:
+    if not selected_stations:
+        return
+    stamps = scenario_timestamps(sim_base_date, start_hour, num_days)
     processed = generate_period(sim_base_date, start_hour, num_days, selected_stations)
     if processed.empty:
         return
     max_rows = max(72, 24 * num_days) * len(selected_stations)
     st.session_state["sim_data"] = harmonize_nb3_economies(processed).tail(max_rows)
-    st.session_state["sim_tick"] = (
-        len(processed["timestamp"].drop_duplicates()) if "timestamp" in processed.columns else 0
+    n_hours = (
+        len(processed["timestamp"].drop_duplicates())
+        if "timestamp" in processed.columns
+        else len(stamps)
     )
+    st.session_state["sim_total_ticks"] = len(stamps)
+    st.session_state["sim_tick"] = n_hours
     st.session_state["sim_running"] = False
+    st.session_state["sim_paused"] = False
     st.session_state["sim_schema_version"] = SIM_SCHEMA_VERSION
     record_events(processed)
+
+
+def run_full_day(
+    selected_stations: list[str],
+    sim_base_date: date,
+) -> None:
+    """Calcule les 24 heures (00h-23h) de la date selectionnee."""
+    run_full_period(selected_stations, sim_base_date, start_hour=0, num_days=1)
 
 
 def reset_simulation() -> None:
