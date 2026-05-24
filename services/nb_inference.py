@@ -365,14 +365,53 @@ def _nb3_component_usable(obj: Any, method: str) -> bool:
     return callable(fn)
 
 
+_RL_ECO_FRAC: dict[str, float] = {
+    "sleep_mode_secteur": 0.40,
+    "reduction_puissance": 0.08,
+    "free_cooling": 0.12,
+    "eco_calendaire": 0.03,
+    "optimisation_adaptative": 0.03,
+}
+
+
+def _cap_rl_economie_to_conso(df: pd.DataFrame, max_frac: float = 0.48) -> pd.DataFrame:
+    if df.empty or "economie_rl_kwh" not in df.columns or "consommation_kwh" not in df.columns:
+        return df
+    out = df.copy()
+    conso = pd.to_numeric(out["consommation_kwh"], errors="coerce").fillna(0.0)
+    rl = pd.to_numeric(out["economie_rl_kwh"], errors="coerce").fillna(0.0)
+    out["economie_rl_kwh"] = np.minimum(rl, conso * max_frac)
+    return out
+
+
+def _fill_rl_economie_from_actions(df: pd.DataFrame) -> pd.DataFrame:
+    """Estime economie_rl_kwh depuis action_rl si le parquet RL est absent (NB3 RL)."""
+    if df.empty or "consommation_kwh" not in df.columns or "action_rl" not in df.columns:
+        return df
+    out = df.copy()
+    conso = pd.to_numeric(out["consommation_kwh"], errors="coerce").fillna(0.0)
+    if "economie_rl_kwh" not in out.columns:
+        out["economie_rl_kwh"] = 0.0
+    rl_eco = pd.to_numeric(out["economie_rl_kwh"], errors="coerce").fillna(0.0)
+    need = rl_eco.le(0)
+    if not need.any():
+        return _cap_rl_economie_to_conso(out)
+    actions = out["action_rl"].astype(str).str.strip().str.lower()
+    for action, frac in _RL_ECO_FRAC.items():
+        mask = need & actions.eq(action)
+        if mask.any():
+            out.loc[mask, "economie_rl_kwh"] = conso.loc[mask] * frac
+    return _cap_rl_economie_to_conso(out)
+
+
 def _merge_nb3_rl_profile(df: pd.DataFrame) -> pd.DataFrame:
-    """Profil station x heure : economies / actions RL depuis streamlit_data (export NB3)."""
+    """Profil station x heure : actions RL depuis streamlit_data (pas les kWh historiques bruts)."""
     if df.empty or "heure" not in df.columns or "station_id" not in df.columns:
         return df
     path = _local_parquet_path("streamlit_data.parquet")
     if path is None:
         return df
-    cols = ["station_id", "heure", "economie_rl_kwh", "action_rl", "meilleur_agent_rl"]
+    cols = ["station_id", "heure", "action_rl", "meilleur_agent_rl"]
     try:
         src = read_parquet_fast(path, cols)
     except Exception:
@@ -385,8 +424,6 @@ def _merge_nb3_rl_profile(df: pd.DataFrame) -> pd.DataFrame:
     work["heure"] = pd.to_numeric(work["heure"], errors="coerce")
     work = work.dropna(subset=["heure"])
     agg: dict[str, str] = {}
-    if "economie_rl_kwh" in work.columns:
-        agg["economie_rl_kwh"] = "mean"
     if "action_rl" in work.columns:
         agg["action_rl"] = "last"
     if "meilleur_agent_rl" in work.columns:
@@ -442,7 +479,7 @@ def _merge_nb3_decisions(df: pd.DataFrame) -> pd.DataFrame:
     has = merged.get("action_rl", pd.Series(dtype=object)).notna()
     if has.any():
         merged.loc[has, "source_decision_nb3"] = "decisions_par_station"
-    return merged
+    return _cap_rl_economie_to_conso(merged)
 
 
 def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None) -> pd.DataFrame:
@@ -497,6 +534,7 @@ def _apply_nb3_moteur_strategie(df: pd.DataFrame, bundle: dict[str, Any] | None)
     out = _normalize_nb3_action_labels(out)
     out = _merge_nb3_decisions(out)
     out = _merge_nb3_rl_profile(out)
+    out = _fill_rl_economie_from_actions(out)
 
     from ui.formatting import is_no_named_action
 
@@ -600,20 +638,26 @@ def run_nb_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     bundle = load_pipeline_bundle()
     out = df.copy()
     feat_rows = build_nb1_feature_rows(out)
-    if feat_rows.empty:
-        return out
 
-    preds, q10, q90 = _predict_nb1(feat_rows, bundle)
-    out["conso_predite"] = preds
-    out["pred_q10"] = q10
-    out["pred_q90"] = q90
+    if not feat_rows.empty:
+        preds, q10, q90 = _predict_nb1(feat_rows, bundle)
+        out["conso_predite"] = preds
+        out["pred_q10"] = q10
+        out["pred_q90"] = q90
+        scores, votes = _predict_nb2(out, bundle, feat_rows)
+        out["anomalie_score_ensemble"] = scores.values
+        out["nb_votes_anomalie"] = votes.values.astype(int)
+    else:
+        out = _merge_nb2_profile_scores(out)
+        if "anomalie_score_ensemble" not in out.columns:
+            scores, votes = _predict_nb2(out, bundle, None)
+            out["anomalie_score_ensemble"] = scores.values
+            out["nb_votes_anomalie"] = votes.values.astype(int)
+
     conso = pd.to_numeric(out["consommation_kwh"], errors="coerce")
-    pred = pd.to_numeric(out["conso_predite"], errors="coerce")
-    out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
-
-    scores, votes = _predict_nb2(out, bundle, feat_rows)
-    out["anomalie_score_ensemble"] = scores.values
-    out["nb_votes_anomalie"] = votes.values.astype(int)
+    pred = pd.to_numeric(out.get("conso_predite"), errors="coerce")
+    if pred is not None and pred.notna().any():
+        out["ecart_pct"] = ((conso - pred) / pred.replace(0, pd.NA) * 100).fillna(0)
 
     out = _apply_nb3_moteur_strategie(out, bundle)
     if bundle and bundle.get("best_agent_name"):

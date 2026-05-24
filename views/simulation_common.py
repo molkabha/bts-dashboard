@@ -18,7 +18,11 @@ from config.theme import (
 )
 from services.calendar_tn import calendar_label, scenario_timestamps
 from services.data_service import engineer_assigned_stations, init_db
-from services.nb_metrics import effective_economie_kwh, harmonize_nb3_economies
+from services.nb_metrics import (
+    conso_optimisee_kwh_series,
+    effective_economie_kwh,
+    harmonize_nb3_economies,
+)
 from services.simulation_events import (
     classify_tick_rows,
     events_to_dataframe,
@@ -573,8 +577,10 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
         st.caption("Aucune donnee pour cette station.")
         return
 
+    hist = harmonize_nb3_economies(hist)
     hist["conso"] = _num(hist, "consommation_kwh", 0)
     hist["eco"] = effective_economie_kwh(hist)
+    hist["conso_opt"] = conso_optimisee_kwh_series(hist)
     hist["pred"] = (
         pd.to_numeric(hist["conso_predite"], errors="coerce")
         if "conso_predite" in hist.columns
@@ -587,6 +593,7 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
     agg_spec: dict = {
         "conso": ("conso", "sum"),
         "eco": ("eco", "sum"),
+        "conso_opt": ("conso_opt", "sum"),
         "pred": ("pred", "sum"),
     }
     if "pred_q10" in hist.columns:
@@ -611,7 +618,7 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
             showlegend=True,
         ))
     fig.add_trace(go.Scatter(
-        x=agg["timestamp"], y=agg["conso"] - agg["eco"], name=label_opt, line=dict(color="#059669"),
+        x=agg["timestamp"], y=agg["conso_opt"], name=label_opt, line=dict(color="#059669"),
     ))
     fig.add_trace(go.Scatter(
         x=agg["timestamp"],

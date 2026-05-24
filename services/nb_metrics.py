@@ -133,6 +133,7 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
     if "consommation_kwh" in out.columns:
         conso = numeric_series(out, "consommation_kwh", np.nan)
         out["economie_kwh"] = np.where(conso > 0, np.minimum(out["economie_kwh"], conso), out["economie_kwh"])
+        out["conso_optimisee_kwh"] = np.maximum(conso - numeric_series(out, "economie_kwh", 0.0), 0.0)
 
     if "action_proposee" in out.columns:
         if "action_rl" not in out.columns:
@@ -159,3 +160,15 @@ def effective_economie_kwh(df: pd.DataFrame) -> pd.Series:
         return pd.Series(dtype=float)
     harmonized = harmonize_nb3_economies(df)
     return numeric_series(harmonized, "economie_kwh", 0.0)
+
+
+def conso_optimisee_kwh_series(df: pd.DataFrame) -> pd.Series:
+    """Conso apres optimisation NB3 (expert + RL, plafonnee) — aligne page Optimisation."""
+    if df.empty:
+        return pd.Series(dtype=float)
+    harmonized = harmonize_nb3_economies(df)
+    if "conso_optimisee_kwh" in harmonized.columns:
+        return numeric_series(harmonized, "conso_optimisee_kwh", 0.0)
+    conso = numeric_series(harmonized, "consommation_kwh", 0.0)
+    eco = effective_economie_kwh(harmonized)
+    return np.maximum(conso - eco, 0.0)

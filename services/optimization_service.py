@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 
@@ -7,6 +8,9 @@ class StrategieOptimisation:
     """Strategies d'economie NB3 (sleep, reduction, free cooling, alertes)."""
 
     ECO_SLEEP_PAR_TECHNO = {"2G": 0.062, "3G": 1.608, "4G": 1.845, "4G+": 2.040}
+    # Plafond horaire : evite economie >= conso (courbe optimisee a 0 en simulation).
+    MAX_ECO_FRAC_DEFAULT = 0.42
+    MAX_ECO_FRAC_SLEEP = 0.48
 
     def _col(self, df: pd.DataFrame, col: str, default):
         if col in df.columns:
@@ -33,9 +37,12 @@ class StrategieOptimisation:
             & (self._col(df, "score_qos", 1) > 0.70)
         )
         df.loc[peut_sleep, "action_proposee"] = "sleep_mode_secteur"
-        df.loc[peut_sleep, "economie_estimee_kwh"] = technologie.loc[peut_sleep].map(
-            self.ECO_SLEEP_PAR_TECHNO,
-        ).fillna(0.5)
+        sleep_ref = technologie.loc[peut_sleep].map(self.ECO_SLEEP_PAR_TECHNO).fillna(0.5)
+        sleep_cap = conso.loc[peut_sleep] * self.MAX_ECO_FRAC_SLEEP
+        df.loc[peut_sleep, "economie_estimee_kwh"] = np.minimum(
+            sleep_ref.to_numpy(dtype=float),
+            sleep_cap.to_numpy(dtype=float),
+        )
 
         peut_reduire = (
             (qos_ok == 1)
@@ -78,4 +85,9 @@ class StrategieOptimisation:
         )
         df.loc[critique, "action_proposee"] = "alerte_noc_prioritaire"
         df.loc[critique, "economie_estimee_kwh"] = 0.0
+
+        eco = pd.to_numeric(df["economie_estimee_kwh"], errors="coerce").fillna(0.0)
+        is_sleep = df["action_proposee"].eq("sleep_mode_secteur")
+        max_frac = np.where(is_sleep, self.MAX_ECO_FRAC_SLEEP, self.MAX_ECO_FRAC_DEFAULT)
+        df["economie_estimee_kwh"] = np.minimum(eco, conso * max_frac)
         return df
