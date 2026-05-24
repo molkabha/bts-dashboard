@@ -5,10 +5,11 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from config.settings import settings
 from security.middleware import security_middleware
-from services.nb_metrics import effective_economie_kwh
-from ui.components import header, section
+from services.calendar_tn import calendar_label
+from services.data_service import init_db
+from services.simulation_events import persist_alert_ack
+from ui.components import header
 from ui.formatting import display_text, resolve_row_action
 from ui.page_helpers import mode_explanation
 from ui.utils import active_filter_label, download_df_button
@@ -16,36 +17,42 @@ from ui.utils import active_filter_label, download_df_button
 from views import simulation_common as sim
 from views import simulation_ui as ui
 
-VIEWS = ["Suivi", "Alertes", "Decisions", "Carte"]
+
+def _unack_alerts_count() -> int:
+    acked = st.session_state.get("sim_ack_refs", set())
+    return sum(
+        1 for a in (st.session_state.get("sim_alerts") or [])
+        if a.get("alert_ref") not in acked
+    )
 
 
-def _sidebar_controls(stations: list[str]) -> list[str]:
-    st.markdown('<div class="sim-sidebar-box">', unsafe_allow_html=True)
-
-    ui.sidebar_label("Parc")
+def _toolbar(stations: list[str]) -> list[str]:
     sim.init_sim_stations(stations)
-    st.multiselect("Stations", stations, key="sim_stations", label_visibility="collapsed")
+    c1, c2, c3, c4 = st.columns([2.2, 1, 0.7, 1.6])
+    with c1:
+        st.multiselect("Stations a simuler", stations, key="sim_stations")
+    with c2:
+        st.date_input("Date", value=datetime.now().date(), key="sim_date")
+    with c3:
+        st.selectbox(
+            "Debut",
+            list(range(24)),
+            format_func=lambda h: f"{h:02d}h",
+            key="sim_start_hour",
+        )
+    with c4:
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            start = st.button("Demarrer", type="primary", use_container_width=True)
+        with b2:
+            step = st.button("+1 h", use_container_width=True)
+        with b3:
+            stop = st.button("Stop", use_container_width=True)
+
     selected = sim.resolve_selected_stations(stations)
+    base_date, start_hour, num_days = sim.sim_params()
 
-    ui.sidebar_divider()
-    ui.sidebar_label("Scenario")
-    st.date_input("Date", value=datetime.now().date(), key="sim_date", label_visibility="collapsed")
-    st.slider("Heure de debut", 0, 23, int(st.session_state.get("sim_start_hour", 0)), key="sim_start_hour")
-    st.slider("Duree (jours)", 1, 7, int(st.session_state.get("sim_num_days", 1)), key="sim_num_days")
-
-    ui.sidebar_divider()
-    ui.sidebar_label("Avancement")
-    st.select_slider("Pas", options=[1, 2, 5], value=2, key="sim_speed", label_visibility="visible")
-    st.slider("Sensibilite anomalies", 0.5, 2.0, sim.sensitivity(), 0.1, key="sim_anomaly_sensitivity")
-    st.checkbox("Lecture auto", key="sim_auto")
-    if st.session_state.get("sim_auto"):
-        st.slider("Intervalle (s)", 1, 10, int(st.session_state.get("sim_auto_interval", 3)), key="sim_auto_interval")
-
-    ui.sidebar_divider()
-    ui.sidebar_label("Actions")
-    sim_base_date, start_hour, num_days = sim.sim_params()
-
-    if st.button("Lancer", type="primary", use_container_width=True):
+    if start:
         st.session_state.update({
             "sim_running": True,
             "sim_tick": 0,
@@ -55,138 +62,176 @@ def _sidebar_controls(stations: list[str]) -> list[str]:
             "sim_ack_refs": set(),
             "sim_advance": True,
         })
-        st.session_state["sim_total_ticks"] = sim.total_ticks(sim_base_date, start_hour, num_days)
+        st.session_state["sim_total_ticks"] = sim.total_ticks(base_date, start_hour, num_days)
+        st.rerun()
+    if step and st.session_state.get("sim_running"):
+        st.session_state["sim_advance"] = True
+        st.rerun()
+    if stop:
+        sim.reset_simulation()
         st.rerun()
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Avancer", use_container_width=True) and st.session_state.get("sim_running"):
-            st.session_state["sim_advance"] = True
-            st.rerun()
-    with c2:
-        if st.button("Reset", use_container_width=True):
-            sim.reset_simulation()
-            st.rerun()
-
-    if st.button("Periode complete", use_container_width=True):
-        sim.run_full_period(selected, sim_base_date, start_hour, num_days)
-        st.rerun()
-
-    total = int(st.session_state.get("sim_total_ticks") or 0)
-    tick = int(st.session_state.get("sim_tick", 0))
-    if total > 0:
-        st.progress(min(1.0, tick / max(total, 1)))
-
-    export = st.session_state.get("sim_data")
-    if isinstance(export, pd.DataFrame) and not export.empty:
-        download_df_button(export, "simulation.csv", "Exporter")
-
-    st.markdown("</div>", unsafe_allow_html=True)
     return selected
 
 
-def _metrics_strip(selected: list[str]) -> None:
-    sim_data, latest_all, latest_ts, sim_base_date = sim.latest_snapshot()
-    conso = 0.0
-    eco = 0.0
-    if not latest_all.empty:
-        conso = float(sim._num(latest_all, "consommation_kwh", 0).sum())
-        eco = float(effective_economie_kwh(latest_all).sum()) * settings.PRIX_KWH_TN
-    ui.kpi_strip(
-        bool(st.session_state.get("sim_running")),
-        int(st.session_state.get("sim_tick", 0)),
-        int(st.session_state.get("sim_total_ticks") or 0),
-        len(st.session_state.get("sim_alerts", [])),
-        len(st.session_state.get("sim_decisions", [])),
-        conso,
-        eco,
-    )
+def _ops_table(latest: pd.DataFrame) -> pd.DataFrame:
+    if latest.empty:
+        return pd.DataFrame()
+    t = latest.copy()
+    t["Station"] = t["station_id"].astype(str)
+    t["Mode"] = t.get("mode_operation", "NORMAL").astype(str)
+    t["Conso (kWh)"] = sim._num(t, "consommation_kwh", 0).round(2)
+    t["QoS"] = sim._num(t, "score_qos", 0).round(2)
+    t["Anomalie"] = sim._num(t, "anomalie_score_ensemble", 0).round(2)
+    t["Action"] = t.apply(lambda r: resolve_row_action(r, prefer_rl=True), axis=1)
+    return t[["Station", "Mode", "Conso (kWh)", "QoS", "Anomalie", "Action"]]
 
 
-def _view_suivi(selected: list[str]) -> None:
-    sim_data, latest_all, latest_ts, sim_base_date = sim.latest_snapshot()
-    if latest_all.empty:
-        ui.empty_state(
-            "Aucune donnee",
-            "Choisissez vos stations a gauche, puis cliquez sur Lancer.",
-        )
-        return
+def _render_journal(selected: list[str], latest_ts) -> None:
+    alerts = st.session_state.get("sim_alerts", [])
+    decisions = st.session_state.get("sim_decisions", [])
+    acked = st.session_state.get("sim_ack_refs", set())
 
-    focus_choices = [s for s in selected if s in set(latest_all["station_id"].astype(str))]
-    if not focus_choices:
-        focus_choices = sim.clean_station_list(latest_all["station_id"].unique())
+    pending = [a for a in alerts if a.get("alert_ref") not in acked]
+    if pending:
+        st.markdown("**Alertes a verifier**")
+        for item in pending[-6:]:
+            st.warning(f"**{item.get('station_id')}** — {item.get('message', '')}")
+            ref = item.get("alert_ref", "")
+            x1, x2 = st.columns(2)
+            with x1:
+                if st.button("Acquitter", key=f"aok_{ref}", use_container_width=True):
+                    user = st.session_state.get("username") or st.session_state.get("user", "")
+                    init_db()
+                    persist_alert_ack(user, str(item.get("station_id")), ref, "acquitte")
+                    acked.add(ref)
+                    st.session_state["sim_ack_refs"] = acked
+                    st.rerun()
+            with x2:
+                if st.button("Faux positif", key=f"afp_{ref}", use_container_width=True):
+                    user = st.session_state.get("username") or st.session_state.get("user", "")
+                    init_db()
+                    persist_alert_ack(user, str(item.get("station_id")), ref, "faux_positif")
+                    acked.add(ref)
+                    st.session_state["sim_ack_refs"] = acked
+                    st.rerun()
+    else:
+        st.caption("Aucune alerte en attente.")
 
-    top_l, top_r = st.columns([1, 1.2])
-    with top_l:
-        ui.hero_time(latest_ts, sim_base_date)
-    with top_r:
-        focus = focus_choices[0] if len(focus_choices) == 1 else st.selectbox(
-            "Station", focus_choices, key="sim_focus_station", label_visibility="collapsed",
-        )
-        row = sim.row_by_station(latest_all, focus)
-        ui.render_decision_card(row, resolve_row_action(row, prefer_rl=False), mode_explanation(row))
-
-    chart_col, table_col = st.columns([1.55, 1])
-    with chart_col:
-        with section("Consommation horaire"):
-            sim.build_chart(sim_data, sim.plot_template(), focus if len(selected) > 1 else None)
-    with table_col:
-        with section("Stations"):
-            sim.render_station_table(latest_all)
-
-
-def _view_alertes(selected: list[str]) -> None:
-    _, _, latest_ts, _ = sim.latest_snapshot()
-    sim.render_alerts_panel(latest_ts, selected)
-
-
-def _view_decisions(selected: list[str]) -> None:
-    _, _, latest_ts, _ = sim.latest_snapshot()
-    sim.render_decisions_panel(latest_ts, selected)
-
-
-def _view_carte() -> None:
-    _, latest_all, _, _ = sim.latest_snapshot()
-    if latest_all.empty:
-        ui.empty_state("Carte vide", "Lancez la simulation pour afficher les modes sur la carte.")
-        return
-    sim.render_mini_map(latest_all)
+    if decisions:
+        st.markdown("**Actions appliquees**")
+        df = pd.DataFrame(decisions).tail(20)
+        if "timestamp" in df.columns:
+            df["timestamp"] = pd.to_datetime(df["timestamp"]).dt.strftime("%d/%m %H:%M")
+        show = df[["timestamp", "station_id", "action", "message"]].rename(columns={
+            "timestamp": "Heure",
+            "station_id": "Station",
+            "action": "Action",
+            "message": "Detail",
+        })
+        st.dataframe(show, use_container_width=True, hide_index=True)
+    else:
+        st.caption("Aucune action enregistree pour l instant.")
 
 
 def page_simulation():
     security_middleware.enforce()
-    header("Simulation", "Scenario energetique par date et suivi operationnel")
+    header(
+        "Simulation",
+        "Parc BTS a une date donnee, heure par heure",
+    )
     st.caption(active_filter_label())
     sim.maybe_autorefresh()
 
     role = st.session_state.get("role", "")
     stations = sim.station_options(role)
     if not stations:
-        st.warning("Aucune station assignee.")
+        st.warning("Aucune station disponible sur votre perimetre.")
         return
 
-    col_side, col_main = st.columns([1, 2.85], gap="large")
+    selected = _toolbar(stations)
 
-    with col_side:
-        selected = _sidebar_controls(stations)
+    with st.expander("Options avancees", expanded=False):
+        o1, o2, o3 = st.columns(3)
+        with o1:
+            st.slider("Duree (jours)", 1, 7, int(st.session_state.get("sim_num_days", 1)), key="sim_num_days")
+            st.select_slider("Pas", [1, 2, 5], value=2, key="sim_speed")
+        with o2:
+            st.slider("Sensibilite anomalies", 0.5, 2.0, sim.sensitivity(), 0.1, key="sim_anomaly_sensitivity")
+        with o3:
+            st.checkbox("Avance automatique", key="sim_auto")
+            if st.session_state.get("sim_auto"):
+                st.slider("Intervalle (s)", 1, 10, int(st.session_state.get("sim_auto_interval", 3)), key="sim_auto_interval")
+        if st.button("Calculer toute la journee", use_container_width=True):
+            d, h, n = sim.sim_params()
+            sim.run_full_period(selected, d, h, n)
+            st.rerun()
+        export = st.session_state.get("sim_data")
+        if isinstance(export, pd.DataFrame) and not export.empty:
+            download_df_button(export, "simulation.csv", "Telecharger les donnees")
 
-    with col_main:
-        sim.process_tick(selected)
-        _metrics_strip(selected)
+    sim.process_tick(selected)
 
-        view = st.radio(
-            "Affichage",
-            VIEWS,
-            horizontal=True,
-            key="sim_view",
-            label_visibility="collapsed",
+    _, latest, latest_ts, sim_date = sim.latest_snapshot()
+    if latest.empty:
+        ui.empty_state(
+            "Pret a demarrer",
+            "Selectionnez vos stations, la date et l heure de debut, puis cliquez sur Demarrer. "
+            "Utilisez +1 h pour avancer dans la journee.",
+        )
+        return
+
+    hour_label = pd.Timestamp(latest_ts).strftime("%H:%M") if latest_ts is not None else "—"
+    tick = int(st.session_state.get("sim_tick", 0))
+    total = int(st.session_state.get("sim_total_ticks") or 0)
+    n_alert = _unack_alerts_count()
+
+    st.info(
+        f"**{hour_label}** · {calendar_label(sim_date)} · "
+        f"{len(selected)} station(s) · progression {tick}/{total}" if total else
+        f"**{hour_label}** · {calendar_label(sim_date)} · {len(selected)} station(s)"
+    )
+    if total > 0:
+        st.progress(min(1.0, tick / max(total, 1)))
+
+    conso = float(sim._num(latest, "consommation_kwh", 0).sum())
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Heure simulee", hour_label)
+    m2.metric("Consommation reseau", f"{conso:.1f} kWh")
+    m3.metric("Alertes ouvertes", str(n_alert))
+
+    st.subheader("Etat du parc")
+    table = _ops_table(latest)
+    st.dataframe(
+        table,
+        use_container_width=True,
+        hide_index=True,
+        height=min(56 + 36 * len(table), 400),
+    )
+
+    station_ids = table["Station"].tolist() if not table.empty else []
+    if station_ids:
+        pick = st.selectbox("Detail d une station", station_ids, key="sim_detail_station")
+        row = sim.row_by_station(latest, pick)
+        ui.decision_block(
+            pick,
+            display_text(row.get("mode_operation"), "NORMAL"),
+            resolve_row_action(row, prefer_rl=False),
+            mode_explanation(row),
         )
 
-        if view == "Suivi":
-            _view_suivi(selected)
-        elif view == "Alertes":
-            _view_alertes(selected)
-        elif view == "Decisions":
-            _view_decisions(selected)
+    tab_courbe, tab_journal, tab_carte = st.tabs(["Courbe", "Journal", "Carte"])
+
+    with tab_courbe:
+        sim_data, _, _, _ = sim.latest_snapshot()
+        if sim_data.empty:
+            st.caption("Pas encore de donnees.")
         else:
-            _view_carte()
+            sim.build_chart(sim_data, sim.plot_template(), None)
+
+    with tab_journal:
+        _render_journal(selected, latest_ts)
+
+    with tab_carte:
+        sim.render_mini_map(latest)
