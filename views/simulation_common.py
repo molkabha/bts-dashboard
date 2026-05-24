@@ -387,18 +387,37 @@ def render_decisions_panel(current_ts, selected_stations: list[str]) -> None:
 
 def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None) -> None:
     hist = sim_data.copy()
-    hist["conso"] = _num(hist, "consommation_kwh", 0)
-    hist["eco"] = effective_economie_kwh(hist)
-    hist["pred"] = _num(hist, "conso_predite", hist["conso"])
     if focus_station:
         hist = hist[hist["station_id"].astype(str) == str(focus_station)]
-    agg_map = {"conso": ("conso", "sum"), "eco": ("eco", "sum"), "pred": ("pred", "mean")}
+    if hist.empty:
+        st.caption("Aucune donnee pour cette station.")
+        return
+
+    hist["conso"] = _num(hist, "consommation_kwh", 0)
+    hist["eco"] = effective_economie_kwh(hist)
+    if "conso_predite" in hist.columns:
+        hist["pred"] = pd.to_numeric(hist["conso_predite"], errors="coerce").fillna(hist["conso"])
+    else:
+        hist["pred"] = hist["conso"]
+
+    multi = hist["station_id"].nunique() > 1
+    # Meme regle d agregation pour toutes les courbes (evite sum reel vs mean predit).
+    agg_spec: dict = {
+        "conso": ("conso", "sum"),
+        "eco": ("eco", "sum"),
+        "pred": ("pred", "sum"),
+    }
     if "pred_q10" in hist.columns:
-        agg_map["q10"] = ("pred_q10", "mean")
-        agg_map["q90"] = ("pred_q90", "mean")
-    agg = hist.groupby("timestamp", as_index=False).agg(**agg_map).tail(48)
+        agg_spec["q10"] = ("pred_q10", "sum")
+        agg_spec["q90"] = ("pred_q90", "sum")
+    agg = hist.groupby("timestamp", as_index=False).agg(**agg_spec).tail(48)
+
+    label_mesure = "Mesuree" if not multi else "Mesuree (total reseau)"
+    label_pred = "Predite" if not multi else "Predite (total reseau)"
+    label_opt = "Optimisee" if not multi else "Optimisee (total reseau)"
+
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"], name="Mesuree", line=dict(color="#94a3b8")))
+    fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"], name=label_mesure, line=dict(color="#94a3b8")))
     if "q10" in agg.columns and "q90" in agg.columns:
         fig.add_trace(go.Scatter(
             x=pd.concat([agg["timestamp"], agg["timestamp"][::-1]]),
@@ -409,9 +428,12 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
             name="Bande Q10-Q90",
             showlegend=True,
         ))
-    fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["conso"] - agg["eco"], name="Optimisee", line=dict(color="#059669")))
-    if "pred" in agg.columns:
-        fig.add_trace(go.Scatter(x=agg["timestamp"], y=agg["pred"], name="Predite", line=dict(dash="dot", color="#1e40af")))
+    fig.add_trace(go.Scatter(
+        x=agg["timestamp"], y=agg["conso"] - agg["eco"], name=label_opt, line=dict(color="#059669"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=agg["timestamp"], y=agg["pred"], name=label_pred, line=dict(dash="dot", color="#1e40af"),
+    ))
     alert_ts = [
         pd.Timestamp(e.get("timestamp"))
         for e in st.session_state.get("sim_alerts", [])
@@ -419,7 +441,14 @@ def build_chart(sim_data: pd.DataFrame, template: str, focus_station: str | None
     ]
     for ts in sorted(set(alert_ts))[-12:]:
         fig.add_vline(x=ts, line_width=1, line_dash="dash", line_color="#dc2626", opacity=0.35)
-    fig.update_layout(template=template, height=360, margin=dict(l=0, r=0, t=8, b=0))
+    fig.update_layout(
+        template=template,
+        height=360,
+        margin=dict(l=0, r=0, t=8, b=0),
+        yaxis_title="kWh",
+    )
+    if multi and not focus_station:
+        st.caption("Plusieurs stations : les courbes affichent la somme horaire sur le parc selectionne.")
     st.plotly_chart(fig, width="stretch")
 
 

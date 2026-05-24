@@ -211,11 +211,12 @@ def page_simulation():
     )
 
     station_ids = table["Station"].tolist() if not table.empty else []
+    chart_station: str | None = None
     if station_ids:
-        pick = st.selectbox("Detail d une station", station_ids, key="sim_detail_station")
-        row = sim.row_by_station(latest, pick)
+        chart_station = st.selectbox("Detail d une station", station_ids, key="sim_detail_station")
+        row = sim.row_by_station(latest, chart_station)
         ui.decision_block(
-            pick,
+            chart_station,
             display_text(row.get("mode_operation"), "NORMAL"),
             resolve_row_action(row, prefer_rl=False),
             mode_explanation(row),
@@ -228,7 +229,7 @@ def page_simulation():
         if sim_data.empty:
             st.caption("Pas encore de donnees.")
         else:
-            sim.build_chart(sim_data, sim.plot_template(), None)
+            sim.build_chart(sim_data, sim.plot_template(), chart_station)
 
     with tab_journal:
         _render_journal(selected, latest_ts)
