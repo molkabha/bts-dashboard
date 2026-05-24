@@ -14,16 +14,29 @@ def _qos_seuil() -> float:
     return float(settings.QOS_SEUIL_DEFAULT)
 
 
-def _anomaly_seuil() -> float:
+def _anomaly_seuil(scale: float = 1.0) -> float:
     seuil, _ = resolve_nb2_seuil_ensemble()
-    return float(seuil)
+    if scale <= 0:
+        scale = 1.0
+    return float(seuil) / scale
 
 
-def classify_tick_rows(df: pd.DataFrame) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+def alert_ref(row: dict[str, Any]) -> str:
+    ts = row.get("timestamp")
+    station = str(row.get("station_id", ""))
+    kind = str(row.get("type", "alert"))
+    return f"{station}|{ts}|{kind}"
+
+
+def classify_tick_rows(
+    df: pd.DataFrame,
+    *,
+    anomaly_sensitivity: float = 1.0,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     if df.empty:
         return [], []
 
-    seuil = _anomaly_seuil()
+    seuil = _anomaly_seuil(anomaly_sensitivity)
     qos_seuil = _qos_seuil()
     alerts: list[dict[str, Any]] = []
     decisions: list[dict[str, Any]] = []
@@ -41,7 +54,7 @@ def classify_tick_rows(df: pd.DataFrame) -> tuple[list[dict[str, Any]], list[dic
 
         if score >= seuil and qos >= qos_seuil and is_no_named_action(action_raw):
             severity = "CRITIQUE" if score >= seuil * 2.4 else "ATTENTION"
-            alerts.append({
+            item = {
                 "timestamp": ts,
                 "station_id": station,
                 "severity": severity,
@@ -53,9 +66,11 @@ def classify_tick_rows(df: pd.DataFrame) -> tuple[list[dict[str, Any]], list[dic
                 "score_anomalie": score,
                 "score_qos": qos,
                 "mode": mode,
-            })
+            }
+            item["alert_ref"] = alert_ref(item)
+            alerts.append(item)
         elif score >= seuil and qos < qos_seuil:
-            alerts.append({
+            item = {
                 "timestamp": ts,
                 "station_id": station,
                 "severity": "CRITIQUE",
@@ -67,7 +82,9 @@ def classify_tick_rows(df: pd.DataFrame) -> tuple[list[dict[str, Any]], list[dic
                 "score_anomalie": score,
                 "score_qos": qos,
                 "mode": mode,
-            })
+            }
+            item["alert_ref"] = alert_ref(item)
+            alerts.append(item)
 
         if not is_no_named_action(action_raw) and str(action_raw).strip().lower() not in {"maintien", "maintien_conso"}:
             decisions.append({
@@ -91,7 +108,7 @@ def classify_tick_rows(df: pd.DataFrame) -> tuple[list[dict[str, Any]], list[dic
     return alerts, decisions
 
 
-def merge_event_log(existing: list[dict], new_items: list[dict], max_items: int = 200) -> list[dict]:
+def merge_event_log(existing: list[dict], new_items: list[dict], max_items: int = 300) -> list[dict]:
     combined = list(existing or []) + list(new_items or [])
     return combined[-max_items:]
 
@@ -104,3 +121,53 @@ def events_to_dataframe(events: list[dict]) -> pd.DataFrame:
         out["timestamp"] = pd.to_datetime(out["timestamp"], errors="coerce")
         out = out.sort_values("timestamp", ascending=False)
     return out
+
+
+def filter_events(
+    events: list[dict],
+    *,
+    station: str | None = None,
+    severity: str | None = None,
+    event_type: str | None = None,
+    current_hour_only: bool = False,
+    current_ts: pd.Timestamp | None = None,
+) -> list[dict]:
+    out = list(events or [])
+    if station and station != "Toutes":
+        out = [e for e in out if str(e.get("station_id")) == station]
+    if severity and severity != "Toutes":
+        out = [e for e in out if str(e.get("severity")) == severity]
+    if event_type and event_type != "Toutes":
+        out = [e for e in out if str(e.get("type")) == event_type]
+    if current_hour_only and current_ts is not None:
+        ts = pd.Timestamp(current_ts)
+        out = [
+            e for e in out
+            if pd.Timestamp(e.get("timestamp")) == ts
+        ]
+    return out
+
+
+def persist_alert_ack(
+    user: str,
+    station_id: str,
+    alert_ref_id: str,
+    verdict: str,
+    comment: str = "",
+) -> None:
+    from datetime import datetime
+
+    from services.data_service import db_execute, init_db
+
+    init_db()
+    db_execute(
+        "insert_alert_decision",
+        (
+            datetime.now().isoformat(timespec="seconds"),
+            user,
+            station_id,
+            alert_ref_id,
+            verdict,
+            comment or "",
+        ),
+    )

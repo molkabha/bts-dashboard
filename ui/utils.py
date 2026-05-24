@@ -58,6 +58,11 @@ def clear_dashboard_data_cache() -> None:
         "pred_station",
     ):
         st.session_state.pop(key, None)
+    try:
+        from services.synthetic_bts import clear_synthetic_cache
+        clear_synthetic_cache()
+    except Exception:
+        pass
 
 
 def reset_global_filters() -> None:

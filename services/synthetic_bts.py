@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 
 from config.settings import settings
-from services.calendar_tn import calendar_context
+from services.calendar_tn import calendar_context, scenario_timestamps
 from services.data_service import load_filtered_main_data, resolve_nb2_seuil_ensemble
 from services.nb_metrics import harmonize_nb3_economies
+from services.sim_inference import clear_inference_cache, enrich_with_pipeline
 
-PROFILE_KEYS = ["station_id", "heure", "mois", "est_weekend"]
+PROFILE_KEYS_BASE = ["station_id", "heure", "mois", "est_weekend"]
 META_COLS = [
     "station_id", "gouvernorat", "technologie", "type_zone",
     "latitude", "longitude",
@@ -24,6 +25,11 @@ VALUE_COLS = [
     "economie_estimee_kwh", "economie_rl_kwh", "meilleur_agent_rl",
     "ecart_pct", "trafic_data_mbps", "pue", "taux_charge_data", "taux_charge_voix",
 ]
+
+
+def clear_synthetic_cache() -> None:
+    _reference_frame.cache_clear()
+    clear_inference_cache()
 
 
 @lru_cache(maxsize=2)
@@ -41,6 +47,13 @@ def _reference_frame() -> pd.DataFrame:
     return df
 
 
+def _profile_keys(ref: pd.DataFrame) -> list[str]:
+    keys = list(PROFILE_KEYS_BASE)
+    if not ref.empty and "est_ramadan" in ref.columns:
+        keys.append("est_ramadan")
+    return keys
+
+
 def _station_catalog(ref: pd.DataFrame) -> pd.DataFrame:
     if ref.empty:
         return pd.DataFrame(columns=META_COLS)
@@ -52,16 +65,13 @@ def _station_catalog(ref: pd.DataFrame) -> pd.DataFrame:
 def _profile_lookup(ref: pd.DataFrame) -> pd.DataFrame:
     if ref.empty:
         return pd.DataFrame()
+    keys = _profile_keys(ref)
     work = ref.copy()
-    for col in ("heure", "mois", "est_weekend"):
-        if col in work.columns:
+    for col in keys:
+        if col != "station_id" and col in work.columns:
             work[col] = pd.to_numeric(work[col], errors="coerce")
     numeric_vals = [c for c in VALUE_COLS if c in work.columns]
-    grouped = (
-        work.groupby(PROFILE_KEYS, as_index=False)[numeric_vals]
-        .mean(numeric_only=True)
-    )
-    return grouped
+    return work.groupby(keys, as_index=False)[numeric_vals].mean(numeric_only=True)
 
 
 def _fallback_profile(ref: pd.DataFrame, station_id: str, heure: int, mois: int, est_weekend: int) -> dict:
@@ -97,6 +107,7 @@ def _pick_profile(
     heure: int,
     mois: int,
     est_weekend: int,
+    est_ramadan: int,
 ) -> dict:
     if ref.empty:
         return _fallback_profile(ref, station_id, heure, mois, est_weekend)
@@ -107,6 +118,8 @@ def _pick_profile(
             & (pd.to_numeric(profiles["mois"], errors="coerce") == mois)
             & (pd.to_numeric(profiles["est_weekend"], errors="coerce") == est_weekend)
         )
+        if "est_ramadan" in profiles.columns:
+            mask &= pd.to_numeric(profiles["est_ramadan"], errors="coerce") == est_ramadan
         hit = profiles[mask]
         if not hit.empty:
             return hit.iloc[0].to_dict()
@@ -133,7 +146,14 @@ def _calendar_scale(ctx: dict, heure: int) -> float:
     return scale
 
 
-def _apply_decision_rules(row: dict, seuil: float, qos_seuil: float) -> dict:
+def _apply_decision_rules(
+    row: dict,
+    seuil: float,
+    qos_seuil: float,
+    anomaly_sensitivity: float = 1.0,
+) -> dict:
+    sens = anomaly_sensitivity if anomaly_sensitivity > 0 else 1.0
+    effective_seuil = seuil / sens
     score = float(row.get("anomalie_score_ensemble") or 0)
     qos = float(row.get("score_qos") or 0)
     heure = int(row.get("heure") or 0)
@@ -144,13 +164,13 @@ def _apply_decision_rules(row: dict, seuil: float, qos_seuil: float) -> dict:
     eco_est = 0.0
     eco_rl = 0.0
 
-    if score >= seuil * 2.4 and qos < qos_seuil:
+    if score >= effective_seuil * 2.4 and qos < qos_seuil:
         mode = "CRITIQUE"
         action = "alerte_qos"
-    elif score >= seuil and qos >= qos_seuil:
+    elif score >= effective_seuil and qos >= qos_seuil:
         mode = "ATTENTION"
         action = "aucune_action"
-    elif score >= seuil and qos < qos_seuil:
+    elif score >= effective_seuil and qos < qos_seuil:
         mode = "CRITIQUE"
         action = "intervention"
     elif heure <= 5 or heure >= 23:
@@ -158,12 +178,12 @@ def _apply_decision_rules(row: dict, seuil: float, qos_seuil: float) -> dict:
         action = "reduction_puissance"
         eco_est = min(conso * 0.12, conso)
         eco_rl = eco_est
-    elif heure >= 10 and heure <= 16 and score < seuil * 0.6:
+    elif heure >= 10 and heure <= 16 and score < effective_seuil * 0.6:
         mode = "ECO"
         action = "mode_eco"
         eco_est = min(conso * 0.08, conso)
         eco_rl = eco_est * 0.95
-    elif score >= seuil * 1.4:
+    elif score >= effective_seuil * 1.4:
         mode = "ATTENTION"
         action = "reduction_puissance"
         eco_est = min(conso * 0.06, conso)
@@ -190,6 +210,9 @@ def hourly_snapshot(
     target_date: date,
     hour: int,
     station_ids: list[str],
+    *,
+    anomaly_sensitivity: float = 1.0,
+    use_ml: bool = True,
 ) -> pd.DataFrame:
     ref = _reference_frame()
     if not station_ids:
@@ -203,7 +226,9 @@ def hourly_snapshot(
     rows: list[dict] = []
 
     for idx, sid in enumerate(station_ids):
-        base = _pick_profile(profiles, ref, sid, hour, ctx["mois"], ctx["est_weekend"])
+        base = _pick_profile(
+            profiles, ref, sid, hour, ctx["mois"], ctx["est_weekend"], ctx.get("est_ramadan", 0),
+        )
         meta = pd.DataFrame()
         if not catalog.empty and "station_id" in catalog.columns:
             meta = catalog[catalog["station_id"].astype(str) == str(sid)]
@@ -222,7 +247,7 @@ def hourly_snapshot(
 
         score_qos = float(base.get("score_qos") or 0.85)
         score_anom = float(base.get("anomalie_score_ensemble") or 0.05)
-        score_anom = min(1.0, max(0.0, score_anom + abs(ecart) * 0.002))
+        score_anom = min(1.0, max(0.0, score_anom + abs(ecart) * 0.002 * anomaly_sensitivity))
 
         row = {
             "timestamp": ts,
@@ -244,15 +269,71 @@ def hourly_snapshot(
         for col in ("gouvernorat", "technologie", "type_zone", "latitude", "longitude"):
             if col in base and pd.notna(base.get(col)):
                 row[col] = base[col]
-        row = _apply_decision_rules(row, seuil, qos_seuil)
+        row = _apply_decision_rules(row, seuil, qos_seuil, anomaly_sensitivity)
         rows.append(row)
 
     out = pd.DataFrame(rows)
+    if use_ml and not out.empty:
+        enriched = enrich_with_pipeline(out)
+        for i, sid in enumerate(station_ids):
+            if i >= len(enriched):
+                break
+            merged = enriched.iloc[i].to_dict()
+            if merged.get("mode_operation") in (None, "", "NORMAL") and rows[i].get("mode_operation"):
+                merged["mode_operation"] = rows[i]["mode_operation"]
+            rows[i] = {**rows[i], **{k: merged[k] for k in merged if pd.notna(merged.get(k))}}
+        out = pd.DataFrame(rows)
+        out = _apply_decision_rules_batch(out, seuil, qos_seuil, anomaly_sensitivity)
     return harmonize_nb3_economies(out)
 
 
-def scenario_timestamps(target_date: date, start_hour: int = 0) -> list[datetime]:
-    return [
-        datetime.combine(target_date, time(hour=h))
-        for h in range(int(start_hour), 24)
+def _apply_decision_rules_batch(
+    df: pd.DataFrame,
+    seuil: float,
+    qos_seuil: float,
+    anomaly_sensitivity: float,
+) -> pd.DataFrame:
+    rows = [
+        _apply_decision_rules(r.to_dict(), seuil, qos_seuil, anomaly_sensitivity)
+        for _, r in df.iterrows()
     ]
+    return pd.DataFrame(rows)
+
+
+def generate_period(
+    start_date: date,
+    start_hour: int,
+    num_days: int,
+    station_ids: list[str],
+    *,
+    anomaly_sensitivity: float = 1.0,
+    use_ml: bool = True,
+) -> pd.DataFrame:
+    frames = []
+    for ts in scenario_timestamps(start_date, start_hour, num_days):
+        batch = hourly_snapshot(
+            ts.date(), ts.hour, station_ids,
+            anomaly_sensitivity=anomaly_sensitivity,
+            use_ml=use_ml,
+        )
+        if not batch.empty:
+            frames.append(batch)
+    if not frames:
+        return pd.DataFrame()
+    return harmonize_nb3_economies(pd.concat(frames, ignore_index=True))
+
+
+def replay_historical_hour(
+    source: pd.DataFrame,
+    target_date: date,
+    hour: int,
+    station_ids: list[str],
+) -> pd.DataFrame:
+    if source.empty or "timestamp" not in source.columns:
+        return pd.DataFrame()
+    ts = datetime.combine(target_date, time(hour=hour))
+    mask = (
+        (pd.to_datetime(source["timestamp"], errors="coerce") == pd.Timestamp(ts))
+        & (source["station_id"].astype(str).isin([str(s) for s in station_ids]))
+    )
+    return source[mask].copy()
