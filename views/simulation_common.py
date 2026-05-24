@@ -24,7 +24,7 @@ from services.nb_metrics import (
     harmonize_nb3_economies,
 )
 from services.simulation_events import classify_tick_rows, merge_event_log
-from services.synthetic_bts import clear_sim_engine_cache, generate_period, hourly_snapshot, sim_engine
+from services.synthetic_bts import clear_sim_engine_cache, hourly_snapshot, sim_engine
 from ui.formatting import resolve_row_action
 from ui.page_helpers import get_station_map_data, load_dashboard_df, mode_explanation
 from ui.utils import download_df_button
@@ -355,41 +355,6 @@ def advance_simulation(
     record_events(processed)
     st.session_state["sim_tick"] = tick + max(1, n)
     return True
-
-
-def run_full_period(
-    selected_stations: list[str],
-    sim_base_date: date,
-    start_hour: int,
-    num_days: int,
-) -> None:
-    if not selected_stations:
-        return
-    stamps = scenario_timestamps(sim_base_date, start_hour, num_days)
-    processed = generate_period(sim_base_date, start_hour, num_days, selected_stations)
-    if processed.empty:
-        return
-    max_rows = max(72, 24 * num_days) * len(selected_stations)
-    st.session_state["sim_data"] = harmonize_nb3_economies(processed).tail(max_rows)
-    n_hours = (
-        len(processed["timestamp"].drop_duplicates())
-        if "timestamp" in processed.columns
-        else len(stamps)
-    )
-    st.session_state["sim_total_ticks"] = len(stamps)
-    st.session_state["sim_tick"] = n_hours
-    st.session_state["sim_running"] = False
-    st.session_state["sim_paused"] = False
-    st.session_state["sim_schema_version"] = SIM_SCHEMA_VERSION
-    record_events(processed)
-
-
-def run_full_day(
-    selected_stations: list[str],
-    sim_base_date: date,
-) -> None:
-    """Calcule les 24 heures (00h-23h) de la date selectionnee."""
-    run_full_period(selected_stations, sim_base_date, start_hour=0, num_days=1)
 
 
 def reset_simulation() -> None:

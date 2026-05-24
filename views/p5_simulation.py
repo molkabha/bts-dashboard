@@ -198,17 +198,6 @@ def page_simulation():
                 key="sim_auto_interval",
                 help="Avance automatique d'une heure toutes les N secondes (pause possible).",
             )
-        if st.button(
-            "Calculer toute la journée",
-            use_container_width=True,
-            help="24 heures (00h-23h) pour la date choisie, quelle que soit l'heure de début.",
-        ):
-            d, _, _ = sim.sim_params()
-            if not selected:
-                st.warning("Sélectionnez au moins une station.")
-            else:
-                sim.run_full_day(selected, d)
-            st.rerun()
         export = st.session_state.get("sim_data")
         if isinstance(export, pd.DataFrame) and not export.empty:
             exp_date, _, _ = sim.sim_params()
