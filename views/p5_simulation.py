@@ -96,7 +96,7 @@ def _ops_table(latest: pd.DataFrame) -> pd.DataFrame:
     t["Station"] = t["station_id"].astype(str)
     t["Mode"] = t.get("mode_operation", "NORMAL").astype(str)
     t["Conso (kWh)"] = sim._num(t, "consommation_kwh", 0).round(2)
-    t["Pred (kWh)"] = sim._num(t, "conso_predite", 0).round(2)
+    t["Prédit (kWh)"] = sim._num(t, "conso_predite", 0).round(2)
     t["Écart %"] = sim.ecart_pct_series(t).round(1)
     eco = effective_economie_kwh(t)
     t["Gain (DT)"] = (eco * settings.PRIX_KWH_TN).round(2)
