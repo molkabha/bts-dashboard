@@ -109,6 +109,32 @@ def mode_badge_css(mode: str | None) -> str:
     }.get(normalize_mode_key(mode), "badge-muted")
 
 
+# Actions NB3 (couleur carte simulation / exploitation)
+ACTION_COLORS = {
+    "Maintien": "#64748b",
+    "Aucune action": "#94a3b8",
+    "Réduction de puissance": "#0891b2",
+    "Réduire la puissance": "#0891b2",
+    "Passage mode ECO": "#059669",
+    "Éco calendaire": "#0d9488",
+    "Veille secteur": "#7c3aed",
+    "Free cooling": "#0284c7",
+    "Alerte QoS": "#dc2626",
+    "Intervention terrain": "#b91c1c",
+    "Couper un porteur": "#d97706",
+}
+
+
+def action_color_discrete_map(values: Iterable | pd.Series | None = None) -> dict[str, str]:
+    cmap = dict(ACTION_COLORS)
+    if values is not None:
+        for raw in pd.Series(values).dropna().astype(str).unique():
+            label = str(raw).strip()
+            if label and label not in cmap:
+                cmap[label] = "#64748b"
+    return cmap
+
+
 def mode_color_discrete_map(values: Iterable | pd.Series | None = None) -> dict[str, str]:
     """Carte Plotly : palette complète + gris pour valeurs hors enum."""
     cmap = dict(MODE_COLORS)

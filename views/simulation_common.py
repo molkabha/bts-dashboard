@@ -11,8 +11,8 @@ from config.settings import settings
 from config.theme import (
     PLOTLY_DARK,
     PLOTLY_LIGHT,
+    action_color_discrete_map,
     mode_color,
-    mode_color_discrete_map,
     mode_kpi_class,
     normalize_mode_key,
 )
@@ -632,54 +632,60 @@ def render_mini_map(latest_all: pd.DataFrame) -> None:
         st.info("Aucune donnee cartographique.")
         return
 
-    from services.data_service import resolve_nb2_seuil_ensemble
+    from ui.formatting import format_action_label
 
-    seuil, _ = resolve_nb2_seuil_ensemble()
-    anom = latest_all.copy()
-    if "anomalie_score_ensemble" in anom.columns:
-        scores = pd.to_numeric(anom["anomalie_score_ensemble"], errors="coerce").fillna(0)
-        anom = anom[scores >= float(seuil)]
-    if anom.empty:
-        st.info(f"Aucune station en anomalie a cette heure (seuil NB2 : {seuil:.2f}).")
-        return
-
-    st.caption(f"{len(anom)} station(s) en anomalie (score >= {seuil:.2f})")
-
-    map_df = get_station_map_data(anom)
+    map_df = get_station_map_data(latest_all)
     if map_df.empty or not {"latitude", "longitude"}.issubset(map_df.columns):
         st.info("Coordonnees GPS indisponibles.")
         return
-    plot = map_df.copy()
-    if "anomalie_score_ensemble" in anom.columns:
-        scores = anom.set_index("station_id")["anomalie_score_ensemble"]
-        plot["score_anomalie"] = plot["station_id"].map(scores)
-    if "mode_operation" in anom.columns:
-        modes = anom.set_index("station_id")["mode_operation"]
-        plot["mode_actuel"] = plot["station_id"].map(modes).fillna("ATTENTION")
+
+    work = latest_all.copy()
+    work["action_a_faire"] = work.apply(
+        lambda r: format_action_label(resolve_row_action(r, prefer_rl=False), default="Maintien"),
+        axis=1,
+    )
+    if "mode_operation" in work.columns:
+        modes = work.set_index("station_id")["mode_operation"]
+        map_df["mode"] = map_df["station_id"].map(modes).fillna("NORMAL")
     else:
-        plot["mode_actuel"] = "ATTENTION"
-    plot["mode_actuel"] = plot["mode_actuel"].map(lambda m: normalize_mode_key(m) or "ATTENTION")
+        map_df["mode"] = "NORMAL"
+    map_df["mode"] = map_df["mode"].map(lambda m: normalize_mode_key(m) or "NORMAL")
+    actions = work.set_index("station_id")["action_a_faire"]
+    map_df["action_a_faire"] = map_df["station_id"].map(actions).fillna("Maintien")
+    if "anomalie_score_ensemble" in work.columns:
+        map_df["score_anomalie"] = map_df["station_id"].map(
+            work.set_index("station_id")["anomalie_score_ensemble"],
+        )
+
+    plot = map_df.copy()
     plot["latitude"] = pd.to_numeric(plot["latitude"], errors="coerce")
     plot["longitude"] = pd.to_numeric(plot["longitude"], errors="coerce")
     plot = plot.dropna(subset=["latitude", "longitude"])
     if plot.empty:
         st.info("Coordonnees GPS invalides.")
         return
-    if "score_anomalie" in plot.columns:
-        plot["score_anomalie"] = pd.to_numeric(plot["score_anomalie"], errors="coerce").fillna(seuil)
-        plot["taille"] = plot["score_anomalie"] * 40 + 12
+
+    st.caption(
+        f"{len(plot)} station(s) · couleur = action prevue a l'heure simulee"
+    )
+
+    hover_cols = [c for c in ("mode", "score_anomalie") if c in plot.columns]
     fig = px.scatter_mapbox(
         plot,
         lat="latitude",
         lon="longitude",
-        color="mode_actuel",
-        size="taille" if "taille" in plot.columns else None,
-        size_max=28,
+        color="action_a_faire",
         hover_name="station_id",
+        hover_data=hover_cols,
         zoom=5.5,
         center={"lat": plot["latitude"].mean(), "lon": plot["longitude"].mean()},
-        color_discrete_map=mode_color_discrete_map(plot["mode_actuel"]),
+        color_discrete_map=action_color_discrete_map(plot["action_a_faire"]),
         height=420,
     )
-    fig.update_layout(mapbox_style="carto-positron", margin=dict(l=0, r=0, t=0, b=0))
+    fig.update_layout(
+        mapbox_style="carto-positron",
+        margin=dict(l=0, r=0, t=0, b=0),
+        legend=dict(title="Action a l'heure"),
+    )
+    fig.update_traces(marker=dict(opacity=0.9, size=12))
     st.plotly_chart(fig, width="stretch")

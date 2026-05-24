@@ -14,7 +14,6 @@ from services.simulation_events import persist_alert_ack
 from ui.components import header
 from ui.formatting import display_text, resolve_row_action
 from ui.page_helpers import mode_explanation
-from ui.utils import active_filter_label
 
 from views import simulation_common as sim
 from views import simulation_ui as ui
@@ -170,7 +169,6 @@ def page_simulation():
         "Simulation",
         "Parc BTS a une date donnee, heure par heure",
     )
-    st.caption(active_filter_label())
     sim.maybe_autorefresh()
 
     role = st.session_state.get("role", "")

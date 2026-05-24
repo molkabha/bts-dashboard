@@ -36,6 +36,9 @@ ACTION_LABELS_FR: dict[str, str] = {
     "mode_eco_force": "Forcer mode ECO",
     "alerte_qos": "Alerte QoS",
     "intervention": "Intervention terrain",
+    "sleep_mode_secteur": "Veille secteur",
+    "free_cooling": "Free cooling",
+    "eco_calendaire": "Éco calendaire",
 }
 
 
