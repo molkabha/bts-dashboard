@@ -126,8 +126,12 @@ def sim_engine() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
 def _profile_keys(ref: pd.DataFrame) -> list[str]:
     keys = list(PROFILE_KEYS_BASE)
-    if not ref.empty and "est_ramadan" in ref.columns:
+    if ref.empty:
+        return keys
+    if "est_ramadan" in ref.columns:
         keys.append("est_ramadan")
+    if "est_ferie" in ref.columns:
+        keys.append("est_ferie")
     return keys
 
 
@@ -185,6 +189,7 @@ def _pick_profile(
     mois: int,
     est_weekend: int,
     est_ramadan: int,
+    est_ferie: int,
 ) -> dict:
     sid = str(station_id)
     if not profiles.empty and "station_id" in profiles.columns:
@@ -196,6 +201,8 @@ def _pick_profile(
         )
         if "est_ramadan" in profiles.columns:
             mask &= pd.to_numeric(profiles["est_ramadan"], errors="coerce") == est_ramadan
+        if "est_ferie" in profiles.columns:
+            mask &= pd.to_numeric(profiles["est_ferie"], errors="coerce") == est_ferie
         hit = profiles[mask]
         if not hit.empty:
             return hit.iloc[0].to_dict()
@@ -246,12 +253,13 @@ def _jitter(value: float, pct: float = 0.04, seed: int = 0) -> float:
     return float(value * (1.0 + rng.uniform(-pct, pct)))
 
 
-def _apply_dashboard_nb_row(row: dict, base: dict, *, seed: int) -> dict:
+def _apply_dashboard_nb_row(row: dict, base: dict, *, seed: int, scale: float = 1.0) -> dict:
+    """Réel et prédit sous le même facteur calendrier → écart = écart profil NB1, pas artefact de simulation."""
     conso = float(row["consommation_kwh"])
     pred_raw = base.get("conso_predite")
     if pred_raw is None or (isinstance(pred_raw, float) and pd.isna(pred_raw)):
-        pred_raw = base.get("consommation_kwh", conso)
-    pred = _jitter(float(pred_raw), seed=seed + 1)
+        pred_raw = base.get("consommation_kwh", conso / max(scale, 1e-9))
+    pred = _jitter(float(pred_raw) * scale, seed=seed + 1)
     row["conso_predite"] = pred
 
     for col in NB_FROM_DASHBOARD:
@@ -260,9 +268,15 @@ def _apply_dashboard_nb_row(row: dict, base: dict, *, seed: int) -> dict:
         if col in base and pd.notna(base.get(col)):
             row[col] = base[col]
 
-    if "pred_q10" not in row or pd.isna(row.get("pred_q10")):
+    q10_raw = base.get("pred_q10")
+    q90_raw = base.get("pred_q90")
+    if q10_raw is not None and pd.notna(q10_raw):
+        row["pred_q10"] = float(q10_raw) * scale
+    elif "pred_q10" not in row or pd.isna(row.get("pred_q10")):
         row["pred_q10"] = pred * 0.9
-    if "pred_q90" not in row or pd.isna(row.get("pred_q90")):
+    if q90_raw is not None and pd.notna(q90_raw):
+        row["pred_q90"] = float(q90_raw) * scale
+    elif "pred_q90" not in row or pd.isna(row.get("pred_q90")):
         row["pred_q90"] = pred * 1.1
 
     row["ecart_pct"] = ((conso - pred) / pred * 100) if pred else 0.0
@@ -296,7 +310,8 @@ def hourly_snapshot(
 
     for sid in station_ids:
         base = _pick_profile(
-            profiles, ref, sid, hour, ctx["mois"], ctx["est_weekend"], ctx.get("est_ramadan", 0),
+            profiles, ref, sid, hour, ctx["mois"], ctx["est_weekend"],
+            ctx.get("est_ramadan", 0), int(ctx.get("est_ferie", 0)),
         )
         if not catalog.empty and "station_id" in catalog.columns:
             meta = catalog[catalog["station_id"].astype(str) == str(sid)]
@@ -326,7 +341,7 @@ def hourly_snapshot(
             if col in base and pd.notna(base.get(col)):
                 row[col] = base[col]
 
-        row = _apply_dashboard_nb_row(row, base, seed=seed)
+        row = _apply_dashboard_nb_row(row, base, seed=seed, scale=scale)
         rows.append(row)
 
     out = pd.DataFrame(rows)

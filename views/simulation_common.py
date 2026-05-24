@@ -119,7 +119,7 @@ def inference_label(df: pd.DataFrame) -> str:
         extra = f" · R²={float(r2):.3f}" if r2 is not None else ""
         return (
             f"Prediction : {model_name} "
-            f"(meme source Hub que la page Prediction{extra})"
+            f"(Hub · reel et predit sous meme contexte calendrier{extra})"
         )
     if any("profil" in m for m in modes):
         return (
