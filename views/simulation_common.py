@@ -697,7 +697,7 @@ def build_simulation_report(
     sim_date: date,
     selected_stations: list[str],
 ) -> pd.DataFrame:
-    """Donnees du rapport sommaire (global, par station, par heure) pour export PDF."""
+    """Donnees du rapport sommaire (total reseau + par station) pour export PDF."""
     rows: list[dict] = []
 
     def _row(section: str, libelle: str, valeur, unite: str = "") -> None:
@@ -709,7 +709,7 @@ def build_simulation_report(
         })
 
     if sim_data.empty:
-        _row("Sommaire global", "Statut", "Aucune donnee", "")
+        _row("Total", "Statut", "Aucune donnee", "")
         return pd.DataFrame(rows)
 
     work = harmonize_nb3_economies(sim_data.copy())
@@ -721,21 +721,16 @@ def build_simulation_report(
     n_hours = int(work["timestamp"].nunique()) if "timestamp" in work.columns else 0
     n_stations = int(work["station_id"].nunique()) if "station_id" in work.columns else 0
     alerts_n = len(st.session_state.get("sim_alerts") or [])
-    decisions_n = len(st.session_state.get("sim_decisions") or [])
 
-    _row("Sommaire global", "Date scenario", str(sim_date), "")
-    _row("Sommaire global", "Stations selectionnees", ", ".join(selected_stations), "liste")
-    _row("Sommaire global", "Stations avec donnees", n_stations, "nombre")
-    _row("Sommaire global", "Heures simulees", n_hours, "nombre")
-    _row("Sommaire global", "Lignes totales", len(work), "nombre")
-    _row("Sommaire global", "Consommation reelle totale", round(conso, 3), "kWh")
-    _row("Sommaire global", "Consommation predite totale", round(pred, 3), "kWh")
-    _row("Sommaire global", "Ecart moyen reel/predit", round(ecart_moy, 2), "%")
-    _row("Sommaire global", "Gain energie total", round(gain_kwh, 3), "kWh")
-    _row("Sommaire global", "Gain financier total", round(gain_dt, 2), "DT")
-    _row("Sommaire global", "Prix kWh utilise", settings.PRIX_KWH_TN, "DT/kWh")
-    _row("Sommaire global", "Alertes generees", alerts_n, "nombre")
-    _row("Sommaire global", "Decisions journalisees", decisions_n, "nombre")
+    _row("Total", "Date scenario", str(sim_date), "")
+    _row("Total", "Stations simulees", n_stations, "nombre")
+    _row("Total", "Heures simulees", n_hours, "nombre")
+    _row("Total", "Consommation reelle totale", round(conso, 3), "kWh")
+    _row("Total", "Consommation predite totale", round(pred, 3), "kWh")
+    _row("Total", "Ecart moyen reel/predit", round(ecart_moy, 2), "%")
+    _row("Total", "Gain energie total", round(gain_kwh, 3), "kWh")
+    _row("Total", "Gain financier total", round(gain_dt, 2), "DT")
+    _row("Total", "Nombre d alertes", alerts_n, "nombre")
 
     if "station_id" in work.columns:
         for sid in sorted(work["station_id"].astype(str).unique()):
@@ -756,14 +751,6 @@ def build_simulation_report(
                     "",
                 )
 
-    if "timestamp" in work.columns:
-        for ts in sorted(work["timestamp"].dropna().unique()):
-            sub = work[work["timestamp"] == ts]
-            label = pd.Timestamp(ts).strftime("%Y-%m-%d %H:%M")
-            _row(f"Heure {label}", "Conso reelle", round(float(_num(sub, "consommation_kwh", 0).sum()), 3), "kWh")
-            _row(f"Heure {label}", "Conso predite", round(float(_num(sub, "conso_predite", 0).sum()), 3), "kWh")
-            _row(f"Heure {label}", "Gain (DT)", round(kwh_to_dt(total_gain_kwh(sub)), 2), "DT")
-
     return pd.DataFrame(rows)
 
 
@@ -783,6 +770,7 @@ def render_simulation_exports(
         report,
         sim_date=sim_date,
         selected_stations=selected_stations,
+        alerts=st.session_state.get("sim_alerts") or [],
     )
     c1, c2 = st.columns(2)
     with c1:
@@ -796,7 +784,7 @@ def render_simulation_exports(
             use_container_width=True,
             key="sim_sommaire_pdf",
         )
-        st.caption("Rapport sommaire : synthese globale, par station et par heure.")
+        st.caption("Rapport sommaire : total reseau, detail par station, liste des alertes.")
 
 
 def render_mini_map(latest_all: pd.DataFrame) -> None:

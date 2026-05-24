@@ -165,84 +165,81 @@ def generate_simulation_sommaire_pdf(
     *,
     sim_date: date | None = None,
     selected_stations: list[str] | None = None,
+    alerts: list[dict] | None = None,
 ) -> bytes:
-    """Rapport sommaire simulation (PDF) : global, par station, par heure."""
+    """Rapport sommaire simulation (PDF) : total, par station, alertes."""
     pdf = RapportPDF()
     pdf.alias_nb_pages()
     pdf.add_page()
 
     pdf.section_title("Rapport sommaire - Simulation BTS")
-    date_label = str(sim_date) if sim_date else "—"
-    stations_label = ", ".join(selected_stations or []) or "—"
-    pdf.text_block(
-        f"Date du scenario : {date_label}\n"
-        f"Stations : {stations_label}\n"
-        f"Perimetre : consommation, prediction LightGBM, gains, alertes"
-    )
+    date_label = str(sim_date) if sim_date else "-"
+    stations_label = ", ".join(selected_stations or []) or "-"
+    pdf.text_block(f"Date du scenario : {date_label}\nStations : {stations_label}")
 
     if report.empty:
         pdf.text_block("Aucune donnee de simulation disponible.")
-        buf = io.BytesIO()
-        pdf.output(buf)
-        return buf.getvalue()
+    elif "Section" in report.columns:
+        work = report.copy()
 
-    work = report.copy()
-    if "Section" not in work.columns:
-        buf = io.BytesIO()
-        pdf.output(buf)
-        return buf.getvalue()
+        total_rows = work[work["Section"].astype(str) == "Total"]
+        if total_rows.empty:
+            total_rows = work[work["Section"].astype(str) == "Sommaire global"]
+        if not total_rows.empty:
+            pdf.section_title("Total reseau")
+            pdf.table_rows(
+                ("Indicateur", "Valeur", "Unite"),
+                [
+                    (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
+                    for _, r in total_rows.iterrows()
+                ],
+                (95, 55, 30),
+            )
+            pdf.ln(4)
 
-    global_rows = work[work["Section"].astype(str) == "Sommaire global"]
-    if not global_rows.empty:
-        pdf.section_title("Sommaire global")
-        pdf.table_rows(
-            ("Indicateur", "Valeur", "Unite"),
-            [
-                (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
-                for _, r in global_rows.iterrows()
-            ],
-            (95, 55, 30),
+        station_sections = sorted(
+            {s for s in work["Section"].astype(str).unique() if str(s).startswith("Station ")},
         )
-        pdf.ln(4)
-
-    station_sections = sorted(
-        {s for s in work["Section"].astype(str).unique() if str(s).startswith("Station ")},
-    )
-    if station_sections:
-        pdf.section_title("Synthese par station")
-        for section in station_sections[:20]:
-            sub = work[work["Section"].astype(str) == section]
-            pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 6, _pdf_safe(section.replace("Station ", "Station : ")), new_x="LMARGIN", new_y="NEXT")
+        if station_sections:
+            pdf.section_title("Par station")
+            station_table: list[tuple[str, ...]] = []
+            for section in station_sections[:40]:
+                sid = section.replace("Station ", "")
+                sub = {str(r["Libelle"]): r["Valeur"] for _, r in work[work["Section"] == section].iterrows()}
+                station_table.append((
+                    sid,
+                    str(sub.get("Consommation reelle", "-")),
+                    str(sub.get("Consommation predite", "-")),
+                    str(sub.get("Ecart moyen", "-")),
+                    str(sub.get("Gain (DT)", "-")),
+                ))
             pdf.table_rows(
-                ("Indicateur", "Valeur", "Unite"),
-                [
-                    (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
-                    for _, r in sub.iterrows()
-                ],
-                (95, 55, 30),
+                ("Station", "Reel (kWh)", "Predit (kWh)", "Ecart %", "Gain (DT)"),
+                station_table,
+                (38, 32, 32, 28, 28),
             )
-            pdf.ln(3)
+            pdf.ln(4)
 
-    hour_sections = sorted(
-        {s for s in work["Section"].astype(str).unique() if str(s).startswith("Heure ")},
-    )
-    if hour_sections:
-        pdf.add_page()
-        pdf.section_title("Synthese par heure simulee")
-        for section in hour_sections[:24]:
-            sub = work[work["Section"].astype(str) == section]
-            pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(0, 6, _pdf_safe(section), new_x="LMARGIN", new_y="NEXT")
-            pdf.table_rows(
-                ("Indicateur", "Valeur", "Unite"),
-                [
-                    (str(r["Libelle"]), str(r["Valeur"]), str(r.get("Unite", "") or ""))
-                    for _, r in sub.iterrows()
-                ],
-                (95, 55, 30),
-            )
-            pdf.ln(3)
+    pdf.section_title("Alertes")
+    alert_items = list(alerts or [])
+    if not alert_items:
+        pdf.text_block("Aucune alerte generee pendant la simulation.")
+    else:
+        alert_rows: list[tuple[str, ...]] = []
+        for item in alert_items[-40:]:
+            ts = item.get("timestamp")
+            heure = pd.Timestamp(ts).strftime("%d/%m %H:%M") if ts is not None else "-"
+            alert_rows.append((
+                heure,
+                str(item.get("station_id", "")),
+                str(item.get("severity", "")),
+                str(item.get("message", ""))[:70],
+            ))
+        pdf.table_rows(
+            ("Heure", "Station", "Gravite", "Message"),
+            alert_rows,
+            (28, 38, 28, 96),
+        )
 
     buf = io.BytesIO()
     pdf.output(buf)
