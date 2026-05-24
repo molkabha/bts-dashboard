@@ -117,12 +117,13 @@ def _render_journal(selected: list[str], latest_ts) -> None:
     pending = [a for a in alerts if a.get("alert_ref") not in acked]
     if pending:
         st.markdown("**Alertes a verifier**")
+        st.caption("Traité : alerte prise en charge · Ignorer : pas utile / fausse alerte")
         for item in pending[-6:]:
             st.warning(f"**{item.get('station_id')}** — {item.get('message', '')}")
             ref = item.get("alert_ref", "")
             x1, x2 = st.columns(2)
             with x1:
-                if st.button("Acquitter", key=f"aok_{ref}", use_container_width=True):
+                if st.button("Traité", key=f"aok_{ref}", use_container_width=True):
                     user = st.session_state.get("username") or st.session_state.get("user", "")
                     init_db()
                     persist_alert_ack(user, str(item.get("station_id")), ref, "acquitte")
@@ -130,7 +131,7 @@ def _render_journal(selected: list[str], latest_ts) -> None:
                     st.session_state["sim_ack_refs"] = acked
                     st.rerun()
             with x2:
-                if st.button("Faux positif", key=f"afp_{ref}", use_container_width=True):
+                if st.button("Ignorer", key=f"afp_{ref}", use_container_width=True):
                     user = st.session_state.get("username") or st.session_state.get("user", "")
                     init_db()
                     persist_alert_ack(user, str(item.get("station_id")), ref, "faux_positif")

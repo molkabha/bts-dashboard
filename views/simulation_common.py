@@ -500,7 +500,7 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
                 ref = item.get("alert_ref", "")
                 b1, b2 = st.columns(2)
                 with b1:
-                    if st.button("Acquitter", key=f"ack_ok_{ref}", use_container_width=True):
+                    if st.button("Traité", key=f"ack_ok_{ref}", use_container_width=True):
                         user = st.session_state.get("username") or st.session_state.get("user", "engineer")
                         init_db()
                         persist_alert_ack(user, str(item.get("station_id")), ref, "acquitte")
@@ -508,7 +508,7 @@ def render_alerts_panel(current_ts, selected_stations: list[str]) -> None:
                         st.session_state["sim_ack_refs"] = acked
                         st.rerun()
                 with b2:
-                    if st.button("Faux positif", key=f"ack_fp_{ref}", use_container_width=True):
+                    if st.button("Ignorer", key=f"ack_fp_{ref}", use_container_width=True):
                         user = st.session_state.get("username") or st.session_state.get("user", "engineer")
                         init_db()
                         persist_alert_ack(user, str(item.get("station_id")), ref, "faux_positif")
