@@ -11,6 +11,7 @@ import streamlit as st
 from services.data_service import (
     apply_admin_dimension_filters,
     apply_time_filters,
+    filter_valid_station_rows,
     get_user_stations,
     load_inactive_stations,
     load_outputs,
@@ -115,6 +116,7 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
         inactive = load_inactive_stations()
         if inactive:
             out = out[~out["station_id"].astype(str).isin(inactive)]
+        out = filter_valid_station_rows(out)
 
     return out
 

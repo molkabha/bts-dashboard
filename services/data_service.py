@@ -1030,6 +1030,14 @@ def clean_station_id_list(ids) -> list[str]:
     return sorted(out)
 
 
+def filter_valid_station_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Drop rows whose station_id is blank, None, nan, etc."""
+    if df.empty or "station_id" not in df.columns:
+        return df
+    mask = df["station_id"].map(valid_station_id).notna()
+    return df.loc[mask].copy()
+
+
 def save_inactive_stations(station_ids: list[str]) -> None:
     cleaned = clean_station_id_list(station_ids)
     db_execute("upsert_setting", (INACTIVE_STATIONS_KEY, json.dumps(cleaned)))

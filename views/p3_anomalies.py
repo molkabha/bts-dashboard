@@ -39,7 +39,10 @@ def _detector_rows(nb2_stats: dict) -> pd.DataFrame:
 
 
 def _priority_stations(work: pd.DataFrame, seuil: float, anom_col: str) -> pd.DataFrame:
-    if "station_id" not in work.columns:
+    from services.data_service import filter_valid_station_rows
+
+    work = filter_valid_station_rows(work)
+    if work.empty or "station_id" not in work.columns:
         return pd.DataFrame()
     agg = work.groupby("station_id", as_index=False).agg(
         score=(anom_col, "max"),
