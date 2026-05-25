@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from config.settings import settings
-from config.theme import mode_color
+from config.theme import MODE_COLORS, MODE_ORDER, mode_color, normalize_mode_key
 
 from services.data_service import (
     compute_filtered_kpis,
@@ -203,6 +203,88 @@ def latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
     if "timestamp" in df.columns:
         return df.sort_values("timestamp").groupby("station_id", as_index=False).last()
     return df.groupby("station_id", as_index=False).last()
+
+
+def render_actions_par_station(
+    latest: pd.DataFrame,
+    *,
+    show_savings: bool = True,
+    per_mode: int = 3,
+) -> None:
+    """Actions par station groupées par mode (3 lignes / mode, couleurs CRITIQUE/NORMAL/…)."""
+    if latest.empty or "station_id" not in latest.columns:
+        st.info("Aucune station à afficher.")
+        return
+
+    work = latest.copy()
+    sid = work["station_id"].astype(str).str.strip()
+    work = work[sid.notna() & sid.ne("") & sid.str.lower().ne("none") & sid.str.lower().ne("nan")]
+    if work.empty:
+        st.info("Aucune station à afficher.")
+        return
+
+    work["_mode_key"] = work.get("mode_operation", pd.Series("NORMAL", index=work.index)).map(
+        lambda m: normalize_mode_key(m) or "NORMAL",
+    )
+    prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
+    work["_prio"] = work["_mode_key"].map(lambda m: prio.get(m, 9))
+    work = work.sort_values(["_prio", "station_id"])
+
+    groups_html: list[str] = ['<div class="station-actions-panel">']
+    any_group = False
+
+    for mode in MODE_ORDER:
+        subset = work[work["_mode_key"] == mode].head(per_mode)
+        if subset.empty:
+            continue
+        any_group = True
+        mode_slug = mode.lower()
+        color = MODE_COLORS.get(mode, "#64748b")
+        total = int((work["_mode_key"] == mode).sum())
+        count_label = f"{min(len(subset), total)} / {total} station(s)"
+
+        rows_html: list[str] = []
+        for _, row in subset.iterrows():
+            station = html.escape(str(row.get("station_id", "")))
+            action = html.escape(resolve_row_action(row, prefer_rl=show_savings))
+            gov = row.get("gouvernorat")
+            gov_html = (
+                f'<div class="sap-gov">{html.escape(display_text(gov))}</div>'
+                if gov is not None and display_text(gov) != "—"
+                else ""
+            )
+            saving_html = ""
+            if show_savings:
+                eco_series = effective_economie_kwh(pd.DataFrame([row]))
+                eco_kwh = float(eco_series.iloc[0]) if not eco_series.empty else 0.0
+                if eco_kwh > 0:
+                    eco_dt = eco_kwh * settings.PRIX_KWH_TN
+                    label = "Potentiel" if row_has_no_named_action(row) else "Gain"
+                    saving_html = (
+                        f'<div class="sap-saving" style="color:{color};">'
+                        f"{label} : {eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>"
+                    )
+            rows_html.append(
+                f'<div class="sap-row">'
+                f'<div class="sap-station">{station}</div>'
+                f'<div class="sap-action">{action}</div>'
+                f"{saving_html}{gov_html}"
+                f"</div>",
+            )
+
+        groups_html.append(
+            f'<div class="sap-group sap-group--{mode_slug}">'
+            f'<div class="sap-group-title">{html.escape(mode)}'
+            f'<span class="sap-group-count">{html.escape(count_label)}</span></div>'
+            f"{''.join(rows_html)}"
+            f"</div>",
+        )
+
+    groups_html.append("</div>")
+    if not any_group:
+        st.info("Aucune station à afficher.")
+        return
+    st.markdown("".join(groups_html), unsafe_allow_html=True)
 
 
 def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_savings: bool = True) -> None:

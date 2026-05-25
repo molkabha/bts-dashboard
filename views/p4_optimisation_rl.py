@@ -23,7 +23,7 @@ from ui.formatting import display_text
 from ui.page_helpers import (
     latest_per_station,
     load_dashboard_df,
-    render_nb3_decision_cards,
+    render_actions_par_station,
     render_nb3_rl_agents,
 )
 from ui.utils import active_filter_label, is_admin, session_outputs
@@ -115,10 +115,14 @@ def page_optimisation_rl():
     if "station_id" in df.columns:
         with section("Actions par station"):
             st.caption(
-                "« Aucune action » = pas de levier opérationnel nommé par NB3 ; le potentiel mode "
-                "reflète l'écart conso optimisée sur la dernière mesure (colonnes `economie_*` du parquet NB3)."
+                "Dernière décision par station, regroupée par mode — jusqu'à 3 stations par catégorie "
+                "(CRITIQUE, ATTENTION, NORMAL, ECO)."
             )
-            render_nb3_decision_cards(latest_per_station(df), limit=12, show_savings=is_admin())
+            render_actions_par_station(
+                latest_per_station(df),
+                show_savings=is_admin(),
+                per_mode=3,
+            )
 
     if is_admin():
         c1, c2 = st.columns(2)

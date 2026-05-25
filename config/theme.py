@@ -452,6 +452,30 @@ section.main [data-testid="stPopoverBody"] div[data-testid="stMultiSelect"] div[
 }
 .decision-card .dc-header { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
 .decision-card .dc-station { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; color:var(--tt-muted); }
+
+/* Actions par station (Optimisation) — groupes par mode */
+.station-actions-panel { display:flex; flex-direction:column; gap:14px; margin-top:4px; }
+.sap-group { border:1px solid var(--tt-border); border-radius:8px; overflow:hidden; background:var(--tt-card); }
+.sap-group-title { display:flex; align-items:center; justify-content:space-between; padding:10px 14px; font-size:12px; font-weight:850; letter-spacing:0.6px; text-transform:uppercase; border-bottom:1px solid var(--tt-border); }
+.sap-group-count { font-size:11px; font-weight:700; opacity:0.85; text-transform:none; letter-spacing:0; }
+.sap-group--critique .sap-group-title { color:#b91c1c; background:#fef2f2; border-bottom-color:#fecaca; }
+.sap-group--critique .sap-row { border-left:3px solid #dc2626; }
+.sap-group--critique .sap-station, .sap-group--critique .sap-action, .sap-group--critique .sap-saving { color:#991b1b; }
+.sap-group--attention .sap-group-title { color:#a16207; background:#fffbeb; border-bottom-color:#fde68a; }
+.sap-group--attention .sap-row { border-left:3px solid #eab308; }
+.sap-group--attention .sap-station, .sap-group--attention .sap-action { color:#854d0e; }
+.sap-group--normal .sap-group-title { color:#15803d; background:#f0fdf4; border-bottom-color:#bbf7d0; }
+.sap-group--normal .sap-row { border-left:3px solid #16a34a; }
+.sap-group--normal .sap-station, .sap-group--normal .sap-action, .sap-group--normal .sap-saving { color:#166534; }
+.sap-group--eco .sap-group-title { color:#0e7490; background:#ecfeff; border-bottom-color:#a5f3fc; }
+.sap-group--eco .sap-row { border-left:3px solid #0891b2; }
+.sap-group--eco .sap-station, .sap-group--eco .sap-action { color:#155e75; }
+.sap-row { padding:10px 14px 10px 12px; border-bottom:1px solid var(--tt-border); background:var(--tt-card); }
+.sap-row:last-child { border-bottom:none; }
+.sap-station { font-size:14px; font-weight:850; line-height:1.35; margin-bottom:3px; }
+.sap-action { font-size:13px; font-weight:700; line-height:1.4; margin-bottom:2px; }
+.sap-saving { font-size:12px; font-weight:800; line-height:1.35; opacity:0.92; }
+.sap-gov { font-size:11px; color:var(--tt-muted); font-weight:600; margin-top:2px; }
 </style>
 """
 
@@ -476,5 +500,14 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { backg
 .login-heading, .form-title { color:var(--tt-text); }
 .login-points span { background:#0f172a; border-color:#1f2937; color:#e5e7eb; }
 .sim-sidebar-box, .sim-empty { background:var(--tt-card) !important; border-color:var(--tt-border) !important; }
+.sap-group { background:var(--tt-card) !important; border-color:var(--tt-border) !important; }
+.sap-group--critique .sap-group-title { background:#450a0a !important; color:#fca5a5 !important; border-bottom-color:#7f1d1d !important; }
+.sap-group--critique .sap-station, .sap-group--critique .sap-action, .sap-group--critique .sap-saving { color:#fca5a5 !important; }
+.sap-group--attention .sap-group-title { background:#3a2606 !important; color:#fcd34d !important; }
+.sap-group--attention .sap-station, .sap-group--attention .sap-action { color:#fde68a !important; }
+.sap-group--normal .sap-group-title { background:#022c22 !important; color:#86efac !important; }
+.sap-group--normal .sap-station, .sap-group--normal .sap-action, .sap-group--normal .sap-saving { color:#86efac !important; }
+.sap-group--eco .sap-group-title { background:#082f49 !important; color:#7dd3fc !important; }
+.sap-group--eco .sap-station, .sap-group--eco .sap-action { color:#bae6fd !important; }
 </style>
 """
