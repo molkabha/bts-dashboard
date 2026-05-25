@@ -131,7 +131,8 @@ def generate_report_pdf(kpis: dict, top_anomalies: list[dict] | None = None) -> 
     eco_dt = f"{kpis.get('economie_dt', 0):,.0f} DT" if pd.notna(kpis.get("economie_dt")) else "0 DT"
     co2 = f"{kpis.get('co2_evite_t', 0):.1f} t" if pd.notna(kpis.get("co2_evite_t")) else "0.0 t"
     qos = f"{kpis.get('score_qos_moyen', 0):.3f}" if pd.notna(kpis.get("score_qos_moyen")) else "0.000"
-    anomalies = f"{kpis.get('pct_anomalies', 0):.1f}%" if pd.notna(kpis.get("pct_anomalies")) else "0.0%"
+    pct_anom = kpis.get("pct_anomalies")
+    anomalies = f"{float(pct_anom):.1f}%" if pct_anom is not None and pd.notna(pct_anom) else "N/D"
 
     pdf.kpi_row([("Stations", nb_stations), ("Consommation", conso),
                 ("Économies", eco_pct), ("Économies (DT)", eco_dt)])

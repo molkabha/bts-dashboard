@@ -1484,14 +1484,58 @@ def _extract_nb2_seuil_ensemble(nb2: dict) -> float | None:
     return None
 
 
-def resolve_nb2_seuil_ensemble(nb2: dict | None = None) -> tuple[float, str]:
-    """Return (seuil, source_label) for anomaly detection."""
+def resolve_nb2_seuil_ensemble(nb2: dict | None = None) -> tuple[float | None, str | None]:
+    """Return (seuil, source_label) for anomaly detection; None if NB2 export missing."""
     if nb2 is None:
         nb2 = read_json(artifact_path("resultats_anomalie.json"))
     extracted = _extract_nb2_seuil_ensemble(nb2 if isinstance(nb2, dict) else {})
     if extracted is not None:
         return extracted, "resultats_anomalie.json (NB2)"
-    return 0.25, "defaut_dashboard (0.25)"
+    return None, None
+
+
+def _as_threshold_float(value) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_qos_seuil(payload: dict) -> float | None:
+    if not isinstance(payload, dict) or not payload:
+        return None
+    seuils = payload.get("seuils_decision")
+    if isinstance(seuils, dict):
+        for key in ("qos", "qos_seuil", "seuil_qos"):
+            parsed = _as_threshold_float(seuils.get(key))
+            if parsed is not None:
+                return parsed
+    for key in ("qos_seuil", "seuil_qos", "qos"):
+        parsed = _as_threshold_float(payload.get(key))
+        if parsed is not None:
+            return parsed
+    kpi = payload.get("kpi_reseau")
+    if isinstance(kpi, dict):
+        for key in ("qos_seuil", "seuil_qos", "qos"):
+            parsed = _as_threshold_float(kpi.get(key))
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def resolve_qos_seuil() -> tuple[float | None, str | None]:
+    """Return (seuil QoS, source_label) from NB3 exports; None if absent."""
+    rapport = read_json(artifact_path("rapport_optimisation.json"))
+    extracted = _extract_qos_seuil(rapport if isinstance(rapport, dict) else {})
+    if extracted is not None:
+        return extracted, "rapport_optimisation.json (NB3)"
+    kpi = read_json(artifact_path("kpi_reseau.json"))
+    extracted = _extract_qos_seuil(kpi if isinstance(kpi, dict) else {})
+    if extracted is not None:
+        return extracted, "kpi_reseau.json (NB3)"
+    return None, None
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1789,7 +1833,10 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         if "anomalie_score_ensemble" in work.columns
         else pd.Series(dtype=float)
     )
-    pct_anomalies = float(anomaly_values.gt(seuil_anom).mean() * 100) if not anomaly_values.empty else 0.0
+    if seuil_anom is None or anomaly_values.dropna().empty:
+        pct_anomalies = None
+    else:
+        pct_anomalies = float(anomaly_values.gt(seuil_anom).mean() * 100)
 
     qos_values = (
         pd.to_numeric(work["score_qos"], errors="coerce").dropna()
@@ -1866,21 +1913,23 @@ def station_summary_from_df(df: pd.DataFrame) -> pd.DataFrame:
     }
     out = out.rename(columns={old: new for old, new in rename_map.items() if old in out.columns})
 
-    anomaly_score = pd.to_numeric(
-        out.get(
-            "score_anom_moy",
-            pd.Series(
-                0.0,
-                index=out.index)),
-        errors="coerce").fillna(0.0)
-    qos_score = pd.to_numeric(out.get("score_qos_moy", pd.Series(0.75, index=out.index)), errors="coerce").fillna(0.75)
-    qos_penalty = (1 - qos_score).clip(0, 1)
-    out["score_criticite"] = (anomaly_score.clip(0, 1) * 0.65 + qos_penalty * 0.35).clip(0, 1)
-    out["categorie"] = pd.cut(
-        out["score_criticite"],
-        bins=[-0.01, 0.20, 0.40, 1.0],
-        labels=["Faible", "Moyenne", "Critique"],
-    ).astype(str)
+    has_anom = "score_anom_moy" in out.columns
+    has_qos = "score_qos_moy" in out.columns
+    if has_anom and has_qos:
+        anomaly_score = pd.to_numeric(out["score_anom_moy"], errors="coerce")
+        qos_score = pd.to_numeric(out["score_qos_moy"], errors="coerce")
+        qos_penalty = (1 - qos_score).clip(0, 1)
+        both = anomaly_score.notna() & qos_score.notna()
+        out["score_criticite"] = pd.NA
+        out.loc[both, "score_criticite"] = (
+            anomaly_score.clip(0, 1) * 0.65 + qos_penalty * 0.35
+        ).loc[both].clip(0, 1)
+        crit = pd.to_numeric(out["score_criticite"], errors="coerce")
+        out["categorie"] = pd.cut(
+            crit,
+            bins=[-0.01, 0.20, 0.40, 1.0],
+            labels=["Faible", "Moyenne", "Critique"],
+        ).astype(str)
     return out
 
 # --- Logging ---

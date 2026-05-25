@@ -363,13 +363,20 @@ def render_executive_report_export(kpis: dict) -> None:
     from ui.utils import apply_current_admin_filters
     from utils.pdf_export import generate_report_pdf
 
+    from ui.data_validation import MSG_ANOM_COL, MSG_NB2_SEUIL, nb2_seuil_or_warn, require_column_or_warn
+
     with section("Rapport PDF"):
         top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
-        seuil = float(load_nb2_network_stats().get("seuil_ensemble") or 0.25)
+        nb2_stats = load_nb2_network_stats()
+        seuil = nb2_seuil_or_warn(nb2_stats)
         anomaly_items = []
-        if not top.empty:
+        pdf_ready = seuil is not None and require_column_or_warn(top, "anomalie_score_ensemble", MSG_ANOM_COL)
+        if pdf_ready and not top.empty:
             for _, row in top.iterrows():
-                score = float(row.get("anomalie_score_ensemble", 0) or 0)
+                raw = row.get("anomalie_score_ensemble")
+                if pd.isna(raw):
+                    continue
+                score = float(raw)
                 anomaly_items.append({
                     "station_id": str(row.get("station_id", "")),
                     "detail": f"Score {score:.2f}",
@@ -379,7 +386,9 @@ def render_executive_report_export(kpis: dict) -> None:
                         else "FAIBLE"
                     ),
                 })
-        if st.button("Générer le rapport PDF", type="primary", key="exec_report_pdf"):
+        elif seuil is None:
+            st.warning(MSG_NB2_SEUIL)
+        if st.button("Générer le rapport PDF", type="primary", key="exec_report_pdf", disabled=not pdf_ready):
             pdf_bytes = generate_report_pdf(kpis, anomaly_items)
             st.download_button(
                 "Télécharger le rapport PDF",

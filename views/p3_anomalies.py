@@ -10,6 +10,13 @@ from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import load_nb2_network_stats
 from ui.components import header, kpi_card, section
+from ui.data_validation import (
+    MSG_ANOM_COL,
+    MSG_QOS_COL,
+    nb2_seuil_or_warn,
+    qos_seuil_or_warn,
+    require_column_or_warn,
+)
 from ui.display import PAGE_ANOMALIES
 from ui.formatting import format_dataframe_for_display
 from ui.page_helpers import load_dashboard_df
@@ -115,7 +122,10 @@ def _priority_stations(work: pd.DataFrame, seuil: float, anom_col: str) -> pd.Da
         return pd.DataFrame()
     agg = work.groupby("station_id", as_index=False).agg(
         score=(anom_col, "max"),
-        alertes=(anom_col, lambda s: int((pd.to_numeric(s, errors="coerce").fillna(0) > seuil).sum())),
+        alertes=(
+            anom_col,
+            lambda s: int((pd.to_numeric(s, errors="coerce").dropna() > seuil).sum()),
+        ),
     )
     if "gouvernorat" in work.columns:
         gov = work.groupby("station_id")["gouvernorat"].first()
@@ -147,15 +157,19 @@ def page_anomalies():
 
     if is_admin():
         nb2_stats = load_nb2_network_stats()
-        seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
+        seuil = nb2_seuil_or_warn(nb2_stats)
         anom_col = "anomalie_score_ensemble"
+        if seuil is None or not require_column_or_warn(df, anom_col, MSG_ANOM_COL):
+            return
+
         work = df.copy()
-        work["_score"] = pd.to_numeric(work.get(anom_col, 0), errors="coerce").fillna(0)
-        anom_df = work[work["_score"] > seuil]
+        work["_score"] = pd.to_numeric(work[anom_col], errors="coerce")
+        scored = work.dropna(subset=["_score"])
+        anom_df = scored[scored["_score"] > seuil]
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            kpi_card("Score moyen", f"{work['_score'].mean():.2f}", "", "orange")
+            kpi_card("Score moyen", f"{scored['_score'].mean():.2f}", "", "orange")
         with c2:
             kpi_card("Mesures en alerte", str(len(anom_df)), f"Score > {seuil:.2f}", "red")
         with c3:
@@ -166,14 +180,14 @@ def page_anomalies():
         if not det_df.empty:
             with section("Détecteurs NB2"):
                 st.dataframe(det_df, width="stretch", hide_index=True)
-                src = nb2_stats.get("seuil_ensemble_source", "")
-                st.caption(
-                    f"Seuil consensus (ensemble) appliqué aux alertes : {seuil:.3f}"
-                    + (f" — source : {src}" if src else "")
-                )
+        src = nb2_stats.get("seuil_ensemble_source", "")
+        st.caption(
+            f"Seuil consensus (ensemble) : {seuil:.3f}"
+            + (f" — source : {src}" if src else "")
+        )
 
         with section("Stations prioritaires"):
-            prio = _priority_stations(work, seuil, anom_col)
+            prio = _priority_stations(scored, seuil, anom_col)
             if prio.empty:
                 st.success("Aucune station prioritaire.")
             else:
@@ -181,35 +195,42 @@ def page_anomalies():
 
         with section("Score × heure"):
             _render_hourly_scatter(
-                work, "_score", "Score anomalie (moy.)", seuil, template,
+                scored, "_score", "Score anomalie (moy.)", seuil, template,
             )
     else:
-        qos_seuil = 0.70
+        qos_seuil = qos_seuil_or_warn()
+        if qos_seuil is None or not require_column_or_warn(df, "score_qos", MSG_QOS_COL):
+            return
+
         work = df.copy()
-        work["_qos"] = pd.to_numeric(work.get("score_qos", 0.75), errors="coerce").fillna(0.75)
-        low_qos = work[work["_qos"] < qos_seuil]
+        work["_qos"] = pd.to_numeric(work["score_qos"], errors="coerce")
+        qos_valid = work.dropna(subset=["_qos"])
+        low_qos = qos_valid[qos_valid["_qos"] < qos_seuil]
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            kpi_card("QoS moyen", f"{work['_qos'].mean() * 100:.0f}%", "", "blue")
+            kpi_card("QoS moyen", f"{qos_valid['_qos'].mean() * 100:.0f}%", "", "blue")
         with c2:
             kpi_card("Alertes QoS", str(len(low_qos)), f"< {qos_seuil:.0%}", "orange")
         with c3:
-            kpi_card("Stations", str(work["station_id"].nunique()) if "station_id" in work.columns else "0", "", "gray")
+            n_st = int(qos_valid["station_id"].nunique()) if "station_id" in qos_valid.columns else 0
+            kpi_card("Stations", str(n_st), "", "gray")
 
         with section("Stations à surveiller"):
-            if "station_id" in work.columns:
+            if "station_id" in qos_valid.columns:
                 prio = (
-                    work.groupby("station_id", as_index=False)
-                    .agg(qos=("score_qos", "mean"), lignes=("score_qos", "count"))
+                    qos_valid.groupby("station_id", as_index=False)
+                    .agg(qos=("_qos", "mean"), lignes=("_qos", "count"))
                     .sort_values("qos")
                     .head(15)
                 )
-                if "gouvernorat" in work.columns:
-                    prio["gouvernorat"] = prio["station_id"].map(work.groupby("station_id")["gouvernorat"].first())
+                if "gouvernorat" in qos_valid.columns:
+                    prio["gouvernorat"] = prio["station_id"].map(
+                        qos_valid.groupby("station_id")["gouvernorat"].first()
+                    )
                 st.dataframe(format_dataframe_for_display(prio), width="stretch", hide_index=True)
 
         with section("QoS × heure"):
             _render_hourly_scatter(
-                work, "_qos", "QoS moyen", qos_seuil, template, seuil_annotation="Seuil QoS",
+                qos_valid, "_qos", "QoS moyen", qos_seuil, template, seuil_annotation="Seuil QoS",
             )

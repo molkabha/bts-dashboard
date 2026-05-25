@@ -10,6 +10,11 @@ from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import compute_filtered_kpis, load_nb2_network_stats
 from ui.components import header, kpi_card, section
+from ui.data_validation import (
+    MSG_ANOM_COL,
+    nb2_seuil_or_warn,
+    require_column_or_warn,
+)
 from ui.page_helpers import get_station_map_data, latest_per_station, load_dashboard_df, render_executive_report_export
 from ui.utils import active_filter_label, is_admin
 
@@ -35,14 +40,18 @@ def page_accueil():
     c1, c2, c3, c4 = st.columns(4)
     if is_admin():
         nb2_stats = load_nb2_network_stats()
-        seuil = float(nb2_stats.get("seuil_ensemble") or 0.25)
-        scores = pd.to_numeric(df.get("anomalie_score_ensemble", 0), errors="coerce").fillna(0)
-        if "station_id" in df.columns:
-            alert_stations = int(
-                df.assign(_s=scores).groupby("station_id")["_s"].max().gt(seuil).sum()
-            )
-        else:
-            alert_stations = int((scores > seuil).sum())
+        seuil = nb2_seuil_or_warn(nb2_stats)
+        alert_stations: int | None = None
+        if seuil is not None and require_column_or_warn(df, "anomalie_score_ensemble", MSG_ANOM_COL):
+            scores = pd.to_numeric(df["anomalie_score_ensemble"], errors="coerce")
+            valid = scores.dropna()
+            if not valid.empty:
+                if "station_id" in df.columns:
+                    alert_stations = int(
+                        df.assign(_s=scores).groupby("station_id")["_s"].max().gt(seuil).sum()
+                    )
+                else:
+                    alert_stations = int((valid > seuil).sum())
         with c1:
             eco_dt = kpis.get("economie_dt") or 0
             eco_help = kpis.get("economie_periode_label", "Période filtrée")
@@ -54,7 +63,10 @@ def page_accueil():
         with c3:
             kpi_card("Stations ECO", f"{float(kpis.get('pct_mode_eco') or 0):.1f}%", "Dernier mode / station", "eco")
         with c4:
-            kpi_card("Stations en alerte", str(alert_stations), f"Score max > {seuil:.2f}", "orange")
+            if alert_stations is None or seuil is None:
+                kpi_card("Stations en alerte", "—", "Seuil NB2 ou scores anomalie manquants", "orange")
+            else:
+                kpi_card("Stations en alerte", str(alert_stations), f"Score max > {seuil:.2f}", "orange")
     else:
         conso_moy = float(kpis.get("conso_moyenne_kwh") or 0)
         qos_raw = kpis.get("score_qos_moyen")
@@ -99,9 +111,13 @@ def page_accueil():
                 elif "conso_moy" in scores_df.columns:
                     sort_col = "conso_moy"
                 elif "score_qos_moy" in scores_df.columns:
-                    scores_df = scores_df.copy()
-                    scores_df["_prio_qos"] = 1 - pd.to_numeric(scores_df["score_qos_moy"], errors="coerce").fillna(0.75)
-                    sort_col = "_prio_qos"
+                    qos_s = pd.to_numeric(scores_df["score_qos_moy"], errors="coerce")
+                    if qos_s.notna().any():
+                        scores_df = scores_df.copy()
+                        scores_df["_prio_qos"] = 1 - qos_s
+                        sort_col = "_prio_qos"
+                    else:
+                        sort_col = "station_id"
                 else:
                     sort_col = "station_id"
                 cols = [c for c in [
