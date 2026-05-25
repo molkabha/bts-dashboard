@@ -6,7 +6,6 @@ import html
 from pathlib import Path
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -19,6 +18,7 @@ from services.data_service import (
     compute_filtered_kpis,
     dashboard_data_coverage,
 )
+from services.nb_metrics import harmonize_nb3_economies
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_OPTIMISATION
 from ui.formatting import display_text
@@ -223,22 +223,80 @@ def _chart_hourly_profile(df: pd.DataFrame, template: str, *, admin: bool) -> No
     st.plotly_chart(fig, width="stretch")
 
 
-def _chart_mode_distribution(latest: pd.DataFrame, template: str) -> None:
-    if latest.empty or "mode_operation" not in latest.columns:
-        st.info("Répartition des modes indisponible.")
+def _chart_top_station_economies(df: pd.DataFrame, template: str, *, admin: bool, limit: int = 12) -> None:
+    """Top stations par kWh économisés sur la période (utile pour prioriser le parc)."""
+    if df.empty or "station_id" not in df.columns:
+        st.info("Économies par station indisponibles.")
         return
-    mode_counts = latest["mode_operation"].value_counts().reset_index()
-    mode_counts.columns = ["Mode", "Nb"]
-    fig = px.pie(
-        mode_counts,
-        names="Mode",
-        values="Nb",
-        hole=0.45,
-        color="Mode",
-        color_discrete_map=MODE_COLORS,
+
+    work = harmonize_nb3_economies(df.copy())
+    sid = work["station_id"].astype(str).str.strip()
+    work = work[sid.notna() & sid.ne("") & sid.str.lower().ne("none")]
+
+    has_expert = "economie_estimee_kwh" in work.columns
+    has_rl = "economie_rl_kwh" in work.columns
+    if not has_expert and not has_rl and "economie_kwh" not in work.columns:
+        st.info("Colonnes d'économie NB3 absentes sur la période filtrée.")
+        return
+
+    expert = (
+        pd.to_numeric(work["economie_estimee_kwh"], errors="coerce").fillna(0)
+        if has_expert
+        else pd.Series(0.0, index=work.index)
     )
-    fig.update_traces(textposition="inside", textinfo="percent+label")
-    fig.update_layout(**_chart_layout(template), showlegend=False)
+    rl = (
+        pd.to_numeric(work["economie_rl_kwh"], errors="coerce").fillna(0)
+        if has_rl
+        else pd.Series(0.0, index=work.index)
+    )
+    work = work.assign(_expert=expert, _rl=rl)
+    agg = work.groupby("station_id", as_index=False).agg(
+        expert_kwh=("_expert", "sum"),
+        rl_kwh=("_rl", "sum"),
+    )
+    agg["combine_kwh"] = agg[["expert_kwh", "rl_kwh"]].max(axis=1)
+    if float(agg["combine_kwh"].sum()) <= 0:
+        st.info("Aucune économie enregistrée sur la période filtrée.")
+        return
+
+    top = agg.nlargest(limit, "combine_kwh").sort_values("combine_kwh", ascending=True)
+    fig = go.Figure()
+    if admin and has_expert and has_rl:
+        fig.add_trace(
+            go.Bar(
+                y=top["station_id"],
+                x=top["expert_kwh"],
+                name="Règles expertes",
+                orientation="h",
+                marker_color="#1e3a8a",
+            ),
+        )
+        fig.add_trace(
+            go.Bar(
+                y=top["station_id"],
+                x=top["rl_kwh"],
+                name="RL",
+                orientation="h",
+                marker_color="#059669",
+            ),
+        )
+        fig.update_layout(barmode="group")
+    else:
+        fig.add_trace(
+            go.Bar(
+                y=top["station_id"],
+                x=top["combine_kwh"],
+                name="Économie",
+                orientation="h",
+                marker_color="#059669",
+            ),
+        )
+    fig.update_layout(
+        **_chart_layout(template),
+        xaxis_title="kWh économisés (somme période)",
+        yaxis_title="",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
+    )
     st.plotly_chart(fig, width="stretch")
 
 
@@ -293,12 +351,13 @@ def _render_synthesis(df: pd.DataFrame, kpis: dict, template: str, *, admin: boo
             )
             _chart_hourly_profile(df, template, admin=admin)
     with c2:
-        with section("Répartition des modes"):
+        with section("Top stations — économies"):
             st.markdown(
-                '<p class="opt-chart-note">Dernier mode connu par station (état actuel du parc filtré).</p>',
+                '<p class="opt-chart-note">Stations où l\'optimisation génère le plus de kWh '
+                "économisés sur la période filtrée (priorisation terrain).</p>",
                 unsafe_allow_html=True,
             )
-            _chart_mode_distribution(latest, template)
+            _chart_top_station_economies(df, template, admin=admin)
 
 
 def _render_performance_rl(kpis: dict, nb3: dict, template: str) -> None:
