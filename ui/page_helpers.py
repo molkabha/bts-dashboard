@@ -266,6 +266,7 @@ def _build_mode_group_html(
     total: int,
     *,
     show_savings: bool,
+    pagination_footer: str = "",
 ) -> str:
     mode_slug = mode.lower()
     color = MODE_COLORS.get(mode, "#64748b")
@@ -302,6 +303,7 @@ def _build_mode_group_html(
         f'<div class="sap-group-title">{html.escape(mode)}'
         f'<span class="sap-group-count">{html.escape(count_label)}</span></div>'
         f"{''.join(rows_html)}"
+        f"{pagination_footer}"
         f"</div>"
     )
 
@@ -352,21 +354,33 @@ def render_actions_par_station(
             st.session_state[page_key] = page
             start = (page - 1) * page_size
             subset = mode_df.iloc[start : start + page_size]
+            page_footer = (
+                f'<div class="sap-pagination">'
+                f"<strong>{html.escape(mode)}</strong> — page {page} / {total_pages} "
+                f"({total} stations)"
+                f"</div>"
+            )
             st.markdown(
-                _build_mode_group_html(mode, subset, total, show_savings=show_savings),
+                _build_mode_group_html(
+                    mode,
+                    subset,
+                    total,
+                    show_savings=show_savings,
+                    pagination_footer=page_footer,
+                ),
                 unsafe_allow_html=True,
             )
-            pcol1, pcol2, pcol3 = st.columns([1, 2, 1])
-            with pcol1:
-                if page > 1 and st.button("← Préc.", key=f"sap_prev_{mode}"):
-                    st.session_state[page_key] = page - 1
-                    st.rerun()
-            with pcol2:
-                st.caption(f"**{mode}** — page {page} / {total_pages} ({total} stations)")
-            with pcol3:
-                if page < total_pages and st.button("Suiv. →", key=f"sap_next_{mode}"):
-                    st.session_state[page_key] = page + 1
-                    st.rerun()
+            _, nav_mid, _ = st.columns([1, 2, 1])
+            with nav_mid:
+                btn_prev, btn_next = st.columns(2)
+                with btn_prev:
+                    if page > 1 and st.button("← Préc.", key=f"sap_prev_{mode}", width="stretch"):
+                        st.session_state[page_key] = page - 1
+                        st.rerun()
+                with btn_next:
+                    if page < total_pages and st.button("Suiv. →", key=f"sap_next_{mode}", width="stretch"):
+                        st.session_state[page_key] = page + 1
+                        st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         groups_html: list[str] = ['<div class="station-actions-panel">']

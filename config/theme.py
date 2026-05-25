@@ -481,6 +481,17 @@ section.main [data-testid="stPopoverBody"] div[data-testid="stMultiSelect"] div[
 .sap-action { font-size:13px; font-weight:700; line-height:1.4; margin-bottom:2px; }
 .sap-saving { font-size:12px; font-weight:800; line-height:1.35; opacity:0.92; }
 .sap-gov { font-size:11px; color:var(--tt-muted); font-weight:600; margin-top:2px; }
+.sap-pagination {
+  margin-top: 14px;
+  padding: 10px 14px 4px;
+  border-top: 1px dashed var(--tt-border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tt-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+.sap-pagination-nav { display:flex; justify-content:center; gap:10px; margin:6px 0 14px; }
 
 /* Page Optimisation — bandeau synthèse et cartes graphiques */
 .opt-summary { display:flex; flex-wrap:wrap; gap:10px; margin:4px 0 18px; }
@@ -529,5 +540,6 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { backg
 .rl-best-banner { background:#022c22 !important; border-color:#14532d !important; color:#86efac !important; }
 .opt-summary-item, .opt-mode-chip { background:var(--tt-card) !important; border-color:var(--tt-border) !important; }
 .opt-summary-item .osi-value { color:var(--tt-text) !important; }
+.sap-pagination { color:var(--tt-muted) !important; border-top-color:var(--tt-border) !important; }
 </style>
 """
