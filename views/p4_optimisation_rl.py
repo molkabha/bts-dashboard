@@ -7,7 +7,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config.settings import settings
-from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
+from config.theme import (
+    OPT_ECONOMIE_RETENUE_COLOR,
+    OPT_TOP_STATIONS_COLOR,
+    PLOTLY_DARK,
+    PLOTLY_LIGHT,
+)
 from security.middleware import security_middleware
 from services.data_service import build_nb3_profil_horaire, compute_filtered_kpis
 from services.nb_metrics import harmonize_nb3_economies
@@ -69,11 +74,16 @@ def _chart_economie_retenue(kpis: dict, template: str) -> None:
     rl_kwh = float(kpis.get("economie_rl_kwh") or 0)
     prix = float(settings.PRIX_KWH_TN)
 
+    retenu_dt = retenu_kwh * prix
+    expert_dt = expert_kwh * prix
+    rl_dt = rl_kwh * prix
+    ecart_sommes_dt = (rl_kwh - expert_kwh) * prix
+
     fig = go.Figure(
         go.Bar(
             x=["Économie retenue"],
             y=[retenu_kwh],
-            marker_color="#059669",
+            marker_color=OPT_ECONOMIE_RETENUE_COLOR,
             text=[f"{retenu_kwh:,.0f} kWh"],
             textposition="outside",
         ),
@@ -81,9 +91,11 @@ def _chart_economie_retenue(kpis: dict, template: str) -> None:
     fig.update_layout(**_layout(template), yaxis_title="kWh", showlegend=False)
     st.plotly_chart(fig, width="stretch")
     st.caption(
-        f"Retenu : **{retenu_kwh * prix:,.0f} DT** · "
-        f"Scénarios bruts (indicatifs, non additifs) : règles {expert_kwh:,.0f} kWh "
-        f"({expert_kwh * prix:,.0f} DT) · RL {rl_kwh:,.0f} kWh ({rl_kwh * prix:,.0f} DT)."
+        f"Retenu : **{retenu_dt:,.0f} DT** = Σ max(règles, RL) × {prix:.2f} DT/kWh. "
+        f"Scénarios bruts (sommes séparées, non additifs) : règles {expert_kwh:,.0f} kWh "
+        f"({expert_dt:,.0f} DT) · RL {rl_kwh:,.0f} kWh ({rl_dt:,.0f} DT). "
+        f"Écart (RL − règles) sur les sommes : **{ecart_sommes_dt:+,.0f} DT** — "
+        f"ce n’est pas l’économie retenue."
     )
 
 
@@ -109,7 +121,7 @@ def _chart_top_stations(df: pd.DataFrame, template: str, *, admin: bool, limit: 
             x=top["kwh"],
             name="Retenu (max/ligne)",
             orientation="h",
-            marker_color="#059669",
+            marker_color=OPT_TOP_STATIONS_COLOR,
         ),
     )
     fig.update_layout(**_layout(template), xaxis_title="kWh retenus", showlegend=False)

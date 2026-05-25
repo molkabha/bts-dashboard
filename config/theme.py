@@ -19,6 +19,10 @@ COLOR_INFO = "#3b82f6"
 COLOR_ECO = "#0ea5e9"
 COLOR_LIVE = "#22c55e"
 
+# Page Optimisation — graphiques économies (hors modes, actions, colorway Plotly)
+OPT_ECONOMIE_RETENUE_COLOR = "#6d28d9"
+OPT_TOP_STATIONS_COLOR = "#65a30d"
+
 PLOTLY_LIGHT = {
     "layout": {
         "font": {"family": "Inter, Segoe UI, Arial", "color": "#0f172a"},
