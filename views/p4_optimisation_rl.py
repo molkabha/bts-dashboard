@@ -8,7 +8,8 @@ import streamlit as st
 
 from config.settings import settings
 from config.theme import (
-    OPT_ECONOMIE_RETENUE_COLOR,
+    OPT_ECONOMIE_EXPERT_COLOR,
+    OPT_ECONOMIE_RL_COLOR,
     OPT_TOP_STATIONS_COLOR,
     PLOTLY_DARK,
     PLOTLY_LIGHT,
@@ -67,36 +68,45 @@ def _kpi_engineer(kpis: dict, df: pd.DataFrame) -> None:
         kpi_card("Conso moyenne", f"{float(kpis.get('conso_moyenne_kwh') or 0):.1f} kWh", "", "gray")
 
 
-def _chart_economie_retenue(kpis: dict, template: str) -> None:
-    """Gain réel = max(règles, RL) par ligne — pas la différence entre deux sommes."""
-    retenu_kwh = float(kpis.get("economie_kwh") or 0)
-    expert_kwh = float(kpis.get("economie_estimee_kwh") or 0)
-    rl_kwh = float(kpis.get("economie_rl_kwh") or 0)
-    prix = float(settings.PRIX_KWH_TN)
-
-    retenu_dt = retenu_kwh * prix
-    expert_dt = expert_kwh * prix
-    rl_dt = rl_kwh * prix
-    ecart_sommes_dt = (rl_kwh - expert_kwh) * prix
-
+def _single_gain_bar(
+    label: str,
+    kwh: float,
+    dt: float,
+    color: str,
+    template: str,
+) -> go.Figure:
     fig = go.Figure(
         go.Bar(
-            x=["Économie retenue"],
-            y=[retenu_kwh],
-            marker_color=OPT_ECONOMIE_RETENUE_COLOR,
-            text=[f"{retenu_kwh:,.0f} kWh"],
+            x=[label],
+            y=[kwh],
+            marker_color=color,
+            text=[f"{kwh:,.0f} kWh\n{dt:,.0f} DT"],
             textposition="outside",
         ),
     )
     fig.update_layout(**_layout(template), yaxis_title="kWh", showlegend=False)
-    st.plotly_chart(fig, width="stretch")
-    st.caption(
-        f"Retenu : **{retenu_dt:,.0f} DT** = Σ max(règles, RL) × {prix:.2f} DT/kWh. "
-        f"Scénarios bruts (sommes séparées, non additifs) : règles {expert_kwh:,.0f} kWh "
-        f"({expert_dt:,.0f} DT) · RL {rl_kwh:,.0f} kWh ({rl_dt:,.0f} DT). "
-        f"Écart (RL − règles) sur les sommes : **{ecart_sommes_dt:+,.0f} DT** — "
-        f"ce n’est pas l’économie retenue."
-    )
+    return fig
+
+
+def _chart_gains_expert_rl(kpis: dict, template: str) -> None:
+    """Sommes brutes Σ règles et Σ RL sur le parc filtré."""
+    expert_kwh = float(kpis.get("economie_estimee_kwh") or 0)
+    rl_kwh = float(kpis.get("economie_rl_kwh") or 0)
+    prix = float(settings.PRIX_KWH_TN)
+    expert_dt = expert_kwh * prix
+    rl_dt = rl_kwh * prix
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(
+            _single_gain_bar("Expert (règles)", expert_kwh, expert_dt, OPT_ECONOMIE_EXPERT_COLOR, template),
+            width="stretch",
+        )
+    with c2:
+        st.plotly_chart(
+            _single_gain_bar("RL", rl_kwh, rl_dt, OPT_ECONOMIE_RL_COLOR, template),
+            width="stretch",
+        )
 
 
 def _chart_top_stations(df: pd.DataFrame, template: str, *, admin: bool, limit: int = 10) -> None:
@@ -179,8 +189,8 @@ def page_optimisation_rl():
             with section("Top stations — économies"):
                 _chart_top_stations(df, template, admin=True)
         with c2:
-            with section("Économie retenue"):
-                _chart_economie_retenue(kpis, template)
+            with section("Gains expert & RL"):
+                _chart_gains_expert_rl(kpis, template)
 
         with st.expander("Agents RL et profil horaire"):
             render_nb3_rl_agents(session_outputs().get("nb3", {}), template)
