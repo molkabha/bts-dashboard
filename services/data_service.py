@@ -1444,17 +1444,9 @@ def load_nb1_models_comparison() -> pd.DataFrame:
 
 
 def _extract_nb2_seuil_ensemble(nb2: dict) -> float | None:
-    """Read ensemble threshold from NB2 export (resultats_anomalie.json) when present."""
+    """Read explicit ensemble threshold from resultats_anomalie.json when present."""
     if not isinstance(nb2, dict) or not nb2:
         return None
-
-    def _as_float(value) -> float | None:
-        try:
-            if value is None or value == "":
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
 
     for key in (
         "seuil_ensemble",
@@ -1463,14 +1455,14 @@ def _extract_nb2_seuil_ensemble(nb2: dict) -> float | None:
         "ensemble_threshold",
         "optimal_threshold",
     ):
-        parsed = _as_float(nb2.get(key))
+        parsed = _as_threshold_float(nb2.get(key))
         if parsed is not None:
             return parsed
 
     ensemble = nb2.get("ensemble")
     if isinstance(ensemble, dict):
         for key in ("seuil", "seuil_ensemble", "threshold", "seuil_test"):
-            parsed = _as_float(ensemble.get(key))
+            parsed = _as_threshold_float(ensemble.get(key))
             if parsed is not None:
                 return parsed
 
@@ -1478,19 +1470,124 @@ def _extract_nb2_seuil_ensemble(nb2: dict) -> float | None:
         if not isinstance(value, dict):
             continue
         for key in ("seuil_ensemble", "seuil", "threshold"):
-            parsed = _as_float(value.get(key))
+            parsed = _as_threshold_float(value.get(key))
             if parsed is not None:
                 return parsed
     return None
 
 
+def _seuil_from_modeles_anomalie_joblib() -> tuple[float | None, str | None]:
+    """Read threshold stored in modeles_anomalie.joblib (NB2)."""
+    try:
+        import joblib
+    except ImportError:
+        return None, None
+    path = artifact_path("modeles_anomalie.joblib")
+    if not path.exists():
+        return None, None
+    try:
+        anom = joblib.load(path)
+    except Exception:
+        return None, None
+    if not isinstance(anom, dict):
+        return None, None
+    for key in (
+        "seuil_ensemble",
+        "seuil_consensus",
+        "threshold_ensemble",
+        "seuil",
+        "optimal_threshold",
+    ):
+        parsed = _as_threshold_float(anom.get(key))
+        if parsed is not None:
+            return parsed, "modeles_anomalie.joblib (NB2)"
+    return None, None
+
+
+def _nb2_anomaly_rate_fraction(nb2: dict | None) -> float | None:
+    """Network anomaly rate (0–1) from NB3 KPI or NB2 detector pct_test."""
+    kpi = read_json(artifact_path("kpi_reseau.json"))
+    if isinstance(kpi, dict) and kpi.get("pct_anomalies") not in (None, ""):
+        return float(kpi["pct_anomalies"]) / 100.0
+    if not isinstance(nb2, dict):
+        return None
+    test_pcts = [
+        float(v.get("pct_test")) / 100.0
+        for v in nb2.values()
+        if isinstance(v, dict) and v.get("pct_test") not in (None, "")
+    ]
+    return sum(test_pcts) / len(test_pcts) if test_pcts else None
+
+
+def _seuil_from_anomaly_parquet(nb2: dict | None) -> tuple[float | None, str | None]:
+    """
+    Derive consensus threshold from df_avec_anomalies scores and NB anomaly rate.
+    Aligns with NB2/NB3 pct_anomalies (~top X % flagged).
+    """
+    frac = _nb2_anomaly_rate_fraction(nb2)
+    if frac is None or frac <= 0 or frac >= 1:
+        return None, None
+    for name in (settings.ANOMALY_DATASET, "df_avec_anomalies.parquet"):
+        path = artifact_path(name)
+        if not path.exists():
+            continue
+        df = read_parquet_fast(path, ["anomalie_score_ensemble"])
+        if df.empty or "anomalie_score_ensemble" not in df.columns:
+            continue
+        scores = pd.to_numeric(df["anomalie_score_ensemble"], errors="coerce").dropna()
+        if scores.empty:
+            continue
+        seuil = float(scores.quantile(1.0 - frac))
+        return seuil, f"{name} (quantile {1.0 - frac:.4f}, pct_anomalies={frac * 100:.2f}%)"
+    return None, None
+
+
+def diagnose_nb2_seuil() -> dict:
+    """Explain why resolve_nb2_seuil_ensemble() may return None (paths, JSON shape)."""
+    json_path = artifact_path("resultats_anomalie.json")
+    nb2 = read_json(json_path)
+    explicit = _extract_nb2_seuil_ensemble(nb2 if isinstance(nb2, dict) else {})
+    joblib_seuil, _ = _seuil_from_modeles_anomalie_joblib()
+    parquet_seuil, _ = _seuil_from_anomaly_parquet(nb2 if isinstance(nb2, dict) else {})
+    detector_keys = [
+        k for k, v in (nb2.items() if isinstance(nb2, dict) else [])
+        if isinstance(v, dict) and ("pct_test" in v or "pct_anomalies" in v)
+    ]
+    parquet_path = artifact_path(settings.ANOMALY_DATASET)
+    return {
+        "json_path": str(json_path),
+        "json_exists": json_path.exists(),
+        "json_loaded": bool(nb2),
+        "json_detector_keys": detector_keys[:12],
+        "json_has_seuil_ensemble": explicit is not None,
+        "joblib_path": str(artifact_path("modeles_anomalie.joblib")),
+        "joblib_exists": artifact_path("modeles_anomalie.joblib").exists(),
+        "joblib_has_seuil": joblib_seuil is not None,
+        "parquet_path": str(parquet_path),
+        "parquet_exists": parquet_path.exists(),
+        "parquet_derived_seuil": parquet_seuil,
+        "resolved": resolve_nb2_seuil_ensemble(nb2 if isinstance(nb2, dict) else {}),
+    }
+
+
 def resolve_nb2_seuil_ensemble(nb2: dict | None = None) -> tuple[float | None, str | None]:
-    """Return (seuil, source_label) for anomaly detection; None if NB2 export missing."""
+    """Return (seuil, source_label) from NB2/NB3 artefacts; None if nothing usable."""
     if nb2 is None:
         nb2 = read_json(artifact_path("resultats_anomalie.json"))
-    extracted = _extract_nb2_seuil_ensemble(nb2 if isinstance(nb2, dict) else {})
+    nb2_dict = nb2 if isinstance(nb2, dict) else {}
+
+    extracted = _extract_nb2_seuil_ensemble(nb2_dict)
     if extracted is not None:
         return extracted, "resultats_anomalie.json (NB2)"
+
+    joblib_seuil, joblib_src = _seuil_from_modeles_anomalie_joblib()
+    if joblib_seuil is not None:
+        return joblib_seuil, joblib_src
+
+    parquet_seuil, parquet_src = _seuil_from_anomaly_parquet(nb2_dict)
+    if parquet_seuil is not None:
+        return parquet_seuil, parquet_src
+
     return None, None
 
 

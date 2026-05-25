@@ -7,10 +7,43 @@ import streamlit as st
 
 from services.nb_metrics import blank_mask
 
-MSG_NB2_SEUIL = (
-    "Seuil d'anomalie indisponible : export NB2 `resultats_anomalie.json` "
-    "introuvable ou sans clé `seuil_ensemble`."
-)
+def format_nb2_seuil_alert() -> str:
+    from services.data_service import diagnose_nb2_seuil
+
+    d = diagnose_nb2_seuil()
+    seuil, source = d.get("resolved") or (None, None)
+    if seuil is not None:
+        return ""
+
+    lines = [
+        "**Seuil d'anomalie indisponible** — le dashboard ne trouve aucune source NB valide.",
+    ]
+    if not d.get("json_exists"):
+        lines.append(
+            "- `resultats_anomalie.json` : fichier absent localement "
+            "(téléchargement Hugging Face échoué ou dossier `VF/NB2/output` vide)."
+        )
+    elif d.get("json_loaded") and not d.get("json_has_seuil_ensemble"):
+        keys = ", ".join(d.get("json_detector_keys") or []) or "—"
+        lines.append(
+            "- `resultats_anomalie.json` : présent mais **sans** `seuil_ensemble` "
+            f"(détecteurs : {keys})."
+        )
+    if not d.get("parquet_exists"):
+        lines.append(
+            "- `df_avec_anomalies.parquet` : absent — impossible de déduire le seuil "
+            "depuis les scores."
+        )
+    elif d.get("parquet_derived_seuil") is None:
+        lines.append(
+            "- Parquet présent mais dérivation du seuil impossible "
+            "(scores vides ou `pct_anomalies` manquant dans `kpi_reseau.json`)."
+        )
+    lines.append(
+        "Actions : copier les artefacts Hub dans `VF/NB2/output`, corriger le SSL Python, "
+        "ou ajouter `seuil_ensemble` dans l'export JSON du notebook NB2."
+    )
+    return "\n".join(lines)
 MSG_ANOM_COL = (
     "Scores d'anomalie indisponibles : colonne `anomalie_score_ensemble` absente "
     "ou vide sur la période filtrée (export `df_avec_anomalies.parquet` requis)."
@@ -45,13 +78,17 @@ def nb2_seuil_or_warn(nb2_stats: dict | None = None) -> float | None:
         nb2_stats = load_nb2_network_stats()
     raw = nb2_stats.get("seuil_ensemble")
     if raw is None:
-        st.warning(MSG_NB2_SEUIL)
+        st.warning(format_nb2_seuil_alert())
         return None
     try:
-        return float(raw)
+        seuil = float(raw)
     except (TypeError, ValueError):
-        st.warning(MSG_NB2_SEUIL)
+        st.warning(format_nb2_seuil_alert())
         return None
+    source = nb2_stats.get("seuil_ensemble_source")
+    if source:
+        st.caption(f"Seuil anomalie : {seuil:.4f} — source : {source}")
+    return seuil
 
 
 def qos_seuil_or_warn() -> float | None:

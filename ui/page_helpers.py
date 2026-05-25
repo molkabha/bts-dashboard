@@ -363,7 +363,7 @@ def render_executive_report_export(kpis: dict) -> None:
     from ui.utils import apply_current_admin_filters
     from utils.pdf_export import generate_report_pdf
 
-    from ui.data_validation import MSG_ANOM_COL, MSG_NB2_SEUIL, nb2_seuil_or_warn, require_column_or_warn
+    from ui.data_validation import MSG_ANOM_COL, format_nb2_seuil_alert, nb2_seuil_or_warn, require_column_or_warn
 
     with section("Rapport PDF"):
         top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
@@ -387,7 +387,7 @@ def render_executive_report_export(kpis: dict) -> None:
                     ),
                 })
         elif seuil is None:
-            st.warning(MSG_NB2_SEUIL)
+            st.warning(format_nb2_seuil_alert())
         if st.button("Générer le rapport PDF", type="primary", key="exec_report_pdf", disabled=not pdf_ready):
             pdf_bytes = generate_report_pdf(kpis, anomaly_items)
             st.download_button(
