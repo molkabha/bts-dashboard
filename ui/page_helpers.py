@@ -48,9 +48,17 @@ def get_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
     return result
 
 
-def load_dashboard_df(extra_cols: list[str] | None = None) -> pd.DataFrame:
+def load_dashboard_df(
+    extra_cols: list[str] | None = None,
+    *,
+    columns: list[str] | None = None,
+) -> pd.DataFrame:
     """Load filtered dashboard data with per-rerun session cache."""
-    cols = tuple(dict.fromkeys(DEFAULT_COLS + (extra_cols or [])))
+    if columns is not None:
+        use = list(dict.fromkeys(list(columns) + settings.TEMPORAL_COLUMNS))
+        cols = tuple(use)
+    else:
+        cols = tuple(dict.fromkeys(DEFAULT_COLS + (extra_cols or [])))
     session_key = f"{dataset_cache_key()}|{filters_cache_key()}|{cols}"
     cached = st.session_state.get("_df_session_val")
     if st.session_state.get("_df_session_key") == session_key and isinstance(cached, pd.DataFrame):
