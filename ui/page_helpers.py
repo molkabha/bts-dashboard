@@ -370,6 +370,8 @@ def render_actions_par_station(
                 ),
                 unsafe_allow_html=True,
             )
+            st.markdown('<div class="sap-pagination-buttons-gap"></div>', unsafe_allow_html=True)
+            st.markdown('<div class="sap-pagination-nav-wrap">', unsafe_allow_html=True)
             _, nav_mid, _ = st.columns([1, 2, 1])
             with nav_mid:
                 btn_prev, btn_next = st.columns(2)
@@ -381,6 +383,7 @@ def render_actions_par_station(
                     if page < total_pages and st.button("Suiv. →", key=f"sap_next_{mode}", width="stretch"):
                         st.session_state[page_key] = page + 1
                         st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         groups_html: list[str] = ['<div class="station-actions-panel">']

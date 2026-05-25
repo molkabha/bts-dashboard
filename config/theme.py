@@ -483,7 +483,7 @@ section.main [data-testid="stPopoverBody"] div[data-testid="stMultiSelect"] div[
 .sap-gov { font-size:11px; color:var(--tt-muted); font-weight:600; margin-top:2px; }
 .sap-pagination {
   margin-top: 14px;
-  padding: 10px 14px 4px;
+  padding: 10px 14px 10px;
   border-top: 1px dashed var(--tt-border);
   font-size: 11px;
   font-weight: 600;
@@ -491,7 +491,8 @@ section.main [data-testid="stPopoverBody"] div[data-testid="stMultiSelect"] div[
   text-align: center;
   line-height: 1.4;
 }
-.sap-pagination-nav { display:flex; justify-content:center; gap:10px; margin:6px 0 14px; }
+.sap-pagination-buttons-gap { height: 14px; margin-bottom: 2px; }
+.sap-pagination-nav-wrap { margin-top: 4px; margin-bottom: 22px; }
 
 /* Page Optimisation — bandeau synthèse et cartes graphiques */
 .opt-summary { display:flex; flex-wrap:wrap; gap:10px; margin:4px 0 18px; }
