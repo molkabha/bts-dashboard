@@ -123,12 +123,17 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
 
     center_lat = plot_scores["latitude"].mean()
     center_lon = plot_scores["longitude"].mean()
-    fig.update_layout(
-        template=template,
-        mapbox=dict(center=dict(lat=center_lat, lon=center_lon), zoom=6),
-        margin=dict(l=0, r=0, t=8, b=0),
-        showlegend=False,
-    )
+    layout_kwargs: dict = {
+        "template": template,
+        "mapbox": dict(center=dict(lat=center_lat, lon=center_lon), zoom=6),
+        "margin": dict(l=0, r=0, t=8, b=0),
+    }
+    if color_col == "action_actuelle":
+        layout_kwargs["showlegend"] = True
+        layout_kwargs["legend"] = dict(title="Dernière action")
+    else:
+        layout_kwargs["showlegend"] = False
+    fig.update_layout(**layout_kwargs)
     if color_col and size_col is None:
         fig.update_traces(marker=dict(opacity=0.88, size=11))
     elif color_col:
@@ -180,6 +185,9 @@ def page_vue_reseau():
     scores = get_station_map_data(df)
     scores = _attach_station_last_action(df, scores)
 
+    if "action_actuelle" in scores.columns:
+        n_map = len(scores.dropna(subset=["latitude", "longitude"])) if {"latitude", "longitude"}.issubset(scores.columns) else len(scores)
+        st.caption(f"{n_map} station(s) · couleur = dernière action NB3")
     _render_mapbox(scores, template)
     _render_comparison(df, template)
 
