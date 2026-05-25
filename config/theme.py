@@ -124,6 +124,23 @@ ACTION_COLORS = {
     "Couper un porteur": "#d97706",
 }
 
+# Page Carte parc — teintes plus contrastées (simulation inchangée)
+MAP_ACTION_COLORS = {
+    "Maintien": "#64748b",
+    "Aucune action": "#94a3b8",
+    "Réduction de puissance": "#2563eb",
+    "Réduire la puissance": "#2563eb",
+    "Passage mode ECO": "#16a34a",
+    "Éco calendaire": "#ca8a04",
+    "Veille secteur": "#9333ea",
+    "Free cooling": "#06b6d4",
+    "Alerte QoS": "#f97316",
+    "Intervention terrain": "#dc2626",
+    "Couper un porteur": "#db2777",
+    "Maintien de la consommation": "#475569",
+    "Forcer mode ECO": "#059669",
+}
+
 
 def action_color_discrete_map(values: Iterable | pd.Series | None = None) -> dict[str, str]:
     cmap = dict(ACTION_COLORS)
@@ -132,6 +149,20 @@ def action_color_discrete_map(values: Iterable | pd.Series | None = None) -> dic
             label = str(raw).strip()
             if label and label not in cmap:
                 cmap[label] = "#64748b"
+    return cmap
+
+
+def map_action_color_discrete_map(values: Iterable | pd.Series | None = None) -> dict[str, str]:
+    """Palette carte parc (couleurs plus distinctes que la simulation)."""
+    cmap = dict(MAP_ACTION_COLORS)
+    fallback = ["#6366f1", "#14b8a6", "#f43f5e", "#84cc16", "#8b5cf6", "#0ea5e9"]
+    if values is not None:
+        idx = 0
+        for raw in pd.Series(values).dropna().astype(str).unique():
+            label = str(raw).strip()
+            if label and label not in cmap:
+                cmap[label] = fallback[idx % len(fallback)]
+                idx += 1
     return cmap
 
 

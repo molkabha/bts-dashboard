@@ -9,7 +9,7 @@ import streamlit as st
 from config.theme import (
     PLOTLY_DARK,
     PLOTLY_LIGHT,
-    action_color_discrete_map,
+    map_action_color_discrete_map,
     mode_category_order,
     mode_color_discrete_map,
     normalize_mode_key,
@@ -100,7 +100,7 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
 
     if color_col:
         color_map = (
-            action_color_discrete_map(plot_scores[color_col])
+            map_action_color_discrete_map(plot_scores[color_col])
             if color_col == "action_actuelle"
             else mode_color_discrete_map(plot_scores[color_col])
         )
