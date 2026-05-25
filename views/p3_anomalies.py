@@ -180,11 +180,6 @@ def page_anomalies():
         if not det_df.empty:
             with section("Détecteurs NB2"):
                 st.dataframe(det_df, width="stretch", hide_index=True)
-        src = nb2_stats.get("seuil_ensemble_source", "")
-        st.caption(
-            f"Seuil consensus (ensemble) : {seuil:.3f}"
-            + (f" — source : {src}" if src else "")
-        )
 
         with section("Stations prioritaires"):
             prio = _priority_stations(scored, seuil, anom_col)

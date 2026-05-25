@@ -81,14 +81,10 @@ def nb2_seuil_or_warn(nb2_stats: dict | None = None) -> float | None:
         st.warning(format_nb2_seuil_alert())
         return None
     try:
-        seuil = float(raw)
+        return float(raw)
     except (TypeError, ValueError):
         st.warning(format_nb2_seuil_alert())
         return None
-    source = nb2_stats.get("seuil_ensemble_source")
-    if source:
-        st.caption(f"Seuil anomalie : {seuil:.4f} — source : {source}")
-    return seuil
 
 
 def qos_seuil_or_warn() -> float | None:
