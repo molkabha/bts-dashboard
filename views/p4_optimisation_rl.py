@@ -6,6 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from config.settings import settings
 from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
 from services.data_service import build_nb3_profil_horaire, compute_filtered_kpis
@@ -29,22 +30,20 @@ def _layout(template: str) -> dict:
 
 
 def _kpi_admin(kpis: dict) -> None:
-    eco_reg = float(kpis.get("economie_estimee_kwh") or 0)
-    eco_rl = float(kpis.get("economie_rl_kwh") or 0)
-    delta = ""
-    if eco_reg > 0 and eco_rl > 0:
-        delta = f"RL {(eco_rl - eco_reg) / eco_reg * 100:+.0f} % vs règles"
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        kpi_card("Économies", f"{float(kpis.get('economie_dt') or 0):,.0f} DT", "Période filtrée", "green")
+        kpi_card(
+            "Économies retenues",
+            f"{float(kpis.get('economie_dt') or 0):,.0f} DT",
+            "max(règles, RL) par mesure",
+            "green",
+        )
     with c2:
         kpi_card(
-            "kWh économisés",
+            "kWh retenus",
             f"{float(kpis.get('economie_kwh') or 0):,.0f}",
-            f"{float(kpis.get('economie_combinee_pct') or 0):.1f} % conso",
+            f"{float(kpis.get('economie_combinee_pct') or 0):.1f} % de la conso",
             "eco",
-            delta=delta,
-            delta_class="kpi-delta up" if eco_rl >= eco_reg else "kpi-delta down",
         )
     with c3:
         kpi_card("CO₂ évité", f"{float(kpis.get('co2_evite_t') or 0):.2f} t", "", "eco")
@@ -63,20 +62,29 @@ def _kpi_engineer(kpis: dict, df: pd.DataFrame) -> None:
         kpi_card("Conso moyenne", f"{float(kpis.get('conso_moyenne_kwh') or 0):.1f} kWh", "", "gray")
 
 
-def _chart_regles_vs_rl(kpis: dict, template: str) -> None:
-    eco_reg = float(kpis.get("economie_estimee_kwh") or 0)
-    eco_rl = float(kpis.get("economie_rl_kwh") or 0)
+def _chart_economie_retenue(kpis: dict, template: str) -> None:
+    """Gain réel = max(règles, RL) par ligne — pas la différence entre deux sommes."""
+    retenu_kwh = float(kpis.get("economie_kwh") or 0)
+    expert_kwh = float(kpis.get("economie_estimee_kwh") or 0)
+    rl_kwh = float(kpis.get("economie_rl_kwh") or 0)
+    prix = float(settings.PRIX_KWH_TN)
+
     fig = go.Figure(
         go.Bar(
-            x=["Règles", "RL"],
-            y=[eco_reg, eco_rl],
-            marker_color=["#1e3a8a", "#059669"],
-            text=[f"{eco_reg:,.0f}", f"{eco_rl:,.0f}"],
+            x=["Économie retenue"],
+            y=[retenu_kwh],
+            marker_color="#059669",
+            text=[f"{retenu_kwh:,.0f} kWh"],
             textposition="outside",
         ),
     )
     fig.update_layout(**_layout(template), yaxis_title="kWh", showlegend=False)
     st.plotly_chart(fig, width="stretch")
+    st.caption(
+        f"Retenu : **{retenu_kwh * prix:,.0f} DT** · "
+        f"Scénarios bruts (indicatifs, non additifs) : règles {expert_kwh:,.0f} kWh "
+        f"({expert_kwh * prix:,.0f} DT) · RL {rl_kwh:,.0f} kWh ({rl_kwh * prix:,.0f} DT)."
+    )
 
 
 def _chart_top_stations(df: pd.DataFrame, template: str, *, admin: bool, limit: int = 10) -> None:
@@ -95,13 +103,16 @@ def _chart_top_stations(df: pd.DataFrame, template: str, *, admin: bool, limit: 
         return
     top = agg.nlargest(limit, "kwh").sort_values("kwh", ascending=True)
     fig = go.Figure()
-    if admin and float(top["expert"].sum()) > 0 and float(top["rl"].sum()) > 0:
-        fig.add_trace(go.Bar(y=top["station_id"], x=top["expert"], name="Règles", orientation="h", marker_color="#1e3a8a"))
-        fig.add_trace(go.Bar(y=top["station_id"], x=top["rl"], name="RL", orientation="h", marker_color="#059669"))
-        fig.update_layout(barmode="group")
-    else:
-        fig.add_trace(go.Bar(y=top["station_id"], x=top["kwh"], orientation="h", marker_color="#059669"))
-    fig.update_layout(**_layout(template), xaxis_title="kWh", showlegend=admin)
+    fig.add_trace(
+        go.Bar(
+            y=top["station_id"],
+            x=top["kwh"],
+            name="Retenu (max/ligne)",
+            orientation="h",
+            marker_color="#059669",
+        ),
+    )
+    fig.update_layout(**_layout(template), xaxis_title="kWh retenus", showlegend=False)
     st.plotly_chart(fig, width="stretch")
 
 
@@ -156,8 +167,8 @@ def page_optimisation_rl():
             with section("Top stations — économies"):
                 _chart_top_stations(df, template, admin=True)
         with c2:
-            with section("Règles vs RL"):
-                _chart_regles_vs_rl(kpis, template)
+            with section("Économie retenue"):
+                _chart_economie_retenue(kpis, template)
 
         with st.expander("Agents RL et profil horaire"):
             render_nb3_rl_agents(session_outputs().get("nb3", {}), template)
