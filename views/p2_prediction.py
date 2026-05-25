@@ -9,7 +9,12 @@ import streamlit as st
 
 from config.theme import PLOTLY_DARK, PLOTLY_LIGHT
 from security.middleware import security_middleware
-from services.data_service import load_nb1_models_comparison, load_nb1_production_metrics
+from services.data_service import (
+    clean_station_id_list,
+    load_nb1_models_comparison,
+    load_nb1_production_metrics,
+    valid_station_id,
+)
 from ui.components import header, kpi_card, section
 from ui.display import PAGE_PREDICTION
 from ui.formatting import display_text
@@ -35,7 +40,7 @@ def _default_station(stations: list[str]) -> str | None:
     if len(gf_stations) == 1:
         return gf_stations[0]
     current = st.session_state.get("pred_station")
-    if current in stations:
+    if valid_station_id(current) and str(current) in stations:
         return str(current)
     return stations[0]
 
@@ -220,7 +225,9 @@ def page_prediction():
         st.warning("Aucune donnée pour les filtres actifs.")
         return
 
-    stations = sorted(df["station_id"].dropna().unique().astype(str).tolist()) if "station_id" in df.columns else []
+    stations = clean_station_id_list(df["station_id"].unique()) if "station_id" in df.columns else []
+    if st.session_state.get("pred_station") and valid_station_id(st.session_state.get("pred_station")) is None:
+        st.session_state.pop("pred_station", None)
     if not stations:
         st.warning("Aucune station dans la sélection des filtres globaux.")
         return

@@ -1007,8 +1007,31 @@ def load_inactive_stations() -> set[str]:
     return inactive
 
 
+_INVALID_STATION_IDS = frozenset({"", "none", "nan", "<na>", "null"})
+
+
+def valid_station_id(value: Any) -> str | None:
+    """Ignore blank / None / nan station identifiers."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text = str(value).strip()
+    if text.lower() in _INVALID_STATION_IDS:
+        return None
+    return text
+
+
+def clean_station_id_list(ids) -> list[str]:
+    """Sorted unique station IDs, excluding None/nan placeholders."""
+    out: list[str] = []
+    for raw in ids:
+        sid = valid_station_id(raw)
+        if sid and sid not in out:
+            out.append(sid)
+    return sorted(out)
+
+
 def save_inactive_stations(station_ids: list[str]) -> None:
-    cleaned = sorted({str(s).strip() for s in station_ids if str(s).strip()})
+    cleaned = clean_station_id_list(station_ids)
     db_execute("upsert_setting", (INACTIVE_STATIONS_KEY, json.dumps(cleaned)))
     st.session_state["inactive_stations"] = set(cleaned)
     log_event("inactive_stations_updated", {"count": len(cleaned), "stations": cleaned})
@@ -1019,19 +1042,19 @@ def all_dataset_station_ids() -> list[str]:
     opts = load_filter_dimension_options(dataset_cache_key())
     stations = opts.get("stations") or []
     if stations:
-        return sorted(str(s) for s in stations)
+        return clean_station_id_list(stations)
     outputs = st.session_state.get("data")
     if outputs is None:
         outputs = load_outputs()
         st.session_state["data"] = outputs
     df = outputs.get("scores")
     if isinstance(df, pd.DataFrame) and "station_id" in df.columns:
-        return sorted(df["station_id"].dropna().astype(str).unique().tolist())
+        return clean_station_id_list(df["station_id"].unique())
     path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
     if path and path.exists():
         df = read_parquet_fast(path, ["station_id"])
         if not df.empty and "station_id" in df.columns:
-            return sorted(df["station_id"].dropna().astype(str).unique().tolist())
+            return clean_station_id_list(df["station_id"].unique())
     return []
 
 
@@ -1215,7 +1238,7 @@ def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
     inactive = load_inactive_stations()
     for key, col in mapping.items():
         if col in df.columns:
-            values = sorted(df[col].dropna().astype(str).unique().tolist())
+            values = clean_station_id_list(df[col].unique())
             if key == "stations" and inactive:
                 values = [v for v in values if v not in inactive]
             out[key] = values

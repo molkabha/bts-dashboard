@@ -206,7 +206,12 @@ def sidebar_global(
     # Filtres (unique barre laterale — toutes les pages)
     st.sidebar.markdown('<div class="sb-section">Filtres</div>', unsafe_allow_html=True)
 
-    from services.data_service import dataset_cache_key, get_dataset_date_bounds, load_filter_dimension_options
+    from services.data_service import (
+        clean_station_id_list,
+        dataset_cache_key,
+        get_dataset_date_bounds,
+        load_filter_dimension_options,
+    )
     from ui.utils import clear_dashboard_data_cache, reset_global_filters
 
     cache_key = dataset_cache_key()
@@ -219,7 +224,7 @@ def sidebar_global(
     filters: dict = {}
 
     if station_options:
-        stations = [str(s) for s in station_options]
+        stations = clean_station_id_list(station_options)
         sel_stations = st.sidebar.multiselect(
             "Station",
             stations,
