@@ -17,7 +17,7 @@ from services.data_service import (
     load_filtered_main_data,
     load_station_map_data,
 )
-from services.nb_metrics import effective_economie_kwh
+from services.nb_metrics import effective_economie_kwh, harmonize_nb3_economies
 from ui.formatting import display_text, resolve_row_action, row_has_no_named_action
 from ui.utils import apply_current_admin_filters, filters_cache_key
 
@@ -205,86 +205,185 @@ def latest_per_station(df: pd.DataFrame) -> pd.DataFrame:
     return df.groupby("station_id", as_index=False).last()
 
 
-def render_actions_par_station(
-    latest: pd.DataFrame,
-    *,
-    show_savings: bool = True,
-    per_mode: int = 3,
-) -> None:
-    """Actions par station groupées par mode (3 lignes / mode, couleurs CRITIQUE/NORMAL/…)."""
-    if latest.empty or "station_id" not in latest.columns:
-        st.info("Aucune station à afficher.")
-        return
-
+def _prepare_actions_work(latest: pd.DataFrame) -> pd.DataFrame:
     work = latest.copy()
     sid = work["station_id"].astype(str).str.strip()
     work = work[sid.notna() & sid.ne("") & sid.str.lower().ne("none") & sid.str.lower().ne("nan")]
     if work.empty:
-        st.info("Aucune station à afficher.")
-        return
-
+        return work
     work["_mode_key"] = work.get("mode_operation", pd.Series("NORMAL", index=work.index)).map(
         lambda m: normalize_mode_key(m) or "NORMAL",
     )
     prio = {"CRITIQUE": 0, "ATTENTION": 1, "NORMAL": 2, "ECO": 3}
     work["_prio"] = work["_mode_key"].map(lambda m: prio.get(m, 9))
-    work = work.sort_values(["_prio", "station_id"])
+    return work.sort_values(["_prio", "station_id"])
 
-    groups_html: list[str] = ['<div class="station-actions-panel">']
-    any_group = False
 
-    for mode in MODE_ORDER:
-        subset = work[work["_mode_key"] == mode].head(per_mode)
-        if subset.empty:
+def _row_economie_kwh(row: pd.Series) -> float:
+    """kWh retenus par ligne (harmonisé + repli colonnes NB3 / conso optimisée)."""
+    row_df = row.to_frame().T
+    if row_df.empty:
+        return 0.0
+    harmonized = harmonize_nb3_economies(row_df)
+    eco = float(effective_economie_kwh(harmonized).iloc[0])
+    if eco > 1e-9:
+        return eco
+    for col in ("economie_estimee_kwh", "economie_rl_kwh", "economie_kwh"):
+        if col not in row.index:
             continue
-        any_group = True
-        mode_slug = mode.lower()
-        color = MODE_COLORS.get(mode, "#64748b")
-        total = int((work["_mode_key"] == mode).sum())
-        count_label = f"{min(len(subset), total)} / {total} station(s)"
+        val = pd.to_numeric(row.get(col), errors="coerce")
+        if pd.notna(val) and float(val) > 1e-9:
+            return float(val)
+    if "conso_optimisee_kwh" in row.index and "consommation_kwh" in row.index:
+        conso = pd.to_numeric(row.get("consommation_kwh"), errors="coerce")
+        optim = pd.to_numeric(row.get("conso_optimisee_kwh"), errors="coerce")
+        if pd.notna(conso) and pd.notna(optim) and float(conso) > 0:
+            return max(float(conso) - float(optim), 0.0)
+    if normalize_mode_key(row.get("mode_operation")) == "ECO" and "consommation_kwh" in row.index:
+        conso = pd.to_numeric(row.get("consommation_kwh"), errors="coerce")
+        if pd.notna(conso) and float(conso) > 0:
+            pct = pd.to_numeric(row.get("eco_potentiel_pct"), errors="coerce")
+            pct_val = 20.0 if pd.isna(pct) or float(pct) <= 0 else float(pct)
+            return float(conso) * pct_val / 100.0
+    return 0.0
 
-        rows_html: list[str] = []
-        for _, row in subset.iterrows():
-            station = html.escape(str(row.get("station_id", "")))
-            action = html.escape(resolve_row_action(row, prefer_rl=show_savings))
-            gov = row.get("gouvernorat")
-            gov_html = (
-                f'<div class="sap-gov">{html.escape(display_text(gov))}</div>'
-                if gov is not None and display_text(gov) != "—"
-                else ""
-            )
-            saving_html = ""
-            if show_savings:
-                eco_series = effective_economie_kwh(pd.DataFrame([row]))
-                eco_kwh = float(eco_series.iloc[0]) if not eco_series.empty else 0.0
-                if eco_kwh > 0:
-                    eco_dt = eco_kwh * settings.PRIX_KWH_TN
-                    label = "Potentiel" if row_has_no_named_action(row) else "Gain"
-                    saving_html = (
-                        f'<div class="sap-saving" style="color:{color};">'
-                        f"{label} : {eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>"
-                    )
-            rows_html.append(
-                f'<div class="sap-row">'
-                f'<div class="sap-station">{station}</div>'
-                f'<div class="sap-action">{action}</div>'
-                f"{saving_html}{gov_html}"
-                f"</div>",
-            )
 
-        groups_html.append(
-            f'<div class="sap-group sap-group--{mode_slug}">'
-            f'<div class="sap-group-title">{html.escape(mode)}'
-            f'<span class="sap-group-count">{html.escape(count_label)}</span></div>'
-            f"{''.join(rows_html)}"
+def _row_saving_label(row: pd.Series, eco_kwh: float) -> str:
+    if eco_kwh <= 1e-9:
+        return "Potentiel"
+    if row_has_no_named_action(row):
+        return "Potentiel"
+    for col in ("economie_estimee_kwh", "economie_rl_kwh"):
+        val = pd.to_numeric(row.get(col), errors="coerce") if col in row.index else None
+        if pd.notna(val) and float(val) > 1e-9:
+            return "Gain"
+    return "Potentiel"
+
+
+def _build_mode_group_html(
+    mode: str,
+    subset: pd.DataFrame,
+    total: int,
+    *,
+    show_savings: bool,
+) -> str:
+    mode_slug = mode.lower()
+    color = MODE_COLORS.get(mode, "#64748b")
+    count_label = f"{len(subset)} / {total} station(s)"
+    rows_html: list[str] = []
+    for _, row in subset.iterrows():
+        station = html.escape(str(row.get("station_id", "")))
+        action = html.escape(resolve_row_action(row, prefer_rl=show_savings))
+        gov = row.get("gouvernorat")
+        gov_html = (
+            f'<div class="sap-gov">{html.escape(display_text(gov))}</div>'
+            if gov is not None and display_text(gov) != "—"
+            else ""
+        )
+        saving_html = ""
+        if show_savings:
+            eco_kwh = _row_economie_kwh(row)
+            if eco_kwh > 1e-9:
+                eco_dt = eco_kwh * settings.PRIX_KWH_TN
+                label = _row_saving_label(row, eco_kwh)
+                saving_html = (
+                    f'<div class="sap-saving" style="color:{color};">'
+                    f"{label} : {eco_dt:.2f} DT · {eco_kwh:.2f} kWh</div>"
+                )
+        rows_html.append(
+            f'<div class="sap-row">'
+            f'<div class="sap-station">{station}</div>'
+            f'<div class="sap-action">{action}</div>'
+            f"{saving_html}{gov_html}"
             f"</div>",
         )
+    return (
+        f'<div class="sap-group sap-group--{mode_slug}">'
+        f'<div class="sap-group-title">{html.escape(mode)}'
+        f'<span class="sap-group-count">{html.escape(count_label)}</span></div>'
+        f"{''.join(rows_html)}"
+        f"</div>"
+    )
 
-    groups_html.append("</div>")
-    if not any_group:
+
+def render_actions_par_station(
+    latest: pd.DataFrame,
+    *,
+    show_savings: bool = True,
+    per_mode: int = 3,
+    page_size: int = 10,
+) -> None:
+    """Actions par station groupées par mode (résumé 3/mode ou liste paginée)."""
+    if latest.empty or "station_id" not in latest.columns:
         st.info("Aucune station à afficher.")
         return
-    st.markdown("".join(groups_html), unsafe_allow_html=True)
+
+    work = _prepare_actions_work(latest)
+    if work.empty:
+        st.info("Aucune station à afficher.")
+        return
+
+    show_all = st.session_state.get("sap_show_all", False)
+    btn_col, _ = st.columns([1, 3])
+    with btn_col:
+        btn_label = "Résumé (3 par mode)" if show_all else "Voir toutes les stations"
+        if st.button(btn_label, key="sap_toggle_all", width="stretch"):
+            st.session_state["sap_show_all"] = not show_all
+            if not show_all:
+                for mode in MODE_ORDER:
+                    st.session_state[f"sap_page_{mode}"] = 1
+            st.rerun()
+
+    any_group = False
+
+    if show_all:
+        st.markdown('<div class="station-actions-panel">', unsafe_allow_html=True)
+        for mode in MODE_ORDER:
+            mode_df = work[work["_mode_key"] == mode]
+            if mode_df.empty:
+                continue
+            any_group = True
+            total = len(mode_df)
+            total_pages = max(1, (total + page_size - 1) // page_size)
+            page_key = f"sap_page_{mode}"
+            if page_key not in st.session_state:
+                st.session_state[page_key] = 1
+            page = max(1, min(int(st.session_state[page_key]), total_pages))
+            st.session_state[page_key] = page
+            start = (page - 1) * page_size
+            subset = mode_df.iloc[start : start + page_size]
+            st.markdown(
+                _build_mode_group_html(mode, subset, total, show_savings=show_savings),
+                unsafe_allow_html=True,
+            )
+            pcol1, pcol2, pcol3 = st.columns([1, 2, 1])
+            with pcol1:
+                if page > 1 and st.button("← Préc.", key=f"sap_prev_{mode}"):
+                    st.session_state[page_key] = page - 1
+                    st.rerun()
+            with pcol2:
+                st.caption(f"**{mode}** — page {page} / {total_pages} ({total} stations)")
+            with pcol3:
+                if page < total_pages and st.button("Suiv. →", key=f"sap_next_{mode}"):
+                    st.session_state[page_key] = page + 1
+                    st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        groups_html: list[str] = ['<div class="station-actions-panel">']
+        for mode in MODE_ORDER:
+            mode_df = work[work["_mode_key"] == mode]
+            if mode_df.empty:
+                continue
+            any_group = True
+            subset = mode_df.head(per_mode)
+            groups_html.append(
+                _build_mode_group_html(mode, subset, len(mode_df), show_savings=show_savings),
+            )
+        groups_html.append("</div>")
+        st.markdown("".join(groups_html), unsafe_allow_html=True)
+
+    if not any_group:
+        st.info("Aucune station à afficher.")
 
 
 def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_savings: bool = True) -> None:

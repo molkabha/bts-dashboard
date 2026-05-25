@@ -474,7 +474,7 @@ section.main [data-testid="stPopoverBody"] div[data-testid="stMultiSelect"] div[
 .sap-group--normal .sap-station, .sap-group--normal .sap-action, .sap-group--normal .sap-saving { color:#166534; }
 .sap-group--eco .sap-group-title { color:#0e7490; background:#ecfeff; border-bottom-color:#a5f3fc; }
 .sap-group--eco .sap-row { border-left:3px solid #0891b2; }
-.sap-group--eco .sap-station, .sap-group--eco .sap-action { color:#155e75; }
+.sap-group--eco .sap-station, .sap-group--eco .sap-action, .sap-group--eco .sap-saving { color:#155e75; }
 .sap-row { padding:10px 14px 10px 12px; border-bottom:1px solid var(--tt-border); background:var(--tt-card); }
 .sap-row:last-child { border-bottom:none; }
 .sap-station { font-size:14px; font-weight:850; line-height:1.35; margin-bottom:3px; }
@@ -525,7 +525,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { backg
 .sap-group--normal .sap-group-title { background:#022c22 !important; color:#86efac !important; }
 .sap-group--normal .sap-station, .sap-group--normal .sap-action, .sap-group--normal .sap-saving { color:#86efac !important; }
 .sap-group--eco .sap-group-title { background:#082f49 !important; color:#7dd3fc !important; }
-.sap-group--eco .sap-station, .sap-group--eco .sap-action { color:#bae6fd !important; }
+.sap-group--eco .sap-station, .sap-group--eco .sap-action, .sap-group--eco .sap-saving { color:#bae6fd !important; }
 .rl-best-banner { background:#022c22 !important; border-color:#14532d !important; color:#86efac !important; }
 .opt-summary-item, .opt-mode-chip { background:var(--tt-card) !important; border-color:var(--tt-border) !important; }
 .opt-summary-item .osi-value { color:var(--tt-text) !important; }

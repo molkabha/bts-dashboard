@@ -164,8 +164,9 @@ def page_optimisation_rl():
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     df = load_dashboard_df([
         "timestamp", "station_id", "gouvernorat", "consommation_kwh",
-        "economie_estimee_kwh", "economie_rl_kwh", "action_rl", "action_proposee",
-        "action_principale", "mode_operation", "heure",
+        "economie_estimee_kwh", "economie_rl_kwh", "economie_kwh",
+        "conso_optimisee_kwh", "action_rl", "action_proposee",
+        "action_principale", "mode_operation", "eco_potentiel_pct", "heure",
     ])
     if df.empty:
         st.warning("Aucune donnée pour les filtres actifs.")
