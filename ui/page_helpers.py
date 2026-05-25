@@ -319,7 +319,7 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_sav
 </div>""", unsafe_allow_html=True)
 
 
-def render_nb3_rl_agents(nb3: dict, template: str) -> None:
+def render_nb3_rl_agents(nb3: dict, template: str, *, show_chart: bool = False) -> None:
     import html as html_mod
 
     rl_data = nb3.get("rl_resultats_tous_agents", {})
@@ -364,7 +364,7 @@ def render_nb3_rl_agents(nb3: dict, template: str) -> None:
 
     st.dataframe(show, width="stretch", hide_index=True)
 
-    if "Économie %" in show.columns and len(show) > 1:
+    if show_chart and "Économie %" in show.columns and len(show) > 1:
         fig = px.bar(
             show,
             x="Agent",
