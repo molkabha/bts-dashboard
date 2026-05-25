@@ -59,10 +59,13 @@ def _hourly_metric_chart_df(work: pd.DataFrame, value_col: str) -> pd.DataFrame:
     if "mode_operation" in df.columns:
         group.append("mode_operation")
 
-    agg: dict = {value_col: "mean", "mesures": (value_col, "count")}
+    agg_kwargs: dict = {
+        value_col: (value_col, "mean"),
+        "mesures": (value_col, "count"),
+    }
     if "station_id" in df.columns:
-        agg["stations"] = ("station_id", "nunique")
-    return df.groupby(group, as_index=False).agg(**agg)
+        agg_kwargs["stations"] = ("station_id", "nunique")
+    return df.groupby(group, as_index=False).agg(**agg_kwargs)
 
 
 def _render_hourly_scatter(
