@@ -153,7 +153,7 @@ def generate_report_pdf(kpis: dict, top_anomalies: list[dict] | None = None) -> 
         "1. Activer le sleep mode nocturne sur les stations a faible trafic pour maximiser les economies.\n"
         "2. Surveiller les stations en mode CRITIQUE et planifier les interventions NOC.\n"
         "3. Exploiter le free cooling pendant les periodes hivernales pour reduire la climatisation.\n"
-        "4. Maintenir le score QoS au-dessus de 0.70 avant toute optimisation energetique."
+        "4. Maintenir le score QoS au-dessus de 0.60 avant toute optimisation energetique."
     )
 
     buf = io.BytesIO()

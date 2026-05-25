@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from config.settings import settings
+
 
 class MoteurDecisionEnergie:
     """Moteur de modes NB3 (seuils anomalie / ecart / QoS / creneau ECO)."""
@@ -32,7 +34,7 @@ class MoteurDecisionEnergie:
             "critique_ecart": 30.0,
             "eco_heure_debut": 0,
             "eco_heure_fin": 6,
-            "qos": 0.70,
+            "qos": float(settings.QOS_SEUIL_DEFAULT),
         }
         if seuils:
             self.seuils.update(seuils)

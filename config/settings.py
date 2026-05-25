@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # Domain Constants
     FACTEUR_CO2_TN: float = Field(default=0.53)
     PRIX_KWH_TN: float = Field(default=0.40)
-    QOS_SEUIL_DEFAULT: float = Field(default=0.70)
+    QOS_SEUIL_DEFAULT: float = Field(default=0.60)
     NB3_MAX_ECO_FRAC: float = Field(default=0.48)
     SIM_SCHEMA_VERSION: int = Field(default=3)
 

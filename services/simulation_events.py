@@ -4,14 +4,17 @@ from typing import Any
 
 import pandas as pd
 
+from config.settings import settings
 from services.data_service import resolve_nb2_seuil_ensemble, resolve_qos_seuil
 from services.nb_metrics import effective_economie_kwh
 from ui.formatting import is_no_named_action, resolve_row_action
 
 
-def _qos_seuil() -> float | None:
+def _qos_seuil() -> float:
     seuil, _ = resolve_qos_seuil()
-    return seuil
+    if seuil is not None:
+        return seuil
+    return float(settings.QOS_SEUIL_DEFAULT)
 
 
 def _anomaly_seuil(scale: float = 1.0) -> float | None:
@@ -74,8 +77,8 @@ def classify_tick_rows(
             }
             item["alert_ref"] = alert_ref(item)
             alerts.append(item)
-        elif abs(ecart) >= 18 and qos_seuil is not None and qos >= qos_seuil:
-            severity = "ATTENTION" if abs(ecart) < 28 else "CRITIQUE"
+        elif abs(ecart) >= 30 and qos >= qos_seuil:
+            severity = "CRITIQUE" if abs(ecart) >= 50 else "ATTENTION"
             direction = "au-dessus" if ecart > 0 else "en-dessous"
             item = {
                 "timestamp": ts,
@@ -92,13 +95,7 @@ def classify_tick_rows(
             }
             item["alert_ref"] = alert_ref(item)
             alerts.append(item)
-        elif (
-            seuil is not None
-            and qos_seuil is not None
-            and score >= seuil
-            and qos >= qos_seuil
-            and not has_named_action
-        ):
+        elif seuil is not None and score >= seuil and qos >= qos_seuil and not has_named_action:
             severity = "CRITIQUE" if score >= seuil * 2.4 else "ATTENTION"
             item = {
                 "timestamp": ts,
@@ -115,7 +112,7 @@ def classify_tick_rows(
             }
             item["alert_ref"] = alert_ref(item)
             alerts.append(item)
-        elif seuil is not None and qos_seuil is not None and score >= seuil and qos < qos_seuil:
+        elif seuil is not None and score >= seuil and qos < qos_seuil:
             item = {
                 "timestamp": ts,
                 "station_id": station,

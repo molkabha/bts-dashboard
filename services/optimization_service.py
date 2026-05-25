@@ -7,7 +7,7 @@ from config.settings import settings
 
 
 class StrategieOptimisation:
-    """Strategies d'economie NB3 (sleep, reduction, free cooling, alertes)."""
+    """Strategies d'economie NB3 (sleep, reduction, free cooling, eco calendaire, alertes)."""
 
     ECO_SLEEP_PAR_TECHNO = {"2G": 0.062, "3G": 1.608, "4G": 1.845, "4G+": 2.040}
     MAX_ECO_FRAC_DEFAULT = 0.42
@@ -32,10 +32,10 @@ class StrategieOptimisation:
 
         peut_sleep = (
             (qos_ok == 1)
-            & (heure.between(0, 5))
-            & (self._col(df, "taux_charge_voix", 0) < 0.20)
-            & (self._col(df, "taux_charge_data", 0) < 0.20)
-            & (self._col(df, "score_qos", 1) > 0.70)
+            & (heure.between(1, 5))
+            & (self._col(df, "taux_charge_voix", 0) < 0.15)
+            & (self._col(df, "taux_charge_data", 0) < 0.15)
+            & (self._col(df, "score_qos", 1) > 0.80)
         )
         df.loc[peut_sleep, "action_proposee"] = "sleep_mode_secteur"
         sleep_ref = technologie.loc[peut_sleep].map(self.ECO_SLEEP_PAR_TECHNO).fillna(0.5)
@@ -48,35 +48,42 @@ class StrategieOptimisation:
         peut_reduire = (
             (qos_ok == 1)
             & (technologie.isin(["4G", "4G+", "3G"]))
-            & (self._col(df, "puissance_emission_dbm", 43) > 38)
-            & (self._col(df, "score_qos", 1) > 0.72)
-            & (self._col(df, "charge_cpu_pct", 0) < 65)
-            & (self._col(df, "taux_charge_data", 0) < 0.70)
+            & (self._col(df, "puissance_emission_dbm", 43) > 40.5)
+            & (self._col(df, "score_qos", 1) > 0.75)
+            & (self._col(df, "charge_cpu_pct", 0) < 50)
             & (~peut_sleep)
         )
         df.loc[peut_reduire, "action_proposee"] = "reduction_puissance"
         df.loc[peut_reduire, "economie_estimee_kwh"] = conso.loc[peut_reduire] * 0.08
 
         peut_free = (
-            (self._col(df, "temperature_ambiante", 30) < 25)
-            & (self._col(df, "vitesse_vent_ms", 0) > 2)
-            & (self._col(df, "humidite_relative_pct", 50) < 80)
+            (self._col(df, "temperature_ambiante", 30) < 22)
+            & (self._col(df, "vitesse_vent_ms", 0) > 3)
+            & (self._col(df, "humidite_relative_pct", 50) < 75)
         )
-        df.loc[peut_free & (df["action_proposee"] == "monitoring_standard"), "action_proposee"] = "free_cooling"
-        df.loc[peut_free, "economie_estimee_kwh"] += conso.loc[peut_free] * 0.12
+        free_mask = peut_free & (df["action_proposee"] == "monitoring_standard")
+        df.loc[free_mask, "action_proposee"] = "free_cooling"
+        df.loc[free_mask, "economie_estimee_kwh"] = conso.loc[free_mask] * 0.15
 
-        non_critique = self._col(df, "anomalie_score_ensemble", 0) < 0.60
-        baseline_eco = conso * 0.03
-        already_optimized = df["economie_estimee_kwh"] > 0
-        df.loc[non_critique & ~already_optimized, "economie_estimee_kwh"] = baseline_eco.loc[
-            non_critique & ~already_optimized
-        ]
-        df.loc[non_critique & ~already_optimized, "action_proposee"] = "optimisation_adaptative"
+        est_weekend = self._col(df, "est_weekend", 0)
+        est_ferie = self._col(df, "est_ferie", 0)
+        peut_eco_cal = (
+            (qos_ok == 1)
+            & ((est_weekend == 1) | (est_ferie == 1))
+            & heure.between(2, 6)
+            & (self._col(df, "score_qos", 1) > 0.80)
+            & (self._col(df, "taux_charge_data", 0) < 0.13)
+            & (~peut_sleep)
+            & (~peut_reduire)
+            & (df["action_proposee"] == "monitoring_standard")
+        )
+        df.loc[peut_eco_cal, "action_proposee"] = "eco_calendaire"
+        df.loc[peut_eco_cal, "economie_estimee_kwh"] = conso.loc[peut_eco_cal] * 0.12
 
         alerte_2g = (
             (technologie == "2G")
             & (self._col(df, "taux_charge_voix", 0) > 0.80)
-            & (self._col(df, "score_qos", 1) < 0.70)
+            & (self._col(df, "score_qos", 1) < float(settings.QOS_SEUIL_DEFAULT))
         )
         df.loc[alerte_2g, "action_proposee"] = "alerte_saturation_voix"
         df.loc[alerte_2g, "economie_estimee_kwh"] = 0.0
