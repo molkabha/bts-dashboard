@@ -185,9 +185,6 @@ def page_vue_reseau():
     scores = get_station_map_data(df)
     scores = _attach_station_last_action(df, scores)
 
-    if "action_actuelle" in scores.columns:
-        n_map = len(scores.dropna(subset=["latitude", "longitude"])) if {"latitude", "longitude"}.issubset(scores.columns) else len(scores)
-        st.caption(f"{n_map} station(s) · couleur = dernière action NB3")
     _render_mapbox(scores, template)
     _render_comparison(df, template)
 
