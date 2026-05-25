@@ -623,6 +623,48 @@ def apply_time_filters(df: pd.DataFrame, filters: dict | None = None) -> pd.Data
     return out
 
 
+ACTION_FILTER_COLUMNS = ["action_rl", "action_proposee", "action_principale"]
+
+
+def _latest_row_per_station(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or "station_id" not in df.columns:
+        return pd.DataFrame()
+    if "timestamp" in df.columns:
+        return df.sort_values("timestamp").groupby("station_id", as_index=False).tail(1)
+    return df.groupby("station_id", as_index=False).last()
+
+
+def latest_action_per_station(df: pd.DataFrame, *, prefer_rl: bool = False) -> pd.DataFrame:
+    """Dernière action FR par station (aligné simulation / resolve_row_action)."""
+    from ui.formatting import resolve_row_action
+
+    latest = _latest_row_per_station(df)
+    if latest.empty:
+        return pd.DataFrame(columns=["station_id", "action_label"])
+    work = latest.copy()
+    work["action_label"] = work.apply(
+        lambda r: resolve_row_action(r, prefer_rl=prefer_rl, default="Maintien"),
+        axis=1,
+    )
+    return work[["station_id", "action_label"]].assign(
+        station_id=lambda x: x["station_id"].astype(str),
+    )
+
+
+def filter_by_station_latest_action(df: pd.DataFrame, actions: list[str]) -> pd.DataFrame:
+    """Conserve les stations dont la dernière action (période filtrée) est dans la sélection."""
+    if df.empty or not actions or "station_id" not in df.columns:
+        return df
+    if not any(c in df.columns for c in ACTION_FILTER_COLUMNS):
+        return df
+    allowed = {str(a) for a in actions}
+    latest = latest_action_per_station(df, prefer_rl=False)
+    if latest.empty:
+        return df
+    station_ok = latest[latest["action_label"].astype(str).isin(allowed)]["station_id"].astype(str)
+    return df[df["station_id"].astype(str).isin(set(station_ok))]
+
+
 def filter_by_station_latest_mode(df: pd.DataFrame, modes: list[str]) -> pd.DataFrame:
     """Keep stations whose latest mode in the period is one of the selected modes."""
     if df.empty or not modes or "station_id" not in df.columns or "mode_operation" not in df.columns:
@@ -656,9 +698,11 @@ def apply_admin_dimension_filters(df: pd.DataFrame, filters: dict | None = None)
             selected = {str(v) for v in values}
             out = out[out[col].astype(str).isin(selected)]
 
-    modes = filters.get("modes")
-    if modes:
-        out = filter_by_station_latest_mode(out, modes)
+    actions = filters.get("actions")
+    if actions:
+        out = filter_by_station_latest_action(out, actions)
+    elif filters.get("modes"):
+        out = filter_by_station_latest_mode(out, filters["modes"])
 
     score_min = filters.get("score_min")
     if score_min is not None and "anomalie_score_ensemble" in out.columns:
@@ -1133,6 +1177,18 @@ def _unique_latest_modes_per_station(df: pd.DataFrame) -> list[str]:
     return ordered
 
 
+def _unique_latest_actions_per_station(df: pd.DataFrame) -> list[str]:
+    """Actions FR sur le dernier état de chaque station (aligné filtre sidebar / simulation)."""
+    if df.empty or "station_id" not in df.columns:
+        return []
+    if not any(c in df.columns for c in ACTION_FILTER_COLUMNS):
+        return []
+    latest = latest_action_per_station(df, prefer_rl=False)
+    if latest.empty:
+        return []
+    return sorted(latest["action_label"].dropna().astype(str).unique().tolist())
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
     """Lightweight unique values for sidebar filters (no full enrich)."""
@@ -1142,8 +1198,9 @@ def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
     if not path.exists():
         return {}
     available = set(existing_columns(path))
-    cols = [c for c in ("station_id", "gouvernorat", "technologie", "type_zone", "mode_operation") if c in available]
-    if "mode_operation" in cols and "timestamp" in available:
+    cols = [c for c in ("station_id", "gouvernorat", "technologie", "type_zone") if c in available]
+    cols.extend(c for c in ACTION_FILTER_COLUMNS if c in available)
+    if "timestamp" in available:
         cols.append("timestamp")
     if not cols:
         return {}
@@ -1163,8 +1220,8 @@ def load_filter_dimension_options(cache_key: str) -> dict[str, list[str]]:
                 values = [v for v in values if v not in inactive]
             out[key] = values
 
-    if "mode_operation" in df.columns:
-        out["modes"] = _unique_latest_modes_per_station(df)
+    if any(c in df.columns for c in ACTION_FILTER_COLUMNS):
+        out["actions"] = _unique_latest_actions_per_station(df)
 
     return out
 

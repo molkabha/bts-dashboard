@@ -252,13 +252,16 @@ def sidebar_global(
         if sel_techs:
             filters["technologies"] = sel_techs
 
-    modes = dim_opts.get("modes") or []
-    if modes:
-        sel_modes = st.sidebar.multiselect(
-            "Mode (dernier état station)", modes, key="sb_modes", placeholder="Tous",
+    actions = dim_opts.get("actions") or []
+    if actions:
+        sel_actions = st.sidebar.multiselect(
+            "Action (dernière action station)",
+            actions,
+            key="sb_actions",
+            placeholder="Toutes",
         )
-        if sel_modes:
-            filters["modes"] = sel_modes
+        if sel_actions:
+            filters["actions"] = sel_actions
 
     prev_filters = st.session_state.get("global_filters", {})
     if prev_filters != filters:

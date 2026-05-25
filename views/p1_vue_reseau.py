@@ -9,24 +9,29 @@ import streamlit as st
 from config.theme import (
     PLOTLY_DARK,
     PLOTLY_LIGHT,
+    action_color_discrete_map,
     mode_category_order,
     mode_color_discrete_map,
     normalize_mode_key,
 )
 from security.middleware import security_middleware
+from services.data_service import latest_action_per_station
 from ui.components import header, section
 from ui.page_helpers import get_station_map_data, load_dashboard_df
 from ui.utils import active_filter_label, is_admin
 
 
-def _attach_station_modes(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFrame:
-    if df.empty or scores.empty or "station_id" not in scores.columns or "mode_operation" not in df.columns:
+def _attach_station_last_action(df: pd.DataFrame, scores: pd.DataFrame) -> pd.DataFrame:
+    if df.empty or scores.empty or "station_id" not in scores.columns:
         return scores
-    if "timestamp" in df.columns:
-        modes = df.sort_values("timestamp").groupby("station_id")["mode_operation"].last()
-    else:
-        modes = df.groupby("station_id")["mode_operation"].first()
-    out = scores.merge(modes.rename("mode_actuel"), left_on="station_id", right_index=True, how="left")
+    latest = latest_action_per_station(df, prefer_rl=False)
+    if latest.empty:
+        return scores
+    out = scores.merge(
+        latest.rename(columns={"action_label": "action_actuelle"}),
+        on="station_id",
+        how="left",
+    )
     keep = set(df["station_id"].astype(str).unique())
     return out[out["station_id"].astype(str).isin(keep)]
 
@@ -61,7 +66,10 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
         return
 
     color_col = None
-    if "mode_actuel" in plot_scores.columns:
+    if "action_actuelle" in plot_scores.columns:
+        color_col = "action_actuelle"
+        plot_scores["action_actuelle"] = plot_scores["action_actuelle"].fillna("Maintien").astype(str)
+    elif "mode_actuel" in plot_scores.columns:
         color_col = "mode_actuel"
         plot_scores = _normalize_mode_column(plot_scores, "mode_actuel")
     elif "categorie" in plot_scores.columns:
@@ -70,7 +78,10 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
 
     size_col = "conso_moy" if "conso_moy" in plot_scores.columns else None
     hover_cols = [
-        c for c in ["station_id", "gouvernorat", "technologie", "conso_moy", "mode_actuel", "categorie"]
+        c for c in [
+            "station_id", "gouvernorat", "technologie", "conso_moy",
+            "action_actuelle", "mode_actuel", "categorie",
+        ]
         if c in plot_scores.columns
     ]
     if is_admin() and "score_criticite" in plot_scores.columns and "score_criticite" not in hover_cols:
@@ -88,12 +99,23 @@ def _render_mapbox(scores: pd.DataFrame, template: str):
     )
 
     if color_col:
+        color_map = (
+            action_color_discrete_map(plot_scores[color_col])
+            if color_col == "action_actuelle"
+            else mode_color_discrete_map(plot_scores[color_col])
+        )
+        category_orders = (
+            {color_col: sorted(plot_scores[color_col].dropna().astype(str).unique())}
+            if color_col == "action_actuelle"
+            else {color_col: mode_category_order(plot_scores[color_col])}
+        )
+        color_label = "Action" if color_col == "action_actuelle" else "Mode"
         fig = px.scatter_mapbox(
             plot_scores,
             color=color_col,
-            color_discrete_map=mode_color_discrete_map(plot_scores[color_col]),
-            category_orders={color_col: mode_category_order(plot_scores[color_col])},
-            labels={color_col: "Mode"},
+            color_discrete_map=color_map,
+            category_orders=category_orders,
+            labels={color_col: color_label},
             **base_kwargs,
         )
     else:
@@ -140,20 +162,23 @@ def _render_comparison(df: pd.DataFrame, template: str):
 def page_vue_reseau():
     security_middleware.enforce()
 
-    subtitle = "Localisation par mode opérationnel (Mapbox)"
+    subtitle = "Localisation par dernière action NB3 (Mapbox)"
     if not is_admin():
-        subtitle = "Vos stations — couleur = dernier mode NB3"
+        subtitle = "Vos stations — couleur = dernière action"
     header("Carte", subtitle)
     st.caption(active_filter_label())
 
-    df = load_dashboard_df(["mode_operation", "latitude", "longitude"])
+    df = load_dashboard_df([
+        "mode_operation", "action_rl", "action_proposee", "action_principale",
+        "latitude", "longitude",
+    ])
     if df.empty:
         st.warning("Aucune donnée pour les filtres actifs.")
         return
 
     template = PLOTLY_DARK if st.session_state.get("ui_dark_mode") else PLOTLY_LIGHT
     scores = get_station_map_data(df)
-    scores = _attach_station_modes(df, scores)
+    scores = _attach_station_last_action(df, scores)
 
     _render_mapbox(scores, template)
     _render_comparison(df, template)
@@ -162,7 +187,9 @@ def page_vue_reseau():
         tbl_cols = ["station_id", "gouvernorat", "technologie", "conso_moy", "score_qos_moy"]
         if is_admin():
             tbl_cols.extend(["score_criticite", "categorie"])
-        if "mode_actuel" in scores.columns:
+        if "action_actuelle" in scores.columns:
+            tbl_cols.insert(3, "action_actuelle")
+        elif "mode_actuel" in scores.columns:
             tbl_cols.insert(3, "mode_actuel")
         tbl_cols = [c for c in tbl_cols if c in scores.columns]
         if scores.empty:

@@ -140,6 +140,8 @@ def active_filter_label() -> str:
         parts.append(f"{start} → {end}")
     if gf.get("gouvernorats"):
         parts.append(", ".join(gf["gouvernorats"][:2]))
-    if gf.get("modes"):
+    if gf.get("actions"):
+        parts.append("/".join(str(a) for a in gf["actions"][:3]))
+    elif gf.get("modes"):
         parts.append("/".join(gf["modes"]))
     return " · ".join(parts)
