@@ -476,6 +476,18 @@ section.main [data-testid="stPopoverBody"] div[data-testid="stMultiSelect"] div[
 .sap-action { font-size:13px; font-weight:700; line-height:1.4; margin-bottom:2px; }
 .sap-saving { font-size:12px; font-weight:800; line-height:1.35; opacity:0.92; }
 .sap-gov { font-size:11px; color:var(--tt-muted); font-weight:600; margin-top:2px; }
+
+/* Page Optimisation — bandeau synthèse et cartes graphiques */
+.opt-summary { display:flex; flex-wrap:wrap; gap:10px; margin:4px 0 18px; }
+.opt-summary-item { flex:1 1 160px; min-width:140px; border:1px solid var(--tt-border); border-radius:8px; padding:12px 14px; background:var(--tt-card); }
+.opt-summary-item .osi-label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:var(--tt-muted); margin-bottom:4px; }
+.opt-summary-item .osi-value { font-size:22px; font-weight:850; color:var(--tt-text); line-height:1.2; }
+.opt-summary-item .osi-help { font-size:11px; color:var(--tt-muted); margin-top:4px; font-weight:600; }
+.opt-mode-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+.opt-mode-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:999px; font-size:12px; font-weight:800; border:1px solid var(--tt-border); background:var(--tt-card); }
+.opt-mode-chip .omc-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.opt-chart-note { font-size:12px; color:var(--tt-muted); margin:0 0 8px; line-height:1.45; }
+.rl-best-banner { border:1px solid #bbf7d0; background:#f0fdf4; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:13px; font-weight:700; color:#166534; }
 </style>
 """
 
@@ -509,5 +521,8 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stHeader"] { backg
 .sap-group--normal .sap-station, .sap-group--normal .sap-action, .sap-group--normal .sap-saving { color:#86efac !important; }
 .sap-group--eco .sap-group-title { background:#082f49 !important; color:#7dd3fc !important; }
 .sap-group--eco .sap-station, .sap-group--eco .sap-action { color:#bae6fd !important; }
+.rl-best-banner { background:#022c22 !important; border-color:#14532d !important; color:#86efac !important; }
+.opt-summary-item, .opt-mode-chip { background:var(--tt-card) !important; border-color:var(--tt-border) !important; }
+.opt-summary-item .osi-value { color:var(--tt-text) !important; }
 </style>
 """

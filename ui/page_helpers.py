@@ -320,15 +320,65 @@ def render_nb3_decision_cards(latest: pd.DataFrame, limit: int = 12, *, show_sav
 
 
 def render_nb3_rl_agents(nb3: dict, template: str) -> None:
+    import html as html_mod
+
     rl_data = nb3.get("rl_resultats_tous_agents", {})
     if not rl_data:
-        st.caption("Données agents non disponibles.")
+        st.info("Comparaison agents indisponible — export `rapport_optimisation.json` (NB3) requis.")
         return
+
     df_rl = pd.DataFrame.from_dict(rl_data, orient="index").reset_index(names="Agent")
     if "economie_pct" in df_rl.columns:
         df_rl["economie_pct"] = pd.to_numeric(df_rl["economie_pct"], errors="coerce")
         df_rl = df_rl.sort_values("economie_pct", ascending=False)
-    st.dataframe(df_rl, width="stretch", hide_index=True)
+
+    best_name = str(nb3.get("meilleur_agent") or "").strip()
+    if not best_name and not df_rl.empty and "economie_pct" in df_rl.columns:
+        best_name = str(df_rl.iloc[0]["Agent"])
+    if best_name:
+        best_row = df_rl[df_rl["Agent"].astype(str) == best_name]
+        best_pct = float(best_row["economie_pct"].iloc[0]) if not best_row.empty and "economie_pct" in best_row else None
+        pct_txt = f" · {best_pct:.1f} % d'économie" if best_pct is not None and pd.notna(best_pct) else ""
+        st.markdown(
+            f'<div class="rl-best-banner">Meilleur agent RL retenu : '
+            f'<strong>{html_mod.escape(best_name)}</strong>{html_mod.escape(pct_txt)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    rename = {
+        "economie_pct": "Économie %",
+        "economie_kwh": "Économie kWh",
+        "n_violations": "Violations QoS",
+        "pct_violations": "Violations %",
+        "class_name": "Classe",
+        "reference": "Référence",
+        "is_best": "Retenu",
+    }
+    show = df_rl.rename(columns={k: v for k, v in rename.items() if k in df_rl.columns})
+    if "Retenu" in show.columns:
+        show["Retenu"] = show["Retenu"].map({True: "Oui", False: ""})
+    if "Économie %" in show.columns:
+        show["Économie %"] = pd.to_numeric(show["Économie %"], errors="coerce").round(2)
+    if "Économie kWh" in show.columns:
+        show["Économie kWh"] = pd.to_numeric(show["Économie kWh"], errors="coerce").round(0)
+
+    st.dataframe(show, width="stretch", hide_index=True)
+
+    if "Économie %" in show.columns and len(show) > 1:
+        fig = px.bar(
+            show,
+            x="Agent",
+            y="Économie %",
+            color="Économie %",
+            color_continuous_scale=["#93c5fd", "#1e3a8a", "#059669"],
+        )
+        fig.update_layout(
+            template=template,
+            height=280,
+            margin=dict(l=0, r=0, t=8, b=0),
+            coloraxis_showscale=False,
+        )
+        st.plotly_chart(fig, width="stretch")
 
 
 def mode_explanation(row: pd.Series) -> str:
