@@ -59,7 +59,6 @@ class Settings(BaseSettings):
     # Assets & Outputs
     LOGO_PATH: Path = Field(default=ROOT / "static" / "logo.png")
     OUTPUTS_DIR: Path = Field(default=ROOT / "VF" / "NB3" / "output")
-    ACTIVE_UPLOAD_DATASET: str = Field(default="active_dataset.parquet")
     ANOMALY_DATASET: str = Field(default="df_avec_anomalies.parquet")
 
     # Notebook Outputs

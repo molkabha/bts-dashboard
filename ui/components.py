@@ -108,10 +108,9 @@ def section(title: str):
 
 
 def page_footer():
-    from services.data_service import active_dataset_info
+    from config.settings import settings
 
-    info = active_dataset_info()
-    ds_label = info.get("name", "Jeu de données actif") if info else "Jeu de données actif"
+    ds_label = f"Artefacts {settings.HF_REPO_ID}" if settings.USE_HF_HUB else "Jeu de données notebook"
     st.markdown(
         f'<div class="page-footer">{html.escape(ds_label)} · Tunisie Telecom</div>',
         unsafe_allow_html=True,

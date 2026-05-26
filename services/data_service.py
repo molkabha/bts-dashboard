@@ -474,84 +474,11 @@ def artifact_table_for_df(
 
 
 def first_existing_dataset(names: list[str]) -> Path | None:
-    active = active_dataset_path()
-    if active and active.exists():
-        return active
     for name in names:
         path = artifact_path(name)
         if path.exists():
             return path
     return None
-
-
-def active_dataset_path() -> Optional[Path]:
-    configured = db_scalar("get_setting", ("active_dataset_path",), "")
-    if configured:
-        configured_path = Path(configured)
-        path = configured_path if configured_path.is_absolute() else ROOT / configured_path
-        if path.exists():
-            return path
-    active_upload = settings.OUTPUTS_DIR / settings.ACTIVE_UPLOAD_DATASET
-    if active_upload.exists():
-        return active_upload
-    return None
-
-
-def active_dataset_info() -> dict:
-    return {
-        "name": db_scalar("get_setting", ("active_dataset_name",), "Par défaut"),
-        "published_at": db_scalar("get_setting", ("active_dataset_published_at",), ""),
-    }
-
-
-def dataset_score_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Build a station-level score table from the active dataset."""
-    return station_summary_from_df(df)
-
-
-def dataset_decision_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Build a station-hour decision table from the active dataset."""
-    if df.empty or "station_id" not in df.columns:
-        return pd.DataFrame()
-    group_cols = ["station_id"]
-    if "heure" in df.columns:
-        group_cols.append("heure")
-    candidates = [
-        "mode_operation",
-        "action_proposee",
-        "action_rl",
-        "economie_estimee_kwh",
-        "economie_rl_kwh",
-        "score_qos",
-        "anomalie_score_ensemble",
-        "consommation_kwh",
-        "technologie",
-        "gouvernorat",
-        "type_zone",
-    ]
-    agg = {}
-    for col in candidates:
-        if col not in df.columns:
-            continue
-        if pd.api.types.is_numeric_dtype(df[col]):
-            agg[col] = "mean"
-        else:
-            agg[col] = lambda s: s.dropna().astype(str).mode().iloc[0] if not s.dropna().empty else ""
-    if not agg:
-        return df[group_cols].drop_duplicates().reset_index(drop=True)
-    return df.groupby(group_cols, as_index=False).agg(agg)
-
-
-def load_active_dataset(columns: list[str] | None = None) -> pd.DataFrame:
-    """Load the currently published dataset, if one exists."""
-    path = active_dataset_path()
-    if path is None or not path.exists():
-        return pd.DataFrame()
-    df = read_parquet_fast(path, columns)
-    if df.empty:
-        return df
-    requested = list(columns) if columns else list(df.columns)
-    return enrich_dashboard_data(df, requested)
 
 # --- File Integrity ---
 
@@ -1090,11 +1017,6 @@ def load_outputs() -> dict:
     }
     data["scores"] = read_parquet_fast(artifact_path("score_stations.parquet"))
     data["decisions"] = read_parquet_fast(artifact_path("decisions_par_station.parquet"))
-    active = load_active_dataset()
-    if not active.empty:
-        data["active_dataset"] = active
-        data["scores"] = dataset_score_summary(active)
-        data["decisions"] = dataset_decision_summary(active)
     return data
 
 
@@ -1137,14 +1059,11 @@ DASHBOARD_BASE_COLUMNS = list(
 
 
 def dataset_cache_key() -> str:
-    """Cache buster for parquet + active uploaded dataset."""
+    """Cache buster for the main notebook parquet dataset."""
     path = first_existing_dataset(settings.MAIN_DATASET_CANDIDATES)
     if path is None:
         return ""
-    active = active_dataset_path()
-    active_part = str(active.resolve()) if active else ""
-    active_mtime = active.stat().st_mtime if active and active.exists() else 0.0
-    return f"{path.resolve()}|{path.stat().st_mtime}|{active_part}|{active_mtime}"
+    return f"{path.resolve()}|{path.stat().st_mtime}"
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -1367,7 +1286,7 @@ def enrich_dashboard_data(df: pd.DataFrame, requested_columns: list[str]) -> pd.
 
 
 def load_top_anomalies(limit: int = 300) -> pd.DataFrame:
-    path = active_dataset_path() or artifact_path(settings.ANOMALY_DATASET)
+    path = artifact_path(settings.ANOMALY_DATASET)
     df = read_parquet_fast(path, list(dict.fromkeys(settings.ANOMALY_COLUMNS + settings.TEMPORAL_COLUMNS)))
     if df.empty:
         return df

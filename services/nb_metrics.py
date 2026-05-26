@@ -40,7 +40,7 @@ def _needs_fill_mask(series: pd.Series, column: str, zero_as_missing: bool) -> p
 
 
 def _coerce_merge_key(series: pd.Series, key: str) -> pd.Series:
-    """Align merge key dtypes (upload CSV vs notebook parquet)."""
+    """Align merge key dtypes across parquet sources."""
     if key == "station_id":
         return series.astype(str).str.strip()
     if key == "timestamp":

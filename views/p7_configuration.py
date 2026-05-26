@@ -1,4 +1,4 @@
-"""Page 12 - Configuration (stations, utilisateurs, import dataset)."""
+"""Page 12 - Configuration (stations et utilisateurs)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from services.data_service import (
     station_summary_from_df,
 )
 from ui.components import header, kpi_card, section
-from views.p6_upload_admin import render_upload_panel
 from views.p8_utilisateurs import render_utilisateurs_panel
 
 
@@ -75,8 +74,8 @@ def _render_stations_tab():
     inventory = _station_inventory()
     if inventory.empty:
         st.warning(
-            "Aucune station dans le jeu de données actif. Publiez un jeu de données (onglet Import) "
-            "ou verifiez les artefacts NB sur Hugging Face."
+            "Aucune station dans le jeu de données actif. "
+            "Vérifiez les artefacts NB publiés sur Hugging Face."
         )
         return
 
@@ -165,15 +164,12 @@ def _render_stations_tab():
 
 def page_configuration():
     security_middleware.enforce(role="admin")
-    header("Configuration", "Stations, utilisateurs et import de données")
+    header("Configuration", "Stations et utilisateurs")
 
-    tab_stations, tab_users, tab_import = st.tabs(["Stations", "Utilisateurs", "Import de données"])
+    tab_stations, tab_users = st.tabs(["Stations", "Utilisateurs"])
 
     with tab_stations:
         _render_stations_tab()
 
     with tab_users:
         render_utilisateurs_panel()
-
-    with tab_import:
-        render_upload_panel()

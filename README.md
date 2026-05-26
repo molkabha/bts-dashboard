@@ -73,7 +73,7 @@ L'application de démonstration et d'exploitation est hébergée sur **Streamlit
 | **Administrateur** | Accueil, Carte, Prédiction, Anomalies, Optimisation, Simulation, **Configuration** | Tout le parc ; KPI financiers ; détails ML |
 | **Ingénieur réseau** | Idem **sans** Configuration | **Stations assignées** uniquement (RLS) |
 
-**Configuration** (admin) — trois onglets : stations actives, import/publication de dataset, gestion des utilisateurs.
+**Configuration** (admin) — deux onglets : stations actives, gestion des utilisateurs.
 
 ### Pages et lien avec les notebooks
 
@@ -85,7 +85,7 @@ L'application de démonstration et d'exploitation est hébergée sur **Streamlit
 | Anomalies | NB2 | Scores, seuil, alertes |
 | Optimisation | NB3 | Économies retenues, actions, gains expert/RL |
 | Simulation | NB3 | Replay horaire, alertes, journal |
-| Configuration | — | Stations, import, utilisateurs (admin) |
+| Configuration | — | Stations, utilisateurs (admin) |
 
 ### Sécurité
 
