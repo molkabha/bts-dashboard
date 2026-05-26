@@ -1,120 +1,195 @@
-# BTS Dashboard — Tunisie Telecom
+# BTS Energy Monitor — Tunisie Telecom
 
-## Présentation
+Application **Streamlit** de supervision énergétique des stations BTS, alimentée par trois notebooks de data science (prédiction, anomalies, optimisation / RL) et leurs artefacts.
 
-Ce projet est une solution d'optimisation énergétique des stations de base BTS de Tunisie Telecom. Il combine trois notebooks de data science et une application Streamlit qui présente :
+**Dépôt :** [github.com/molkabha/bts-dashboard](https://github.com/molkabha/bts-dashboard)
 
-- la prédiction de consommation énergétique,
-- la détection d'anomalies,
-- l'optimisation décisionnelle et RL,
-- une interface de supervision réseau.
+---
 
-## Notebooks
+## Vue d'ensemble
 
-### Notebook 1 — Apprentissage Supervisé
-- Objectif : prédire la consommation horaire des stations.
-- Étapes :
-  - compréhension métier et chargement des données
-  - nettoyage et correction des anomalies
-  - feature engineering et EDA
-  - comparaison de 7 modèles supervisés
-  - validation croisée temporelle
-  - évaluation finale et interprétabilité SHAP
-- Sorties clés :
-  - `best_model.joblib`
-  - `encodeurs.joblib`
-  - `quantile_models.joblib`
-  - `df_train_processed.parquet`
-  - `df_test_processed.parquet`
-  - `df_full_processed.parquet`
-  - `resultats_modeles.json`
+| Composant | Rôle |
+|-----------|------|
+| **NB1** | Prédiction horaire de la consommation (LightGBM, bandes Q10–Q90, SHAP) |
+| **NB2** | Détection d'anomalies non supervisée (7 détecteurs, vote d'ensemble) |
+| **NB3** | Moteur de décision (ECO / NORMAL / ATTENTION / CRITIQUE), stratégies expertes, 7 agents RL |
+| **Dashboard** | Visualisation, filtres réseau, rôles admin / ingénieur, simulation what-if |
 
-### Notebook 2 — Détection d'Anomalies (Non Supervisé)
+**Chaîne de données (hors ligne → interface) :**
+
+```
+Notebooks (nb1, nb2, nb3)
+    → parquets / joblib / JSON
+    → Hub Hugging Face molkab/dashboard  (ou copie locale VF/*/output)
+    → enrich_dashboard_data() + KPI
+    → pages Streamlit
+```
+
+Sur la plupart des pages, le dashboard **lit et agrège** les exports notebook (pas de réentraînement à chaque filtre). La page **Simulation** recalcule un pas horaire via profils historiques et, si disponible, le pipeline d'inférence NB3.
+
+---
+
+## Notebooks (fichiers du dépôt)
+
+| Fichier | Thème |
+|---------|--------|
+| `nb1-prediction.ipynb` | Apprentissage supervisé — consommation horaire |
+| `nb2-d.ipynb` | Détection d'anomalies non supervisée |
+| `nb3-p.ipynb` | Décision, optimisation par règles et RL |
+
+### NB1 — Prédiction supervisée
+
+- Nettoyage, feature engineering (temps, météo, trafic, calendrier TN), comparaison de **7 modèles** supervisés, validation croisée temporelle, SHAP.
+- **Sorties utilisées par le dashboard :**
+  - Modèles : `best_model.joblib`, `encodeurs.joblib`, `quantile_models.joblib`, `config.joblib`
+  - Données : `df_full_processed.parquet`, `df_train_processed.parquet`, `df_test_processed.parquet`
+  - Métriques / viz : `resultats_modeles.json`, `shap_*.png`
+
+### NB2 — Anomalies
+
 - Prérequis : sorties NB1 (`df_full_processed.parquet`, `config.joblib`).
-- Objectif : détecter les anomalies de consommation et qualifier les incidents QoS.
-- Étapes :
-  - création de features d'anomalie et standardisation
-  - estimation data-driven de la contamination
-  - entraînement de 7 détecteurs non supervisés
-  - calibration des scores et consensus des moteurs
-  - évaluation qualitative et visualisations
-- Sorties clés :
-  - `modeles_anomalie.joblib`
-  - `autoencoder.keras` (si TensorFlow)
-  - `performance_qualitative_modeles.csv`
-  - scores et données préparées pour NB3
+- Features d'anomalie, **7 détecteurs**, calibration, **vote d'ensemble**, profils K-Means.
+- **Sorties utilisées par le dashboard :**
+  - `modeles_anomalie.joblib`, `df_avec_anomalies.parquet`, `resultats_anomalie.json`
+  - `performance_qualitative_modeles.csv`, `score_stations.parquet`
+  - `autoencoder.keras` (si TensorFlow), images `tsne_anomalies.png`, `precision_recall_modeles.png`
 
-### Notebook 3 — Système de Décision & Optimisation Énergétique
-- Prérequis : exécutés NB1 et NB2.
-- Objectif : définir un moteur de décision et optimiser l'usage électrique via des règles et du Reinforcement Learning.
-- Contenu :
-  - chargement des artefacts NB1/NB2
-  - moteur de décision multi-mode : ECO / NORMAL / ATTENTION / CRITIQUE
-  - garde-fou QoS
-  - 5 stratégies expertes d'optimisation
-  - environnement de simulation BTS
-  - 7 agents RL entraînés et comparés
-  - visualisations des économies et des profils horaires
-  - pipeline d'inférence temps réel
-- Sorties clés :
-  - `pipeline_inference.joblib`
-  - `tableau_de_bord_complet.png`
-  - artefacts RL
+### NB3 — Décision et optimisation
+
+- Prérequis : NB1 + NB2.
+- Moteur **ECO / NORMAL / ATTENTION / CRITIQUE**, garde-fou QoS, **5 stratégies** expertes, environnement de simulation, **7 agents RL**, pipeline d'inférence.
+- **Sorties utilisées par le dashboard :**
+  - `streamlit_data.parquet` (jeu principal fusionné), `decisions_par_station.parquet`
+  - `pipeline_inference.joblib`, `agents_rl_7.pkl`
+  - `kpi_reseau.json`, `rapport_optimisation.json`
+  - `streamlit_profil_horaire.parquet`, `streamlit_timeseries.parquet`, `streamlit_carte_stations.parquet`
+  - `rl_7agents_apprentissage.png`, `tableau_de_bord_complet.png`
+
+La liste complète des artefacts attendus est dans `ARTIFACT_REGISTRY` (`services/data_service.py`).
+
+---
 
 ## Dashboard Streamlit
 
-L'application principale se lance depuis `app.py`.
+### Lancement
 
-### Fonctionnalités
-- Authentification et gestion des permissions (RLS par station pour les ingénieurs)
-- Chargement des artefacts NB1/NB2/NB3
-- Navigation :
-  - **Admin** : Accueil, Carte, Prédiction (NB1), Anomalies (NB2), Optimisation (NB3), Simulation temps réel, Configuration
-  - **Ingénieur réseau** : mêmes pages opérationnelles (stations assignées uniquement, sans résultats ML), plus Simulation
-- **Configuration** (admin) : gestion des stations, utilisateurs, import de dataset
+```bash
+pip install -r requirements.txt
+python app.py
+```
 
-### Pages et notebooks
-| Page | Notebook | Contenu principal |
-|------|----------|-------------------|
-| Accueil | — | 4 KPIs, répartition des modes, top 5 stations critiques |
-| Carte | — | Carte Mapbox (criticité), filtres sidebar, comparaison gouvernorats |
-| Prédiction | NB1 | Réel vs prédit, bande Q10/Q90, R² |
-| Anomalies | NB2 | Scatter score × heure, stations prioritaires |
-| Optimisation | NB3 | Règles vs RL, courbe d'apprentissage, économies CO₂ |
-| Simulation | NB3 | Replay horaire en temps réel |
-| Configuration | — | Stations, utilisateurs, upload dataset |
+Équivalent : `streamlit run app.py`. Point d'entrée : **`app.py`** (configuration page, variables `.env`, puis `ui/dashboard.py`).
 
-### Structure du code
-- `app.py` : point d'entrée Streamlit
-- `ui/dashboard.py` : router des pages
-- `views/` : pages du tableau de bord
-- `services/data_service.py` : accès aux données et calcul des KPI
-- `ui/components.py`, `ui/layout.py`, `ui/utils.py` : composants et utilitaires
-- `security/middleware.py` : contrôle d'accès
+### Rôles et navigation
 
-## Installation rapide
+| Profil | Menu (7 / 6 entrées) | Périmètre |
+|--------|------------------------|-----------|
+| **Administrateur** | Accueil, Carte, Prédiction, Anomalies, Optimisation, Simulation, **Configuration** | Tout le parc ; KPI financiers ; détails ML (SHAP, détecteurs, agents RL) |
+| **Ingénieur réseau** | Idem **sans** Configuration | **Stations assignées** uniquement (RLS) ; vues opérationnelles allégées (moins de détails modèles) |
 
-1. Créer un environnement Python.
-2. Installer les dépendances :
+L'écran **Configuration** (admin) regroupe trois onglets :
+
+1. **Stations** — activer / désactiver des sites sur le jeu de données actif  
+2. **Import** — publication d'un dataset (CSV / parquet) fusionné avec les colonnes NB  
+3. **Utilisateurs** — comptes, mots de passe, affectation des stations aux ingénieurs  
+
+### Pages et lien avec les notebooks
+
+| Page | Fichier | NB | Contenu principal |
+|------|---------|-----|-------------------|
+| Accueil | `p0_accueil.py` | — | KPI (économies, CO₂, % ECO, alertes), camembert **répartition des modes** (dernier état / station), top 5 stations critiques, export PDF (admin) |
+| Carte | `p1_vue_reseau.py` | — | Carte Folium (couleur = action NB3), filtres sidebar, comparaison gouvernorats |
+| Prédiction | `p2_prediction.py` | NB1 | Courbes réel / prédit / Q10–Q90 ; R² et comparaison modèles (admin) ; SHAP (admin) |
+| Anomalies | `p3_anomalies.py` | NB2 | Scatter score × heure, tableau stations, seuil d'ensemble résolu, stats détecteurs (admin) |
+| Optimisation | `p4_optimisation_rl.py` | NB3 | KPI **économies retenues** max(règles, RL), actions par mode, top stations, gains expert / RL, profil horaire, agents RL (admin) |
+| Simulation | `p5_simulation.py` | NB3 | Replay horaire (profils + pipeline ou repli offline), alertes, journal, cartes |
+| Configuration | `p7_configuration.py` | — | Stations, import dataset, utilisateurs (`p6`, `p8` en panneaux) |
+
+### Données côté application
+
+- **Jeu actif :** `streamlit_data.parquet` ou dataset publié / `df_full_processed.parquet`
+- **Enrichissement :** fusion `df_avec_anomalies.parquet` (NB2) + décisions NB3 + harmonisation des économies (`services/nb_metrics.py`)
+- **Hub :** par défaut `USE_HF_HUB=True`, dépôt [`molkab/dashboard`](https://huggingface.co/molkab/dashboard) — repli local `VF/NB1/...`, `VF/NB2/output`, `VF/NB3/output`
+- **Persistance :** SQLite (`dashboard_ops.sqlite3` par défaut) — utilisateurs, sessions, alertes ; exemple `data/alerts.sqlite`
+
+Copier `.env.example` vers `.env` pour `SECRET_KEY`, `HF_TOKEN` (dépôt privé), SMTP, etc.
+
+### Sécurité
+
+- Authentification bcrypt, verrouillage après échecs de connexion, rate limiting (`security/middleware.py`)
+- CSRF session, expiration de session, contrôle d'accès par page
+- En production : `SECRET_KEY` obligatoire (`ENVIRONMENT=production`)
+
+---
+
+## Structure du projet
+
+```
+app.py                 # Entrée Streamlit
+ui/dashboard.py        # Routeur et rôles
+ui/display.py          # Libellés menu (7 pages admin)
+views/                 # Pages p0–p8, simulation_*
+services/
+  data_service.py      # Artefacts, Hub, enrichissement, KPI
+  nb_metrics.py        # harmonize_nb3_economies, écarts %
+  decision_service.py  # MoteurDecisionEnergie (NB3)
+  optimization_service.py
+  nb_inference.py      # Pipeline simulation
+  synthetic_bts.py     # Profils horaires simulation
+security/middleware.py
+config/settings.py     # Constantes métier (0,40 DT/kWh, QoS 0,60, …)
+tests/                 # Suite pytest (voir ci-dessous)
+```
+
+---
+
+## Installation
+
+1. Python **3.11** recommandé (`runtime.txt` pour Streamlit Cloud).
+2. Dépendances :
    ```bash
    pip install -r requirements.txt
    ```
-3. Lancer l'application :
+3. Artefacts : activer le Hub ou placer les fichiers NB sous `VF/` (voir `config/settings.py`).
+4. Lancer :
    ```bash
    python app.py
    ```
 
-## Données
+### Tests automatisés
 
-- Les données principales sont stockées dans `VF/tunisie_telecom_dataset.csv`.
-- Les notebooks produisent des artefacts dans les dossiers `outputs/` et `VF/*/output`.
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
-## Notes
+Couverture optionnelle :
 
-- Le dashboard repose sur des artefacts générés par les notebooks.
-- NB1 prépare les prévisions, NB2 prépare la détection d'anomalies, NB3 prépare l'optimisation décisionnelle.
-- La vue réseau et les KPIs utilisent à la fois la consommation réelle, les scores QoS et les scores d'anomalie.
+```bash
+pytest --cov=services --cov=security --cov=ui --cov=utils --cov-report=term-missing
+```
 
-### Simulation et données NB
+19 tests : métriques NB3, moteur de décision, mots de passe, rate limiting, smoke imports / menu. CI : `.github/workflows/tests.yml`.
 
-La page **Simulation** réutilise les mêmes sorties notebook que le reste du dashboard (`load_filtered_main_data` → `enrich_dashboard_data`, artefacts [Hugging Face `molkab/dashboard`](https://huggingface.co/molkab/dashboard)). Pas de second chargement de modèles `.joblib` : prédiction, anomalies et décisions proviennent des parquets déjà fusionnés sur les autres pages.
+---
+
+## Données brutes et dossiers locaux
+
+- Jeu source typique : `VF/tunisie_telecom_dataset.csv` (hors dépôt Git si volumineux).
+- Sorties notebooks : `VF/NB1/NB1-P/output`, `VF/NB2/output`, `VF/NB3/output` (chemins par défaut dans `settings.py`).
+- **`VF/`** = répertoire local **V**ersion **F**ichiers / livrables notebooks (copie de travail), utilisé quand le Hub Hugging Face n'est pas accessible.
+
+---
+
+## Notes importantes
+
+- **Économies affichées :** par ligne, `economie_kwh = max(économie règles, économie RL)`, plafonnée à la consommation ; KPI réseau = somme sur la période filtrée × 0,40 DT/kWh.
+- **Seuil anomalie :** lu depuis `resultats_anomalie.json` si présent, sinon dérivé du quantile des scores dans `df_avec_anomalies.parquet` (aligné sur `%` anomalies du KPI réseau).
+- **Simulation :** scénario what-if sur profils historiques (Ramadan, fériés TN, week-end) — pas une télémétrie live du réseau commercial.
+- **Déploiement :** application Streamlit (`app.py`, `runtime.txt`) ; pas de `Dockerfile` / `nginx.conf` dans ce dépôt (évolution possible en environnement opérateur).
+
+---
+
+## Licence / contexte
+
+Projet de fin d'études — optimisation énergétique du réseau mobile Tunisie Telecom (GLSI).
