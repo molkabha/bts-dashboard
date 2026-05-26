@@ -203,7 +203,11 @@ def _render_add_user():
                     "temporaire à changer à la première connexion."
                 )
 
-            submit = st.form_submit_button("Créer le compte", type="primary", width="stretch")
+            submit = st.form_submit_button(
+                "Créer le compte",
+                type="primary",
+                use_container_width=True,
+            )
 
             if submit:
                 if not new_username or not new_display:

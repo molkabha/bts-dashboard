@@ -34,10 +34,23 @@ def login_page(logo_path: Path):
                 unsafe_allow_html=True,
             )
 
-            with st.form("login_unique"):
-                user = st.text_input("Identifiant", key="login_user", placeholder="Courriel ou nom d'utilisateur")
-                pwd = st.text_input("Mot de passe", type="password", key="login_pwd", placeholder="Mot de passe")
-                submitted = st.form_submit_button("Se connecter", type="primary", width="stretch")
+            with st.form("login_form"):
+                user = st.text_input(
+                    "Identifiant",
+                    key="login_user",
+                    placeholder="Courriel ou nom d'utilisateur",
+                )
+                pwd = st.text_input(
+                    "Mot de passe",
+                    type="password",
+                    key="login_pwd",
+                    placeholder="Mot de passe",
+                )
+                submitted = st.form_submit_button(
+                    "Se connecter",
+                    type="primary",
+                    use_container_width=True,
+                )
 
             if submitted:
                 success, user_record, message = authenticate_user(user, pwd)
@@ -49,15 +62,23 @@ def login_page(logo_path: Path):
                     role_label = "Administrateur" if role == "admin" else "Ingénieur réseau"
                     st.session_state["_login_role_hint"] = role_label
                     from services.data_service import log_event
+
                     log_event("login", {"role": session_data["role"]})
                     st.rerun()
                 else:
                     st.error(message)
 
             with st.expander("Mot de passe oublié", expanded=False):
-                with st.form("forgot_password"):
-                    reset_login = st.text_input("Courriel ou identifiant", key="reset_login")
-                    reset_submitted = st.form_submit_button("Recevoir un mot de passe temporaire", width="stretch")
+                with st.form("forgot_password_form"):
+                    reset_login = st.text_input(
+                        "Courriel ou identifiant",
+                        key="reset_login",
+                        placeholder="Courriel ou identifiant",
+                    )
+                    reset_submitted = st.form_submit_button(
+                        "Recevoir un mot de passe temporaire",
+                        use_container_width=True,
+                    )
 
                 if reset_submitted:
                     reset_login = UserInputValidator.sanitize_string(reset_login, 120)
@@ -93,11 +114,15 @@ def force_password_change_page():
     # Generate CSRF token in session state (internal)
     security_middleware.generate_csrf_token()
 
-    with st.form("force_password_change"):
+    with st.form("force_password_change_form"):
         current = st.text_input("Mot de passe temporaire", type="password")
         new_password = st.text_input("Nouveau mot de passe", type="password")
         confirm = st.text_input("Confirmer le nouveau mot de passe", type="password")
-        submitted = st.form_submit_button("Enregistrer le nouveau mot de passe", type="primary", width="stretch")
+        submitted = st.form_submit_button(
+            "Enregistrer le nouveau mot de passe",
+            type="primary",
+            use_container_width=True,
+        )
 
     if not submitted:
         return
