@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
@@ -75,6 +76,119 @@ def _hourly_metric_chart_df(work: pd.DataFrame, value_col: str) -> pd.DataFrame:
     return df.groupby(group, as_index=False).agg(**agg_kwargs)
 
 
+def _render_hourly_anomaly_profile(
+    work: pd.DataFrame,
+    value_col: str,
+    seuil: float,
+    template: str,
+    *,
+    seuil_annotation: str | None = None,
+) -> None:
+    """Profil horaire agrégé — score d'anomalie moyen par heure et mode."""
+    n_rows = len(work)
+    chart_df = _hourly_metric_chart_df(work, value_col)
+    if chart_df.empty:
+        st.info("Aucune donnée pour tracer le profil horaire.")
+        return
+
+    n_points = int(chart_df["mesures"].sum()) if "mesures" in chart_df.columns else len(chart_df)
+    if n_rows > _MAX_SCATTER_POINTS:
+        st.caption(
+            f"Agrégation sur **{n_rows:,}** mesures du filtre actif "
+            f"→ **{n_points}** points affichés (moyenne par heure"
+            f"{', mode et nombre de mesures' if 'mode_operation' in chart_df.columns else ''})."
+        )
+    else:
+        st.caption(
+            f"**{n_rows:,}** mesures · moyenne du score par heure"
+            f"{'' if 'mode_operation' not in chart_df.columns else ' et par mode opérationnel'}."
+        )
+
+    has_mode = "mode_operation" in chart_df.columns
+    fig = go.Figure()
+
+    if has_mode:
+        for mode in ["CRITIQUE", "ATTENTION", "NORMAL", "ECO"]:
+            sub = chart_df[chart_df["mode_operation"].astype(str).str.upper() == mode]
+            if sub.empty:
+                continue
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["_heure"],
+                    y=sub[value_col],
+                    mode="lines+markers",
+                    name=mode,
+                    line=dict(color=MODE_COLORS.get(mode, "#64748b"), width=2),
+                    marker=dict(size=7, line=dict(width=1, color="white")),
+                    customdata=sub[["mesures", "stations"]].values
+                    if {"mesures", "stations"}.issubset(sub.columns)
+                    else None,
+                    hovertemplate=(
+                        "<b>%{fullData.name}</b><br>"
+                        "Heure : %{x}h<br>"
+                        "Score moy. : %{y:.3f}<br>"
+                        "Mesures : %{customdata[0]}<br>"
+                        "Stations : %{customdata[1]}<extra></extra>"
+                    )
+                    if {"mesures", "stations"}.issubset(sub.columns)
+                    else (
+                        "<b>%{fullData.name}</b><br>Heure : %{x}h<br>Score moy. : %{y:.3f}<extra></extra>"
+                    ),
+                ),
+            )
+    else:
+        fig.add_trace(
+            go.Scatter(
+                x=chart_df["_heure"],
+                y=chart_df[value_col],
+                mode="lines+markers",
+                name="Score moyen",
+                line=dict(color="#1e3a8a", width=2.5),
+                marker=dict(size=8),
+                hovertemplate="Heure : %{x}h<br>Score moy. : %{y:.3f}<extra></extra>",
+            ),
+        )
+
+    fig.add_hline(
+        y=seuil,
+        line_dash="dash",
+        line_color="#c8102e",
+        line_width=2,
+        annotation_text=seuil_annotation or f"Seuil NB2 ({seuil:.2f})",
+        annotation_position="top right",
+        annotation_font_size=11,
+        annotation_font_color="#c8102e",
+    )
+
+    fig.update_layout(
+        template=template,
+        height=380,
+        margin=dict(l=48, r=24, t=24, b=48),
+        xaxis=dict(
+            title="Heure de la journée",
+            dtick=1,
+            range=[-0.5, 23.5],
+            tickmode="linear",
+            gridcolor="rgba(148,163,184,0.25)",
+        ),
+        yaxis=dict(
+            title="Score d'anomalie (moyenne)",
+            gridcolor="rgba(148,163,184,0.25)",
+            rangemode="tozero",
+        ),
+        legend=dict(
+            title="Mode",
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+        ),
+        hovermode="x unified",
+    )
+    st.plotly_chart(fig, width="stretch")
+
+
 def _render_hourly_scatter(
     work: pd.DataFrame,
     value_col: str,
@@ -84,32 +198,23 @@ def _render_hourly_scatter(
     *,
     seuil_annotation: str | None = None,
 ) -> None:
+    """Profil QoS horaire (ingénieur)."""
     n_rows = len(work)
     chart_df = _hourly_metric_chart_df(work, value_col)
     if chart_df.empty:
         st.info("Aucune donnée pour tracer le graphique.")
         return
     if n_rows > _MAX_SCATTER_POINTS:
-        st.caption(
-            f"Moyenne par heure sur {n_rows:,} mesures "
-            f"({int(chart_df['mesures'].sum()) if 'mesures' in chart_df.columns else len(chart_df)} points affichés)."
-        )
+        st.caption(f"Moyenne par heure sur {n_rows:,} mesures.")
     fig = px.scatter(
         chart_df,
         x="_heure",
         y=value_col,
         color="mode_operation" if "mode_operation" in chart_df.columns else None,
-        size="mesures" if "mesures" in chart_df.columns else None,
-        hover_data=[c for c in ("mesures", "stations", "mode_operation") if c in chart_df.columns],
-        labels={"_heure": "Heure", value_col: y_label, "mesures": "Mesures", "stations": "Stations"},
+        labels={"_heure": "Heure", value_col: y_label},
         color_discrete_map=MODE_COLORS,
     )
-    fig.add_hline(
-        y=seuil,
-        line_dash="dash",
-        line_color="#c8102e",
-        annotation_text=seuil_annotation or "Seuil",
-    )
+    fig.add_hline(y=seuil, line_dash="dash", line_color="#c8102e", annotation_text=seuil_annotation or "Seuil")
     fig.update_layout(template=template, height=320, margin=dict(l=0, r=0, t=8, b=0))
     st.plotly_chart(fig, width="stretch")
 
@@ -139,9 +244,9 @@ def _priority_stations(work: pd.DataFrame, seuil: float, anom_col: str) -> pd.Da
 def page_anomalies():
     security_middleware.enforce()
 
-    subtitle = "Score × heure et stations prioritaires"
+    subtitle = "Profil horaire des anomalies et stations à traiter en priorité"
     if not is_admin():
-        subtitle = "Surveillance QoS de vos stations (sans scores ML)"
+        subtitle = "Surveillance QoS de vos stations"
     header(PAGE_ANOMALIES, subtitle)
     st.caption(active_filter_label())
 
@@ -176,22 +281,39 @@ def page_anomalies():
             n_st = int(anom_df["station_id"].nunique()) if not anom_df.empty and "station_id" in anom_df.columns else 0
             kpi_card("Stations touchées", str(n_st), "Au moins une alerte", "blue")
 
-        det_df = _detector_rows(nb2_stats)
-        if not det_df.empty:
-            with section("Détecteurs NB2"):
-                st.dataframe(det_df, width="stretch", hide_index=True)
+        with section("Profil horaire — score d'anomalie"):
+            st.markdown(
+                "Évolution du **score d'anomalie moyen** sur la journée (0h–23h), "
+                "colorée par **mode opérationnel** NB3. La ligne rouge indique le "
+                "**seuil d'alerte** du modèle d'ensemble."
+            )
+            _render_hourly_anomaly_profile(
+                scored,
+                "_score",
+                seuil,
+                template,
+                seuil_annotation=f"Seuil ({seuil:.2f})",
+            )
 
         with section("Stations prioritaires"):
+            st.caption(
+                "Classement par score maximal sur la période filtrée "
+                "(stations avec le plus d'alertes en tête)."
+            )
             prio = _priority_stations(scored, seuil, anom_col)
             if prio.empty:
                 st.success("Aucune station prioritaire.")
             else:
                 st.dataframe(format_dataframe_for_display(prio), width="stretch", hide_index=True)
 
-        with section("Score × heure"):
-            _render_hourly_scatter(
-                scored, "_score", "Score anomalie (moy.)", seuil, template,
-            )
+        det_df = _detector_rows(nb2_stats)
+        if not det_df.empty:
+            with section("Détecteurs NB2 — performance sur le jeu de test"):
+                st.caption(
+                    "Part des mesures signalées comme anomalie par chaque détecteur "
+                    "lors de l'évaluation NB2 (référence notebook)."
+                )
+                st.dataframe(det_df, width="stretch", hide_index=True)
     else:
         qos_seuil = qos_seuil_or_warn()
         if qos_seuil is None or not require_column_or_warn(df, "score_qos", MSG_QOS_COL):

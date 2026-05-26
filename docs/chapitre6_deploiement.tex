@@ -1,0 +1,358 @@
+%==============================================================================
+% CHAPITRE 6 — Déploiement (en ligne uniquement)
+% URL application : https://bts-dashboard-tt.streamlit.app/
+% Prérequis : \usepackage{tikz}, \usetikzlibrary{positioning,arrows.meta}
+%             \usepackage{booktabs}, \usepackage{hyperref}
+%==============================================================================
+
+\chapter{Déploiement et mise en exploitation du tableau de bord BTS~EMS}
+\label{chap:deploiement}
+
+%------------------------------------------------------------------------------
+\section{Introduction}
+\label{sec:dep-intro}
+%------------------------------------------------------------------------------
+
+Les chapitres précédents ont produit trois livrables analytiques~: un modèle
+LightGBM de prédiction énergétique~(NB1), un ensemble de détecteurs
+d'anomalies~(NB2) et un moteur de décision par apprentissage par renforcement~(NB3).
+Ces sorties ne génèrent de valeur opérationnelle que mises à disposition d'un
+exploitant réseau dans un outil accessible et filtrable.
+
+Ce chapitre documente le \textbf{déploiement en ligne} du tableau de bord
+\textbf{BTS~EMS}, accessible à l'adresse suivante~:
+\begin{center}
+  \url{https://bts-dashboard-tt.streamlit.app/}
+\end{center}
+
+Le périmètre retenu pour ce projet est exclusivement ce déploiement
+\textbf{cloud}~: application hébergée sur Streamlit Community Cloud, artefacts
+machine learning servis depuis le Hub Hugging~Face \texttt{molkab/dashboard},
+persistance des comptes et des alertes en SQLite sur l'infrastructure Streamlit.
+Aucune installation locale des notebooks, des dossiers de sortie (\texttt{VF/})
+ou de l'application n'est requise pour l'utilisateur final. La conteneurisation
+(Docker, reverse proxy dédié) reste une perspective d'industrialisation chez
+Tunisie Telecom, hors livrable de ce stage.
+
+% CAPTURE : page d'accueil ou barre d'URL Streamlit
+% \includegraphics[width=0.9\textwidth]{figures/fig6_0_url_streamlit.pdf}
+
+%------------------------------------------------------------------------------
+\section{Architecture globale de la solution déployée}
+\label{sec:dep-archi}
+%------------------------------------------------------------------------------
+
+\subsection{Vue d'ensemble}
+\label{subsec:dep-vue-ensemble}
+
+La solution déployée s'organise en quatre couches, représentées sur la
+figure~\ref{fig:archi-deploiement}.
+
+\begin{enumerate}
+  \item \textbf{Couche analytique (hors ligne, amont).}
+    Les notebooks \texttt{nb1-prediction.ipynb}, \texttt{nb2-d.ipynb} et
+    \texttt{nb3-p.ipynb} produisent modèles (\texttt{.joblib}), métriques
+    (\texttt{.json}) et tables (\texttt{.parquet}). Cette étape est réalisée
+    en amont du déploiement~; les fichiers sont ensuite publiés sur le Hub.
+
+  \item \textbf{Couche de publication en ligne.}
+    L'ensemble des artefacts est centralisé sur le dépôt Hugging~Face
+    \texttt{molkab/dashboard} (\texttt{HF\_REPO\_ID}). Au démarrage de
+    l'application, \texttt{artifact\_path()} télécharge ou met en cache les
+    fichiers nécessaires (\texttt{USE\_HF\_HUB=True}).
+
+  \item \textbf{Couche applicative (serveur Streamlit).}
+    \texttt{services/data\_service.py} charge les artefacts depuis le Hub,
+    fusionne les jeux NB2 et NB3 (\texttt{enrich\_dashboard\_data}) et calcule
+    les indicateurs (\texttt{compute\_filtered\_kpis},
+    \texttt{harmonize\_nb3\_economies}).
+
+  \item \textbf{Couche de présentation.}
+    Sept entrées de menu pour l'administrateur (six pour l'ingénieur), accessibles
+    via navigateur~; comptes et alertes en SQLite côté hébergeur.
+\end{enumerate}
+
+Le tableau de bord \emph{relit} et \emph{agrège} des résultats pré-calculés par
+les notebooks. Il ne ré-exécute pas l'inférence LightGBM à chaque filtre de la
+barre latérale. Seule la page \textbf{Simulation} relance, à chaque tick simulé,
+une chaîne proche du pipeline NB3 (\texttt{run\_nb\_pipeline}, repli
+\texttt{apply\_offline\_nb23} si un modèle Hub est momentanément indisponible).
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[
+      node distance = 0.65cm and 1.1cm,
+      box/.style   = {rectangle, draw, rounded corners=3pt,
+                      minimum width=3.5cm, minimum height=0.65cm,
+                      font=\small, align=center},
+      arrow/.style = {->, >=stealth, thick},
+      cloud/.style = {box, fill=blue!8},
+      store/.style = {box, fill=orange!12},
+      app/.style   = {box, fill=green!10},
+      ui/.style    = {box, fill=purple!10},
+    ]
+    \node[cloud] (nb) {Notebooks NB1--NB3\\(amont)};
+    \node[store, right=of nb] (hub)
+      {Hub HF\\\texttt{molkab/dashboard}};
+    \node[app, right=of hub] (cloud)
+      {Streamlit Cloud\\cache + SQLite};
+    \node[app, right=of cloud] (svc)
+      {\texttt{data\_service.py}\\enrich + KPI};
+    \node[ui, right=of svc] (web)
+      {\url{bts-dashboard-tt}\\.streamlit.app}};
+    \node[ui, right=of web] (users) {Admin /\\Ingénieur};
+    \draw[arrow] (nb) -- (hub);
+    \draw[arrow] (hub) -- (cloud);
+    \draw[arrow] (cloud) -- (svc);
+    \draw[arrow] (svc) -- (web);
+    \draw[arrow] (web) -- (users);
+  \end{tikzpicture}
+  \caption{Architecture de déploiement en ligne~: artefacts sur Hugging~Face,
+           application sur Streamlit Cloud, accès navigateur.}
+  \label{fig:archi-deploiement}
+\end{figure}
+
+%------------------------------------------------------------------------------
+\section{Gestion des artefacts et intégration des notebooks}
+\label{sec:dep-artefacts}
+%------------------------------------------------------------------------------
+
+\subsection{Registre et chargement depuis le Hub}
+\label{subsec:dep-registre}
+
+Le module \texttt{services/data\_service.py} référence chaque fichier attendu
+dans \texttt{ARTIFACT\_REGISTRY} (notebook d'origine, type, usage interface).
+La fonction \texttt{artifact\_path(filename)} résout l'URL Hub et le cache
+local du serveur Streamlit (\texttt{.cache/huggingface}), sans dépendre de
+copies manuelles sur le poste de l'utilisateur. Le tableau~\ref{tab:artefacts}
+résume les artefacts principaux.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Artefacts Hub utilisés par le tableau de bord en ligne}
+  \label{tab:artefacts}
+  \begin{tabular}{@{}p{0.7cm}p{5.5cm}p{6cm}@{}}
+    \toprule
+    \textbf{NB} & \textbf{Fichiers clés (Hub)} & \textbf{Usage interface} \\
+    \midrule
+    NB1 &
+    \texttt{df\_full\_processed.parquet},
+    \texttt{resultats\_modeles.json},
+    \texttt{quantile\_models.joblib} &
+    Courbes réel vs prédit, bandes Q10--Q90, R² \\
+    \addlinespace
+    NB2 &
+    \texttt{df\_avec\_anomalies.parquet},
+    \texttt{resultats\_anomalie.json} &
+    Scores, votes, seuil d'ensemble (ou dérivé) \\
+    \addlinespace
+    NB3 &
+    \texttt{streamlit\_data.parquet},
+    \texttt{decisions\_par\_station.parquet},
+    \texttt{rapport\_optimisation.json} &
+    KPI, actions, économies, simulation \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Enrichissement et harmonisation}
+\label{subsec:dep-enrich}
+
+\texttt{enrich\_dashboard\_data()} fusionne le jeu NB3 avec les colonnes NB2 sur
+\texttt{(station\_id, timestamp)}. \texttt{harmonize\_nb3\_economies()} applique~:
+\begin{equation}
+  \text{economie\_kwh}
+  = \min\!\bigl(\max(\text{règles},\; \text{RL}),\;
+               0{,}48 \times \text{consommation\_kwh}\bigr)
+  \label{eq:eco}
+\end{equation}
+
+Si \texttt{seuil\_ensemble} est absent de \texttt{resultats\_anomalie.json}, le
+seuil est dérivé du quantile des scores dans \texttt{df\_avec\_anomalies.parquet},
+calibré sur \texttt{pct\_anomalies} de \texttt{kpi\_reseau.json}.
+
+%------------------------------------------------------------------------------
+\section{Structure de l'application Streamlit en ligne}
+\label{sec:dep-streamlit}
+%------------------------------------------------------------------------------
+
+\subsection{Hébergement et accès}
+\label{subsec:dep-hebergement}
+
+L'application est déployée sur \textbf{Streamlit Community Cloud}. L'URL
+publique \url{https://bts-dashboard-tt.streamlit.app/} pointe vers le point
+d'entrée \texttt{app.py} du projet~: configuration de page, chargement des
+secrets plateforme (\texttt{SECRET\_KEY}, \texttt{HF\_TOKEN}, SMTP), puis
+routeur \texttt{ui/dashboard.py}. L'utilisateur n'exécute aucune commande
+locale~; il se connecte via navigateur web (authentification requise).
+
+% CAPTURE : page connexion Streamlit Cloud
+% figures/fig6_7_login.pdf
+
+\subsection{Écrans et correspondance avec les notebooks}
+\label{subsec:dep-ecrans}
+
+\begin{table}[htbp]
+  \centering
+  \caption{Écrans du tableau de bord en ligne et notebooks associés}
+  \label{tab:ecrans}
+  \begin{tabular}{@{}p{2.6cm}p{1cm}p{9.2cm}@{}}
+    \toprule
+    \textbf{Écran} & \textbf{NB} & \textbf{Contenu principal} \\
+    \midrule
+    Accueil        & --- & KPI, camembert modes, top~5 critiques \\
+    Carte          & --- & Carte Folium, actions NB3 \\
+    Prédiction     & NB1 & Réel / prédit / Q10--Q90, SHAP (admin) \\
+    Anomalies      & NB2 & Scores, alertes, détecteurs (admin) \\
+    Optimisation   & NB3 & Économies retenues, actions, gains expert/RL \\
+    Simulation     & NB3 & Replay horaire, journal d'alertes \\
+    Configuration  & --- & Stations, import dataset, utilisateurs (admin, 3 onglets) \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% CAPTURE : menu latéral 7 entrées — fig6_3_menu_admin.pdf
+% CAPTURE : Accueil KPI + camembert — fig6_4_accueil.pdf
+% CAPTURE : Optimisation — fig6_5_optimisation.pdf
+
+Les filtres globaux alimentent \texttt{compute\_filtered\_kpis()} sans
+réentraînement des modèles.
+
+%------------------------------------------------------------------------------
+\section{Sécurité, configuration et persistance}
+\label{sec:dep-securite}
+%------------------------------------------------------------------------------
+
+\subsection{Authentification et rôles}
+\label{subsec:dep-auth}
+
+Authentification via \texttt{auth\_service.py} et \texttt{utils/security.py}
+(bcrypt, SQLite sur le serveur Streamlit). Verrouillage après cinq échecs de
+connexion (cinq minutes).
+
+\begin{itemize}
+  \item \textbf{Administrateur}~: sept écrans, KPI en DT, détails ML.
+  \item \textbf{Ingénieur}~: six écrans, stations assignées via
+    \texttt{get\_user\_stations()} dans \texttt{data\_service.py} (RLS).
+\end{itemize}
+
+\subsection{Protections applicatives}
+\label{subsec:dep-middleware}
+
+\texttt{security/middleware.enforce()} est appelé en tête de chaque page~:
+rate limiting ($\approx$200 événements/min), expiration de session (1~h), CSRF
+en session. Streamlit ne pose pas d'en-têtes HTTP (CSP, HSTS) comme un reverse
+proxy Nginx~; en production institutionnelle, un proxy devrait compléter ces
+aspects devant l'URL publique.
+
+\subsection{Configuration cloud}
+\label{subsec:dep-config}
+
+Constantes métier dans \texttt{config/settings.py}~: \texttt{PRIX\_KWH\_TN},
+\texttt{QOS\_SEUIL\_DEFAULT}, \texttt{NB3\_MAX\_ECO\_FRAC}. Les secrets sont
+définis dans l'espace \emph{Secrets} de Streamlit Cloud (équivalent de
+\texttt{.env}, non exposé aux utilisateurs).
+
+%------------------------------------------------------------------------------
+\section{Déploiement retenu}
+\label{sec:dep-modes}
+%------------------------------------------------------------------------------
+
+Le tableau~\ref{tab:modes-deploy} résume le mode de déploiement effectif.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Déploiement de l'application BTS~EMS}
+  \label{tab:modes-deploy}
+  \begin{tabular}{@{}p{3.2cm}p{10.8cm}@{}}
+    \toprule
+    \textbf{Composant} & \textbf{Description} \\
+    \midrule
+    \textbf{Interface utilisateur}
+      & \url{https://bts-dashboard-tt.streamlit.app/} — Streamlit Community Cloud,
+        Python~3.11 (\texttt{runtime.txt}) \\
+    \addlinespace
+    \textbf{Artefacts ML}
+      & Hub Hugging Face \texttt{molkab/dashboard} — téléchargement et cache
+        serveur à chaque session \\
+    \addlinespace
+    \textbf{Données applicatives}
+      & SQLite (comptes, alertes, paramètres) sur l'hébergeur Streamlit \\
+    \addlinespace
+    \textbf{Non livré}
+      & Installation locale, dossiers \texttt{VF/}, Docker, Nginx, sonde
+        \texttt{health.py} dédiée \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\paragraph{Perspective.}
+Une industrialisation chez Tunisie Telecom pourrait migrer l'URL vers un domaine
+interne, ajouter un reverse proxy TLS et planifier la republication des
+artefacts sur le Hub après chaque cycle d'entraînement des notebooks.
+
+%------------------------------------------------------------------------------
+\section{Page Simulation et inférence}
+\label{sec:dep-simulation}
+%------------------------------------------------------------------------------
+
+La page \textbf{Simulation} charge des profils via \texttt{synthetic\_bts.py}
+(calendrier \texttt{calendar\_tn.py}) et appelle \texttt{sim\_inference.py}
+(pipeline Hub ou repli léger). Il s'agit d'un scénario \emph{what-if}, pas d'une
+télémétrie live du réseau.
+
+% CAPTURE : Simulation — fig6_6_simulation.pdf
+
+%------------------------------------------------------------------------------
+\section{Validation logicielle et limites}
+\label{sec:dep-tests}
+%------------------------------------------------------------------------------
+
+\subsection{Tests automatisés}
+\label{subsec:dep-tests-suite}
+
+Une suite \texttt{pytest} (19 tests) valide la logique métier hors navigateur
+(tableau~\ref{tab:tests}). Elle est exécutée lors de l'intégration continue du
+code source~; elle ne remplace pas un test utilisateur sur l'URL de production.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Tests automatisés (intégration continue)}
+  \label{tab:tests}
+  \begin{tabular}{@{}p{7cm}p{7cm}@{}}
+    \toprule
+    \textbf{Fichier} & \textbf{Objet} \\
+    \midrule
+    \texttt{test\_nb\_metrics.py} & Économies, eq.~\eqref{eq:eco} \\
+    \texttt{test\_decision\_service.py} & Modes NB3 \\
+    \texttt{test\_security\_password.py} & Bcrypt \\
+    \texttt{test\_middleware\_rate\_limit.py} & Rate limit login \\
+    \texttt{test\_dashboard\_smoke.py} & Menu 7/6 entrées \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+% CAPTURE : pytest 19 passed — fig6_8_pytest.pdf
+
+\subsection{Limites}
+\label{subsec:dep-limites}
+
+\begin{enumerate}
+  \item Dépendance à la disponibilité du Hub Hugging Face et du cache serveur.
+  \item Métriques R² NB1 figées (JSON global, non recalculées sur filtre).
+  \item Seuil anomalie parfois dérivé du parquet.
+  \item Simulation = aide à la décision, pas jumeau temps réel du réseau.
+\end{enumerate}
+
+%------------------------------------------------------------------------------
+\section{Conclusion}
+\label{sec:dep-conclusion}
+%------------------------------------------------------------------------------
+
+Ce chapitre a présenté le déploiement \textbf{en ligne} du tableau de bord
+BTS~EMS sur \url{https://bts-dashboard-tt.streamlit.app/}, alimenté par les
+artefacts NB1--NB3 du Hub \texttt{molkab/dashboard}. L'architecture en quatre
+couches (notebooks amont, Hub, serveur Streamlit, navigateur) assure une
+traçabilité claire sans installation locale pour l'exploitant. Les mécanismes
+de sécurité (bcrypt, rate limiting, RLS) et les 19 tests pytest complètent ce
+déploiement cloud, ouvert à une industrialisation ultérieure chez Tunisie Telecom.
