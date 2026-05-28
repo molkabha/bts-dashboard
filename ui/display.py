@@ -1,9 +1,9 @@
-"""Libelles d'affichage communs (menu = titre de page)."""
-
 from __future__ import annotations
 
 PAGE_PREDICTION = "Prédiction"
+
 PAGE_ANOMALIES = "Anomalies"
+
 PAGE_OPTIMISATION = "Optimisation"
 
 CORE_PAGE_LABELS = [
@@ -16,6 +16,7 @@ CORE_PAGE_LABELS = [
 ]
 
 ADMIN_PAGE_LABELS = [*CORE_PAGE_LABELS, "Configuration"]
+
 ENGINEER_PAGE_LABELS = list(CORE_PAGE_LABELS)
 
 _PAGE_INDEX = {
@@ -29,6 +30,7 @@ _PAGE_INDEX = {
 }
 
 ADMIN_PAGE_INDEX = dict(_PAGE_INDEX)
+
 ENGINEER_PAGE_INDEX = {k: v for k, v in _PAGE_INDEX.items() if k != "Configuration"}
 
 ADMIN_ONLY_PAGE_INDICES = {12}
