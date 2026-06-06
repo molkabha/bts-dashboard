@@ -194,6 +194,27 @@ def cap_economies_to_consumption(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def nb3_row_economie_kwh(df: pd.DataFrame) -> pd.Series:
+
+    if df.empty:
+
+        return pd.Series(dtype=float)
+
+    est = numeric_series(df, "economie_estimee_kwh", 0.0)
+
+    rl = numeric_series(df, "economie_rl_kwh", 0.0)
+
+    combined = np.maximum(est, rl)
+
+    if "economie_kwh" not in df.columns:
+
+        return combined
+
+    exported = numeric_series(df, "economie_kwh", 0.0)
+
+    return np.where(exported.gt(1e-9), exported, combined)
+
+
 def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
 
     if df.empty:
@@ -202,29 +223,7 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
 
     out = cap_economies_to_consumption(df.copy())
 
-    exported = (
-        numeric_series(out, "economie_kwh", 0.0)
-        if "economie_kwh" in out.columns
-        else pd.Series(0.0, index=out.index, dtype=float)
-    )
-
-    has_export = exported.gt(1e-9)
-
-    est = numeric_series(out, "economie_estimee_kwh", 0.0)
-
-    rl = numeric_series(out, "economie_rl_kwh", 0.0)
-
-    computed = np.maximum(est, rl)
-
-    if "consommation_kwh" in out.columns:
-
-        conso = numeric_series(out, "consommation_kwh", np.nan)
-
-        cap = conso * float(settings.NB3_MAX_ECO_FRAC)
-
-        computed = np.where(conso > 0, np.minimum(computed, cap), computed)
-
-    out["economie_kwh"] = np.where(has_export, exported, computed)
+    out["economie_kwh"] = nb3_row_economie_kwh(out)
 
     if "consommation_kwh" in out.columns:
 
@@ -255,27 +254,7 @@ def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
 
 def nb3_export_economie_kwh(df: pd.DataFrame) -> pd.Series:
 
-    if df.empty:
-
-        return pd.Series(dtype=float)
-
-    if "economie_kwh" in df.columns:
-
-        exported = numeric_series(df, "economie_kwh", 0.0)
-
-        if exported.gt(1e-9).any():
-
-            return exported
-
-    est = numeric_series(df, "economie_estimee_kwh", 0.0)
-
-    rl = numeric_series(df, "economie_rl_kwh", 0.0)
-
-    if est.gt(1e-9).any() or rl.gt(1e-9).any():
-
-        return np.maximum(est, rl)
-
-    return effective_economie_kwh(df)
+    return nb3_row_economie_kwh(df)
 
 
 def effective_economie_kwh(df: pd.DataFrame) -> pd.Series:

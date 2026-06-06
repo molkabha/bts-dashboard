@@ -24,7 +24,11 @@ import streamlit as st
 
 from config.settings import ROOT, settings
 
-from services.nb_metrics import harmonize_nb3_economies, merge_business_columns
+from services.nb_metrics import (
+    harmonize_nb3_economies,
+    merge_business_columns,
+    nb3_export_economie_kwh,
+)
 
 try:
 
@@ -2750,27 +2754,9 @@ def _as_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _is_full_network_kpi_scope(df: pd.DataFrame) -> bool:
+def _has_active_dimension_filters(gf: dict | None = None) -> bool:
 
-    if df.empty:
-
-        return False
-
-    if st.session_state.get("role") != "admin":
-
-        return False
-
-    if load_inactive_stations():
-
-        return False
-
-    nb3_kpi = load_nb3_network_kpi()
-
-    if not nb3_kpi or nb3_kpi.get("economie_dt") in (None, ""):
-
-        return False
-
-    gf = dict(st.session_state.get("global_filters") or {})
+    filters = dict(gf or st.session_state.get("global_filters") or {})
 
     for key in (
         "stations",
@@ -2783,46 +2769,58 @@ def _is_full_network_kpi_scope(df: pd.DataFrame) -> bool:
         "hours",
     ):
 
-        if gf.get(key):
+        if filters.get(key):
 
-            return False
+            return True
 
-    date_range = gf.get("date_range")
+    date_range = filters.get("date_range")
+
+    if not date_range:
+
+        return False
 
     dmin, dmax = get_dataset_date_bounds(dataset_cache_key())
 
-    if date_range and dmin and dmax:
+    if not dmin or not dmax:
 
-        start, end = date_range
+        return True
 
-        if pd.Timestamp(start).date() != pd.Timestamp(dmin).date():
+    start, end = date_range
 
-            return False
+    return (
+        pd.Timestamp(start).date() != pd.Timestamp(dmin).date()
+        or pd.Timestamp(end).date() != pd.Timestamp(dmax).date()
+    )
 
-        if pd.Timestamp(end).date() != pd.Timestamp(dmax).date():
 
-            return False
+def _is_full_network_kpi_scope(df: pd.DataFrame) -> bool:
 
-    return True
+    if df.empty:
+
+        return False
+
+    if st.session_state.get("role") != "admin":
+
+        return False
+
+    if _has_active_dimension_filters():
+
+        return False
+
+    nb3_kpi = load_nb3_network_kpi()
+
+    return bool(nb3_kpi and nb3_kpi.get("economie_dt") not in (None, ""))
 
 
 def _economie_totals_from_df(work: pd.DataFrame) -> tuple[float, float, float]:
 
-    eco_combinee = _sum_numeric_col(work, "economie_kwh")
+    eco_series = nb3_export_economie_kwh(work)
+
+    eco_combinee = float(eco_series.sum()) if not eco_series.empty else 0.0
 
     eco_expert = _sum_numeric_col(work, "economie_estimee_kwh")
 
     eco_rl = _sum_numeric_col(work, "economie_rl_kwh")
-
-    if eco_combinee <= 0 and (eco_expert > 0 or eco_rl > 0):
-
-        harmonized = harmonize_nb3_economies(work.copy())
-
-        eco_combinee = _sum_numeric_col(harmonized, "economie_kwh")
-
-        eco_expert = _sum_numeric_col(harmonized, "economie_estimee_kwh")
-
-        eco_rl = _sum_numeric_col(harmonized, "economie_rl_kwh")
 
     return eco_combinee, eco_expert, eco_rl
 

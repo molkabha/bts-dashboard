@@ -290,7 +290,16 @@ def sidebar_global(
 
         if date_from <= date_to:
 
-            filters["date_range"] = (date_from, date_to)
+            full_period = (
+                dmin
+                and dmax
+                and date_from == dmin
+                and date_to == dmax
+            )
+
+            if not full_period:
+
+                filters["date_range"] = (date_from, date_to)
 
         else:
 

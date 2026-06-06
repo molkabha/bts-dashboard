@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-from config.settings import settings
-
 from services.nb_metrics import (
     compute_ecart_pct,
     effective_economie_kwh,
@@ -21,7 +19,7 @@ def test_compute_ecart_pct():
     assert float(compute_ecart_pct(conso, pred).iloc[0]) == 10.0
 
 
-def test_harmonize_nb3_economies_max_and_cap():
+def test_harmonize_nb3_economies_max_without_dashboard_cap():
 
     df = pd.DataFrame(
         {
@@ -33,11 +31,9 @@ def test_harmonize_nb3_economies_max_and_cap():
 
     out = harmonize_nb3_economies(df)
 
-    cap = 10.0 * float(settings.NB3_MAX_ECO_FRAC)
+    assert float(out["economie_kwh"].iloc[0]) == 5.0
 
-    assert float(out["economie_kwh"].iloc[0]) == cap
-
-    assert float(out["conso_optimisee_kwh"].iloc[0]) == 10.0 - cap
+    assert float(out["conso_optimisee_kwh"].iloc[0]) == 5.0
 
 
 def test_harmonize_nb3_economies_preserves_nb3_export():
