@@ -203,6 +203,90 @@ def _ack_sim_alert(ref: str, station_id: str, verdict: str) -> None:
     st.session_state["sim_ack_refs"] = acked
 
 
+JOURNAL_ALERTS_PAGE_SIZE = 6
+
+JOURNAL_DECISIONS_PAGE_SIZE = 10
+
+
+def _clamp_page(page_key: str, page_index: int, total_pages: int) -> int:
+
+    bounded = max(0, min(page_index, max(total_pages - 1, 0)))
+
+    st.session_state[page_key] = bounded
+
+    return bounded
+
+
+def _journal_page_slice(
+    items: list, page_key: str, page_size: int
+) -> tuple[list, int, int, int]:
+
+    total = len(items)
+
+    if total == 0:
+
+        st.session_state[page_key] = 0
+
+        return [], 0, 0, 0
+
+    total_pages = max(1, (total + page_size - 1) // page_size)
+
+    page_index = _clamp_page(page_key, int(st.session_state.get(page_key, 0)), total_pages)
+
+    start = page_index * page_size
+
+    end = min(start + page_size, total)
+
+    return items[start:end], page_index + 1, total_pages, total
+
+
+def _render_journal_pagination(
+    page_key: str,
+    page: int,
+    total_pages: int,
+    total_items: int,
+    *,
+    nav_prefix: str,
+    use_full_rerun: bool,
+) -> None:
+
+    c_prev, c_info, c_next = st.columns([1, 3, 1])
+
+    with c_prev:
+
+        if st.button(
+            "◀",
+            key=f"{nav_prefix}_prev",
+            use_container_width=True,
+            disabled=page <= 1,
+        ):
+
+            st.session_state[page_key] = max(0, int(st.session_state.get(page_key, 0)) - 1)
+
+            if use_full_rerun:
+
+                st.rerun()
+
+    with c_info:
+
+        st.caption(f"Page **{page} / {total_pages}** · **{total_items}** au total")
+
+    with c_next:
+
+        if st.button(
+            "▶",
+            key=f"{nav_prefix}_next",
+            use_container_width=True,
+            disabled=page >= total_pages,
+        ):
+
+            st.session_state[page_key] = int(st.session_state.get(page_key, 0)) + 1
+
+            if use_full_rerun:
+
+                st.rerun()
+
+
 try:
 
     _journal_run = st.fragment
@@ -231,61 +315,119 @@ def _render_journal(selected: list[str], latest_ts) -> None:
 
     use_full_rerun = not hasattr(st, "fragment")
 
-    if pending:
+    all_alerts = sorted(
+        alerts,
+        key=lambda a: pd.Timestamp(a.get("timestamp")),
+        reverse=True,
+    )
 
-        st.markdown("**Alertes à vérifier**")
+    alert_page_items, alert_page, alert_pages, alert_total = _journal_page_slice(
+        all_alerts, "sim_journal_alert_page", JOURNAL_ALERTS_PAGE_SIZE
+    )
 
-        st.caption(
-            "Traité : alerte prise en charge · Ignorer : pas utile / fausse alerte"
+    st.markdown("**Alertes (historique)**")
+
+    if alert_total:
+
+        _render_journal_pagination(
+            "sim_journal_alert_page",
+            alert_page,
+            alert_pages,
+            alert_total,
+            nav_prefix="sim_alert",
+            use_full_rerun=use_full_rerun,
         )
 
-        for item in pending[-6:]:
+        if pending:
 
-            st.warning(f"**{item.get('station_id')}** — {item.get('message', '')}")
+            st.caption(
+                f"{len(pending)} en attente · Traité : prise en charge · Ignorer : fausse alerte"
+            )
+
+        for item in alert_page_items:
 
             ref = str(item.get("alert_ref", ""))
 
             station_id = str(item.get("station_id", ""))
 
-            x1, x2 = st.columns(2)
+            is_pending = ref not in acked
 
-            with x1:
+            severity = str(item.get("severity", ""))
 
-                if st.button(
-                    "Traité",
-                    key=_alert_button_key("aok", ref),
-                    use_container_width=True,
-                ):
+            ts_label = ""
 
-                    _ack_sim_alert(ref, station_id, "acquitte")
+            if item.get("timestamp") is not None:
 
-                    if use_full_rerun:
+                ts_label = pd.Timestamp(item.get("timestamp")).strftime("%d/%m %H:%M")
 
-                        st.rerun()
+            header = f"**{station_id}** · {ts_label} · {severity}".strip(" · ")
 
-            with x2:
+            if is_pending:
 
-                if st.button(
-                    "Ignorer",
-                    key=_alert_button_key("afp", ref),
-                    use_container_width=True,
-                ):
+                st.warning(f"{header} — {item.get('message', '')}")
 
-                    _ack_sim_alert(ref, station_id, "faux_positif")
+                x1, x2 = st.columns(2)
 
-                    if use_full_rerun:
+                with x1:
 
-                        st.rerun()
+                    if st.button(
+                        "Traité",
+                        key=_alert_button_key("aok", ref),
+                        use_container_width=True,
+                    ):
+
+                        _ack_sim_alert(ref, station_id, "acquitte")
+
+                        if use_full_rerun:
+
+                            st.rerun()
+
+                with x2:
+
+                    if st.button(
+                        "Ignorer",
+                        key=_alert_button_key("afp", ref),
+                        use_container_width=True,
+                    ):
+
+                        _ack_sim_alert(ref, station_id, "faux_positif")
+
+                        if use_full_rerun:
+
+                            st.rerun()
+
+            else:
+
+                st.info(f"{header} — {item.get('message', '')} · **Acquittée**")
 
     else:
 
-        st.caption("Aucune alerte en attente.")
+        st.caption("Aucune alerte enregistrée.")
 
-    if decisions:
+    decision_rows = sorted(
+        decisions,
+        key=lambda d: pd.Timestamp(d.get("timestamp")),
+        reverse=True,
+    )
 
-        st.markdown("**Actions appliquées**")
+    decision_page_items, dec_page, dec_pages, dec_total = _journal_page_slice(
+        decision_rows, "sim_journal_decision_page", JOURNAL_DECISIONS_PAGE_SIZE
+    )
 
-        df = pd.DataFrame(decisions).tail(20)
+    st.markdown("**Actions appliquées (historique)**")
+
+    if dec_total:
+
+        _render_journal_pagination(
+            "sim_journal_decision_page",
+            dec_page,
+            dec_pages,
+            dec_total,
+            nav_prefix="sim_decision",
+            use_full_rerun=use_full_rerun,
+        )
+
+        df = pd.DataFrame(decision_page_items)
 
         if "timestamp" in df.columns:
 
