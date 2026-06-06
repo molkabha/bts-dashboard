@@ -353,6 +353,21 @@ def page_simulation():
                 help="Avance automatique d'une heure toutes les N secondes (pause possible).",
             )
 
+        if st.button(
+            "Simuler la journée complète",
+            type="secondary",
+            use_container_width=True,
+            help="Exécute toutes les heures de la journée (de l'heure de début à 23h) en une seule fois.",
+        ):
+
+            day_selected = sim.resolve_selected_stations(stations)
+
+            with st.spinner("Simulation de la journée en cours…"):
+
+                sim.run_full_day_simulation(day_selected)
+
+            st.rerun()
+
         export = st.session_state.get("sim_data")
 
         if isinstance(export, pd.DataFrame) and (not export.empty):

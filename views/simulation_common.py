@@ -618,6 +618,77 @@ def bootstrap_simulation(selected_stations: list[str]) -> bool:
     return True
 
 
+def run_full_day_simulation(selected_stations: list[str]) -> bool:
+
+    if not selected_stations:
+
+        st.session_state["sim_bootstrap_error"] = "Selectionnez au moins une station."
+
+        return False
+
+    reset_simulation()
+
+    sim_base_date, start_hour, _ = sim_params()
+
+    num_days = 1
+
+    total = total_ticks(sim_base_date, start_hour, num_days)
+
+    if total <= 0:
+
+        st.session_state["sim_bootstrap_error"] = "Aucune heure a simuler pour ce creneau."
+
+        return False
+
+    st.session_state.update(
+        {
+            "sim_running": False,
+            "sim_paused": False,
+            "sim_tick": 0,
+            "sim_data": pd.DataFrame(),
+            "sim_alerts": [],
+            "sim_decisions": [],
+            "sim_ack_refs": set(),
+            "sim_schema_version": SIM_SCHEMA_VERSION,
+            "sim_total_ticks": total,
+        }
+    )
+
+    st.session_state.pop("_sim_ar_count", None)
+
+    max_rows = max(72, 24 * num_days) * len(selected_stations)
+
+    processed, n = advance_scenario(
+        selected_stations,
+        sim_base_date,
+        start_hour,
+        0,
+        total,
+        num_days,
+        engine=sim_engine(),
+    )
+
+    if processed.empty:
+
+        st.session_state["sim_bootstrap_error"] = (
+            "Impossible de simuler la journee. Verifiez la connexion Hub ou relancez."
+        )
+
+        return False
+
+    append_sim_data(processed, max_rows)
+
+    record_events(processed)
+
+    st.session_state["sim_tick"] = n
+
+    st.session_state.pop("sim_bootstrap_error", None)
+
+    st.session_state.pop("sim_advance", None)
+
+    return True
+
+
 def process_tick(selected_stations: list[str]) -> None:
 
     if st.session_state.get("sim_paused") or not st.session_state.get("sim_running"):
