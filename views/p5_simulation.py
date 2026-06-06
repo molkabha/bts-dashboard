@@ -323,6 +323,14 @@ def page_simulation():
 
     selected = _toolbar(stations)
 
+    if st.session_state.pop("sim_full_day_request", False):
+
+        day_selected = sim.resolve_selected_stations(stations)
+
+        with st.spinner("Simulation de la journée en cours…"):
+
+            sim.run_full_day_simulation(day_selected)
+
     with st.expander("Options avancees", expanded=False):
 
         o1, o2 = st.columns(2)
@@ -357,14 +365,11 @@ def page_simulation():
             "Simuler la journée complète",
             type="secondary",
             use_container_width=True,
+            key="sim_full_day_btn",
             help="Exécute toutes les heures de la journée (de l'heure de début à 23h) en une seule fois.",
         ):
 
-            day_selected = sim.resolve_selected_stations(stations)
-
-            with st.spinner("Simulation de la journée en cours…"):
-
-                sim.run_full_day_simulation(day_selected)
+            st.session_state["sim_full_day_request"] = True
 
             st.rerun()
 

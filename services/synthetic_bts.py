@@ -392,7 +392,7 @@ def _jitter(value: float, pct: float = 0.04, seed: int = 0) -> float:
     return float(value * (1.0 + rng.uniform(-pct, pct)))
 
 
-def hourly_snapshot(
+def _build_hourly_rows(
     target_date: date,
     hour: int,
     station_ids: list[str],
@@ -486,7 +486,20 @@ def hourly_snapshot(
 
         rows.append(row)
 
-    out = pd.DataFrame(rows)
+    return pd.DataFrame(rows)
+
+
+def hourly_snapshot(
+    target_date: date,
+    hour: int,
+    station_ids: list[str],
+    *,
+    engine: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None,
+) -> pd.DataFrame:
+
+    out = _build_hourly_rows(
+        target_date, hour, station_ids, engine=engine
+    )
 
     if out.empty:
 
@@ -501,9 +514,34 @@ def hourly_snapshot(
     return harmonize_nb3_economies(out)
 
 
+def _enrich_period_rows(out: pd.DataFrame) -> pd.DataFrame:
+
+    chunk_size = 360
+
+    if len(out) <= chunk_size:
+
+        return enrich_with_pipeline(out)
+
+    parts: list[pd.DataFrame] = []
+
+    for start in range(0, len(out), chunk_size):
+
+        parts.append(enrich_with_pipeline(out.iloc[start : start + chunk_size].copy()))
+
+    if not parts:
+
+        return out
+
+    return pd.concat(parts, ignore_index=True)
+
+
 def generate_period(
     start_date: date, start_hour: int, num_days: int, station_ids: list[str]
 ) -> pd.DataFrame:
+
+    if not station_ids:
+
+        return pd.DataFrame()
 
     engine = sim_engine()
 
@@ -511,7 +549,7 @@ def generate_period(
 
     for ts in scenario_timestamps(start_date, start_hour, num_days):
 
-        batch = hourly_snapshot(ts.date(), ts.hour, station_ids, engine=engine)
+        batch = _build_hourly_rows(ts.date(), ts.hour, station_ids, engine=engine)
 
         if not batch.empty:
 
@@ -521,4 +559,12 @@ def generate_period(
 
         return pd.DataFrame()
 
-    return harmonize_nb3_economies(pd.concat(frames, ignore_index=True))
+    out = pd.concat(frames, ignore_index=True)
+
+    out = _enrich_period_rows(out)
+
+    if "mode_operation" not in out.columns or out["mode_operation"].isna().all():
+
+        out = apply_offline_nb23(out)
+
+    return harmonize_nb3_economies(out)

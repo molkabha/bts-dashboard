@@ -34,7 +34,12 @@ from services.nb_metrics import (
 
 from services.simulation_events import classify_tick_rows, merge_event_log
 
-from services.synthetic_bts import clear_sim_engine_cache, hourly_snapshot, sim_engine
+from services.synthetic_bts import (
+    clear_sim_engine_cache,
+    generate_period,
+    hourly_snapshot,
+    sim_engine,
+)
 
 from ui.formatting import resolve_row_action
 
@@ -656,17 +661,19 @@ def run_full_day_simulation(selected_stations: list[str]) -> bool:
 
     st.session_state.pop("_sim_ar_count", None)
 
-    max_rows = max(72, 24 * num_days) * len(selected_stations)
+    try:
 
-    processed, n = advance_scenario(
-        selected_stations,
-        sim_base_date,
-        start_hour,
-        0,
-        total,
-        num_days,
-        engine=sim_engine(),
-    )
+        processed = generate_period(
+            sim_base_date, start_hour, num_days, selected_stations
+        )
+
+    except Exception as exc:
+
+        st.session_state["sim_bootstrap_error"] = (
+            f"Simulation interrompue : {exc}"
+        )
+
+        return False
 
     if processed.empty:
 
@@ -676,11 +683,13 @@ def run_full_day_simulation(selected_stations: list[str]) -> bool:
 
         return False
 
+    max_rows = max(72, 24 * num_days) * len(selected_stations)
+
     append_sim_data(processed, max_rows)
 
     record_events(processed)
 
-    st.session_state["sim_tick"] = n
+    st.session_state["sim_tick"] = total
 
     st.session_state.pop("sim_bootstrap_error", None)
 
