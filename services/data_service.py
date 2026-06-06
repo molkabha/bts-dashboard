@@ -2823,6 +2823,52 @@ def _economie_totals_from_df(work: pd.DataFrame) -> tuple[float, float, float]:
     return eco_combinee, eco_expert, eco_rl
 
 
+def _filtered_conso_total(work: pd.DataFrame) -> float:
+
+    if work.empty or "consommation_kwh" not in work.columns:
+
+        return 0.0
+
+    return float(pd.to_numeric(work["consommation_kwh"], errors="coerce").fillna(0).sum())
+
+
+def _nb3_prorata_economies(
+    work: pd.DataFrame, nb3_kpi: dict
+) -> tuple[float, float, float, float, float, str] | None:
+
+    kpi_conso = _as_float(nb3_kpi.get("conso_totale_kwh"))
+
+    kpi_eco = _as_float(nb3_kpi.get("economie_combinee_kwh"))
+
+    if kpi_conso <= 0 or kpi_eco <= 0:
+
+        return None
+
+    filtered_conso = _filtered_conso_total(work)
+
+    share = min(max(filtered_conso / kpi_conso, 0.0), 1.0)
+
+    eco_combinee = kpi_eco * share
+
+    eco_rl = _as_float(nb3_kpi.get("economie_rl_kwh")) * share
+
+    eco_expert = max(eco_combinee - eco_rl, 0.0)
+
+    eco_dt = _as_float(nb3_kpi.get("economie_dt")) * share
+
+    if eco_dt <= 0:
+
+        eco_dt = eco_combinee * settings.PRIX_KWH_TN
+
+    co2_t = _as_float(nb3_kpi.get("co2_evite_t")) * share
+
+    if co2_t <= 0:
+
+        co2_t = eco_combinee * settings.FACTEUR_CO2_TN / 1000
+
+    return eco_combinee, eco_expert, eco_rl, eco_dt, co2_t, "kpi_reseau.json prorata (NB3)"
+
+
 def _latest_per_station_modes(work: pd.DataFrame) -> pd.Series:
 
     if (
@@ -2906,7 +2952,7 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
 
     else:
 
-        eco_combinee, eco_expert, eco_rl = _economie_totals_from_df(work)
+        prorata = _nb3_prorata_economies(work, nb3_kpi)
 
         conso_values = (
             pd.to_numeric(work["consommation_kwh"], errors="coerce").dropna()
@@ -2918,15 +2964,41 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
 
         conso_moyenne = float(conso_values.mean()) if not conso_values.empty else 0.0
 
-        eco_dt = eco_combinee * settings.PRIX_KWH_TN
+        if prorata is not None:
 
-        co2_t = eco_combinee * settings.FACTEUR_CO2_TN / 1000
+            eco_combinee, eco_expert, eco_rl, eco_dt, co2_t, economies_source = prorata
 
-        combinee_pct = eco_combinee / conso * 100 if conso > 0 else 0.0
+            combinee_pct = (
+                _as_float(nb3_kpi.get("economie_combinee_pct"))
+                if nb3_kpi.get("economie_combinee_pct") not in (None, "")
+                else (eco_combinee / conso * 100 if conso > 0 else 0.0)
+            )
 
-        rl_pct = eco_rl / conso * 100 if conso > 0 else 0.0
+            rl_pct = eco_rl / conso * 100 if conso > 0 else 0.0
 
-        expert_pct = eco_expert / conso * 100 if conso > 0 else 0.0
+            expert_pct = eco_expert / conso * 100 if conso > 0 else 0.0
+
+            economie_periode_label = "Période filtrée (prorata NB3)"
+
+        else:
+
+            eco_combinee, eco_expert, eco_rl = _economie_totals_from_df(work)
+
+            eco_dt = eco_combinee * settings.PRIX_KWH_TN
+
+            co2_t = eco_combinee * settings.FACTEUR_CO2_TN / 1000
+
+            combinee_pct = eco_combinee / conso * 100 if conso > 0 else 0.0
+
+            rl_pct = eco_rl / conso * 100 if conso > 0 else 0.0
+
+            expert_pct = eco_expert / conso * 100 if conso > 0 else 0.0
+
+            economies_source = "somme_parquet_nb3"
+
+            economie_periode_label = "Période filtrée (export NB3)"
+
+            economie_periode_label = "Période filtrée (export NB3)"
 
         modes = _latest_per_station_modes(work)
 
@@ -2979,10 +3051,6 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
             meilleur_agent = nb3_kpi.get("meilleur_agent_rl") or nb3_kpi.get(
                 "meilleur_agent"
             )
-
-        economies_source = "somme_parquet_nb3"
-
-        economie_periode_label = "Période filtrée (export NB3)"
 
     economies_suspectes = combinee_pct > 100.0
 
