@@ -2735,6 +2735,98 @@ def _sum_numeric_col(work: pd.DataFrame, column: str) -> float:
     return float(pd.to_numeric(work[column], errors="coerce").fillna(0).sum())
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+
+    try:
+
+        if value in (None, ""):
+
+            return default
+
+        return float(value)
+
+    except (TypeError, ValueError):
+
+        return default
+
+
+def _is_full_network_kpi_scope(df: pd.DataFrame) -> bool:
+
+    if df.empty:
+
+        return False
+
+    if st.session_state.get("role") != "admin":
+
+        return False
+
+    if load_inactive_stations():
+
+        return False
+
+    nb3_kpi = load_nb3_network_kpi()
+
+    if not nb3_kpi or nb3_kpi.get("economie_dt") in (None, ""):
+
+        return False
+
+    gf = dict(st.session_state.get("global_filters") or {})
+
+    for key in (
+        "stations",
+        "gouvernorats",
+        "technologies",
+        "zones",
+        "actions",
+        "modes",
+        "months",
+        "hours",
+    ):
+
+        if gf.get(key):
+
+            return False
+
+    date_range = gf.get("date_range")
+
+    dmin, dmax = get_dataset_date_bounds(dataset_cache_key())
+
+    if date_range and dmin and dmax:
+
+        start, end = date_range
+
+        if pd.Timestamp(start).date() != pd.Timestamp(dmin).date():
+
+            return False
+
+        if pd.Timestamp(end).date() != pd.Timestamp(dmax).date():
+
+            return False
+
+    return True
+
+
+def _economie_totals_from_df(work: pd.DataFrame) -> tuple[float, float, float]:
+
+    eco_combinee = _sum_numeric_col(work, "economie_kwh")
+
+    eco_expert = _sum_numeric_col(work, "economie_estimee_kwh")
+
+    eco_rl = _sum_numeric_col(work, "economie_rl_kwh")
+
+    if eco_combinee <= 0 and (eco_expert > 0 or eco_rl > 0):
+
+        harmonized = harmonize_nb3_economies(work.copy())
+
+        eco_combinee = _sum_numeric_col(harmonized, "economie_kwh")
+
+        eco_expert = _sum_numeric_col(harmonized, "economie_estimee_kwh")
+
+        eco_rl = _sum_numeric_col(harmonized, "economie_rl_kwh")
+
+    return eco_combinee, eco_expert, eco_rl
+
+
 def _latest_per_station_modes(work: pd.DataFrame) -> pd.Series:
 
     if (
@@ -2764,97 +2856,149 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
 
         return {}
 
-    work = harmonize_nb3_economies(df.copy())
+    work = df.copy()
 
     nb3_kpi = load_nb3_network_kpi() or {}
 
-    conso_values = (
-        pd.to_numeric(work["consommation_kwh"], errors="coerce").dropna()
-        if "consommation_kwh" in work.columns
-        else pd.Series(dtype=float)
-    )
+    use_nb3_network_kpi = _is_full_network_kpi_scope(work)
 
-    conso = float(conso_values.sum()) if not conso_values.empty else 0.0
+    if use_nb3_network_kpi:
 
-    eco_expert = _sum_numeric_col(work, "economie_estimee_kwh")
+        eco_combinee = _as_float(nb3_kpi.get("economie_combinee_kwh"))
 
-    eco_rl = _sum_numeric_col(work, "economie_rl_kwh")
+        eco_rl = _as_float(nb3_kpi.get("economie_rl_kwh"))
 
-    eco_combinee = _sum_numeric_col(work, "economie_kwh")
+        eco_expert = max(eco_combinee - eco_rl, 0.0)
 
-    eco_dt = eco_combinee * settings.PRIX_KWH_TN
+        eco_dt = _as_float(nb3_kpi.get("economie_dt"), eco_combinee * settings.PRIX_KWH_TN)
 
-    co2_t = eco_combinee * settings.FACTEUR_CO2_TN / 1000
+        co2_t = _as_float(nb3_kpi.get("co2_evite_t"), eco_combinee * settings.FACTEUR_CO2_TN / 1000)
 
-    combinee_pct = eco_combinee / conso * 100 if conso > 0 else 0.0
+        combinee_pct = _as_float(nb3_kpi.get("economie_combinee_pct"))
 
-    rl_pct = eco_rl / conso * 100 if conso > 0 else 0.0
+        rl_pct = _as_float(nb3_kpi.get("economie_rl_pct"))
 
-    expert_pct = eco_expert / conso * 100 if conso > 0 else 0.0
+        expert_pct = (eco_expert / _as_float(nb3_kpi.get("conso_totale_kwh")) * 100) if nb3_kpi.get("conso_totale_kwh") else 0.0
 
-    economies_suspectes = combinee_pct > 100.0
+        conso = _as_float(nb3_kpi.get("conso_totale_kwh"))
 
-    modes = _latest_per_station_modes(work)
+        conso_moyenne = _as_float(nb3_kpi.get("conso_moyenne_kwh"))
 
-    pct_mode_eco = float(modes.eq("ECO").mean() * 100) if not modes.empty else 0.0
+        score_qos_moyen = nb3_kpi.get("score_qos_moyen")
 
-    seuil_anom, _ = resolve_nb2_seuil_ensemble()
+        if score_qos_moyen not in (None, ""):
 
-    anomaly_values = (
-        pd.to_numeric(work["anomalie_score_ensemble"], errors="coerce")
-        if "anomalie_score_ensemble" in work.columns
-        else pd.Series(dtype=float)
-    )
+            score_qos_moyen = float(score_qos_moyen)
 
-    if seuil_anom is None or anomaly_values.dropna().empty:
+        pct_mode_eco = _as_float(nb3_kpi.get("pct_mode_eco"))
 
-        pct_anomalies = None
+        pct_anomalies = nb3_kpi.get("pct_anomalies")
+
+        if pct_anomalies not in (None, ""):
+
+            pct_anomalies = float(pct_anomalies)
+
+        nb_stations = int(_as_float(nb3_kpi.get("nb_stations"), work["station_id"].nunique() if "station_id" in work.columns else 0))
+
+        nb_mesures = int(_as_float(nb3_kpi.get("nb_mesures"), len(work)))
+
+        meilleur_agent = nb3_kpi.get("meilleur_agent_rl") or nb3_kpi.get("meilleur_agent")
+
+        economies_source = "kpi_reseau.json (NB3)"
+
+        economie_periode_label = "KPI réseau NB3 (export notebook)"
 
     else:
 
-        pct_anomalies = float(anomaly_values.gt(seuil_anom).mean() * 100)
+        eco_combinee, eco_expert, eco_rl = _economie_totals_from_df(work)
 
-    qos_values = (
-        pd.to_numeric(work["score_qos"], errors="coerce").dropna()
-        if "score_qos" in work.columns
-        else pd.Series(dtype=float)
-    )
+        conso_values = (
+            pd.to_numeric(work["consommation_kwh"], errors="coerce").dropna()
+            if "consommation_kwh" in work.columns
+            else pd.Series(dtype=float)
+        )
 
-    score_qos_moyen = float(qos_values.mean()) if not qos_values.empty else None
+        conso = float(conso_values.sum()) if not conso_values.empty else 0.0
 
-    nb_stations = (
-        int(work["station_id"].nunique()) if "station_id" in work.columns else 0
-    )
+        conso_moyenne = float(conso_values.mean()) if not conso_values.empty else 0.0
+
+        eco_dt = eco_combinee * settings.PRIX_KWH_TN
+
+        co2_t = eco_combinee * settings.FACTEUR_CO2_TN / 1000
+
+        combinee_pct = eco_combinee / conso * 100 if conso > 0 else 0.0
+
+        rl_pct = eco_rl / conso * 100 if conso > 0 else 0.0
+
+        expert_pct = eco_expert / conso * 100 if conso > 0 else 0.0
+
+        modes = _latest_per_station_modes(work)
+
+        pct_mode_eco = float(modes.eq("ECO").mean() * 100) if not modes.empty else 0.0
+
+        seuil_anom, _ = resolve_nb2_seuil_ensemble()
+
+        anomaly_values = (
+            pd.to_numeric(work["anomalie_score_ensemble"], errors="coerce")
+            if "anomalie_score_ensemble" in work.columns
+            else pd.Series(dtype=float)
+        )
+
+        if seuil_anom is None or anomaly_values.dropna().empty:
+
+            pct_anomalies = None
+
+        else:
+
+            pct_anomalies = float(anomaly_values.gt(seuil_anom).mean() * 100)
+
+        qos_values = (
+            pd.to_numeric(work["score_qos"], errors="coerce").dropna()
+            if "score_qos" in work.columns
+            else pd.Series(dtype=float)
+        )
+
+        score_qos_moyen = float(qos_values.mean()) if not qos_values.empty else None
+
+        nb_stations = (
+            int(work["station_id"].nunique()) if "station_id" in work.columns else 0
+        )
+
+        nb_mesures = len(work)
+
+        meilleur_agent = None
+
+        if "meilleur_agent_rl" in work.columns:
+
+            agents = work["meilleur_agent_rl"].dropna().astype(str).str.strip()
+
+            agents = agents[~agents.str.lower().isin({"", "none", "nan"})]
+
+            if not agents.empty:
+
+                meilleur_agent = agents.mode().iloc[0]
+
+        if not meilleur_agent:
+
+            meilleur_agent = nb3_kpi.get("meilleur_agent_rl") or nb3_kpi.get(
+                "meilleur_agent"
+            )
+
+        economies_source = "somme_parquet_nb3"
+
+        economie_periode_label = "Période filtrée (export NB3)"
+
+    economies_suspectes = combinee_pct > 100.0
 
     months = _dataset_month_count(work)
 
     economie_dt_mois = eco_dt / months if months > 0 else 0.0
 
-    meilleur_agent = None
-
-    if "meilleur_agent_rl" in work.columns:
-
-        agents = work["meilleur_agent_rl"].dropna().astype(str).str.strip()
-
-        agents = agents[~agents.str.lower().isin({"", "none", "nan"})]
-
-        if not agents.empty:
-
-            meilleur_agent = agents.mode().iloc[0]
-
-    if not meilleur_agent:
-
-        meilleur_agent = nb3_kpi.get("meilleur_agent_rl") or nb3_kpi.get(
-            "meilleur_agent"
-        )
-
     return {
         "nb_stations": nb_stations,
-        "nb_mesures": len(work),
+        "nb_mesures": nb_mesures,
         "conso_totale_kwh": conso,
-        "conso_moyenne_kwh": (
-            float(conso_values.mean()) if not conso_values.empty else 0.0
-        ),
+        "conso_moyenne_kwh": conso_moyenne,
         "score_qos_moyen": score_qos_moyen,
         "pct_anomalies": pct_anomalies,
         "pct_mode_eco": pct_mode_eco,
@@ -2868,12 +3012,13 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
         "co2_evite_t": co2_t,
         "economie_dt": eco_dt,
         "economie_dt_mois": economie_dt_mois,
-        "economie_periode_label": "Période filtrée",
+        "economie_periode_label": economie_periode_label,
         "nb_mois_periode": months,
         "nb3_ref_economie_combinee_pct": nb3_kpi.get("economie_combinee_pct"),
         "nb3_ref_economie_rl_pct": nb3_kpi.get("economie_rl_pct"),
-        "economies_source": "somme_lignes_nb3",
+        "economies_source": economies_source,
         "economies_suspectes": economies_suspectes,
+        "uses_nb3_network_kpi": use_nb3_network_kpi,
     }
 
 

@@ -40,6 +40,22 @@ def test_harmonize_nb3_economies_max_and_cap():
     assert float(out["conso_optimisee_kwh"].iloc[0]) == 10.0 - cap
 
 
+def test_harmonize_nb3_economies_preserves_nb3_export():
+
+    df = pd.DataFrame(
+        {
+            "consommation_kwh": [10.0],
+            "economie_estimee_kwh": [3.0],
+            "economie_rl_kwh": [5.0],
+            "economie_kwh": [6.0],
+        }
+    )
+
+    out = harmonize_nb3_economies(df)
+
+    assert float(out["economie_kwh"].iloc[0]) == 6.0
+
+
 def test_effective_economie_kwh_matches_harmonized_column():
 
     df = pd.DataFrame(

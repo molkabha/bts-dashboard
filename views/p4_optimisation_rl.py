@@ -51,10 +51,12 @@ def _kpi_admin(kpis: dict) -> None:
 
     with c1:
 
+        eco_help = kpis.get("economie_periode_label", "Export NB3")
+
         kpi_card(
             "Économies retenues",
             f"{float(kpis.get('economie_dt') or 0):,.0f} DT",
-            "max(règles, RL) par mesure",
+            eco_help,
             "green",
         )
 

@@ -19,7 +19,7 @@ from services.data_service import (
     load_station_map_data,
 )
 
-from services.nb_metrics import effective_economie_kwh, harmonize_nb3_economies
+from services.nb_metrics import nb3_export_economie_kwh
 
 from ui.formatting import display_text, resolve_row_action, row_has_no_named_action
 
@@ -353,9 +353,9 @@ def _row_economie_kwh(row: pd.Series) -> float:
 
         return 0.0
 
-    harmonized = harmonize_nb3_economies(row_df)
+    eco_series = nb3_export_economie_kwh(row_df)
 
-    eco = float(effective_economie_kwh(harmonized).iloc[0])
+    eco = float(eco_series.iloc[0]) if not eco_series.empty else 0.0
 
     if eco > 1e-09:
 
@@ -663,7 +663,7 @@ def render_nb3_decision_cards(
 
         if show_savings:
 
-            eco_series = effective_economie_kwh(pd.DataFrame([row]))
+            eco_series = nb3_export_economie_kwh(pd.DataFrame([row]))
 
             eco_kwh = float(eco_series.iloc[0]) if not eco_series.empty else 0.0
 
