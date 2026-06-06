@@ -7,6 +7,7 @@ from services.nb_metrics import (
     effective_economie_kwh,
     harmonize_nb3_economies,
     merge_business_columns,
+    nb3_row_economie_kwh,
 )
 
 
@@ -34,6 +35,25 @@ def test_harmonize_nb3_economies_max_without_dashboard_cap():
     assert float(out["economie_kwh"].iloc[0]) == 5.0
 
     assert float(out["conso_optimisee_kwh"].iloc[0]) == 5.0
+
+
+def test_nb3_row_economie_kwh_returns_series():
+
+    df = pd.DataFrame(
+        {
+            "economie_estimee_kwh": [3.0],
+            "economie_rl_kwh": [5.0],
+            "economie_kwh": [6.0],
+        }
+    )
+
+    eco = nb3_row_economie_kwh(df)
+
+    assert isinstance(eco, pd.Series)
+
+    assert hasattr(eco, "empty")
+
+    assert float(eco.iloc[0]) == 6.0
 
 
 def test_harmonize_nb3_economies_preserves_nb3_export():

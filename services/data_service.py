@@ -2810,6 +2810,10 @@ def _economie_totals_from_df(work: pd.DataFrame) -> tuple[float, float, float]:
 
     eco_series = nb3_export_economie_kwh(work)
 
+    if not isinstance(eco_series, pd.Series):
+
+        eco_series = pd.Series(np.asarray(eco_series, dtype=float))
+
     eco_combinee = float(eco_series.sum()) if not eco_series.empty else 0.0
 
     eco_expert = _sum_numeric_col(work, "economie_estimee_kwh")

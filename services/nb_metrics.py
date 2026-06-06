@@ -204,15 +204,21 @@ def nb3_row_economie_kwh(df: pd.DataFrame) -> pd.Series:
 
     rl = numeric_series(df, "economie_rl_kwh", 0.0)
 
-    combined = np.maximum(est, rl)
+    combined = np.maximum(est.to_numpy(), rl.to_numpy())
 
     if "economie_kwh" not in df.columns:
 
-        return combined
+        return pd.Series(combined, index=df.index, dtype=float)
 
     exported = numeric_series(df, "economie_kwh", 0.0)
 
-    return np.where(exported.gt(1e-9), exported, combined)
+    values = np.where(
+        exported.gt(1e-9).to_numpy(),
+        exported.to_numpy(),
+        combined,
+    )
+
+    return pd.Series(values, index=df.index, dtype=float)
 
 
 def harmonize_nb3_economies(df: pd.DataFrame) -> pd.DataFrame:
