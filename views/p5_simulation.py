@@ -219,7 +219,7 @@ def _clamp_page(page_key: str, page_index: int, total_pages: int) -> int:
 
 def _journal_page_slice(
     items: list, page_key: str, page_size: int
-) -> tuple[list, int, int, int]:
+) -> tuple[list, int, int, int, int, int]:
 
     total = len(items)
 
@@ -227,7 +227,7 @@ def _journal_page_slice(
 
         st.session_state[page_key] = 0
 
-        return [], 0, 0, 0
+        return [], 0, 0, 0, 0, 0
 
     total_pages = max(1, (total + page_size - 1) // page_size)
 
@@ -237,7 +237,7 @@ def _journal_page_slice(
 
     end = min(start + page_size, total)
 
-    return items[start:end], page_index + 1, total_pages, total
+    return items[start:end], page_index + 1, total_pages, total, start + 1, end
 
 
 def _render_journal_pagination(
@@ -245,46 +245,64 @@ def _render_journal_pagination(
     page: int,
     total_pages: int,
     total_items: int,
+    range_start: int,
+    range_end: int,
     *,
     nav_prefix: str,
     use_full_rerun: bool,
 ) -> None:
 
-    c_prev, c_info, c_next = st.columns([1, 3, 1])
+    st.markdown(
+        f'<div class="sap-pagination">Affichage {range_start}–{range_end} sur {total_items} · page {page} / {total_pages}</div>',
+        unsafe_allow_html=True,
+    )
 
-    with c_prev:
+    if total_pages <= 1:
 
-        if st.button(
-            "◀",
-            key=f"{nav_prefix}_prev",
-            use_container_width=True,
-            disabled=page <= 1,
-        ):
+        return
 
-            st.session_state[page_key] = max(0, int(st.session_state.get(page_key, 0)) - 1)
+    st.markdown(
+        '<div class="sap-pagination-buttons-gap"></div>',
+        unsafe_allow_html=True,
+    )
 
-            if use_full_rerun:
+    st.markdown('<div class="sap-pagination-nav-wrap">', unsafe_allow_html=True)
 
-                st.rerun()
+    _, nav_mid, _ = st.columns([1, 2, 1])
 
-    with c_info:
+    with nav_mid:
 
-        st.caption(f"Page **{page} / {total_pages}** · **{total_items}** au total")
+        btn_prev, btn_next = st.columns(2)
 
-    with c_next:
+        with btn_prev:
 
-        if st.button(
-            "▶",
-            key=f"{nav_prefix}_next",
-            use_container_width=True,
-            disabled=page >= total_pages,
-        ):
+            if page > 1 and st.button(
+                "← Préc.",
+                key=f"{nav_prefix}_prev",
+                use_container_width=True,
+            ):
 
-            st.session_state[page_key] = int(st.session_state.get(page_key, 0)) + 1
+                st.session_state[page_key] = max(0, int(st.session_state.get(page_key, 0)) - 1)
 
-            if use_full_rerun:
+                if use_full_rerun:
 
-                st.rerun()
+                    st.rerun()
+
+        with btn_next:
+
+            if page < total_pages and st.button(
+                "Suiv. →",
+                key=f"{nav_prefix}_next",
+                use_container_width=True,
+            ):
+
+                st.session_state[page_key] = int(st.session_state.get(page_key, 0)) + 1
+
+                if use_full_rerun:
+
+                    st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 try:
@@ -321,22 +339,13 @@ def _render_journal(selected: list[str], latest_ts) -> None:
         reverse=True,
     )
 
-    alert_page_items, alert_page, alert_pages, alert_total = _journal_page_slice(
-        all_alerts, "sim_journal_alert_page", JOURNAL_ALERTS_PAGE_SIZE
+    alert_page_items, alert_page, alert_pages, alert_total, alert_from, alert_to = (
+        _journal_page_slice(all_alerts, "sim_journal_alert_page", JOURNAL_ALERTS_PAGE_SIZE)
     )
 
     st.markdown("**Alertes (historique)**")
 
     if alert_total:
-
-        _render_journal_pagination(
-            "sim_journal_alert_page",
-            alert_page,
-            alert_pages,
-            alert_total,
-            nav_prefix="sim_alert",
-            use_full_rerun=use_full_rerun,
-        )
 
         if pending:
 
@@ -400,6 +409,17 @@ def _render_journal(selected: list[str], latest_ts) -> None:
 
                 st.info(f"{header} — {item.get('message', '')} · **Acquittée**")
 
+        _render_journal_pagination(
+            "sim_journal_alert_page",
+            alert_page,
+            alert_pages,
+            alert_total,
+            alert_from,
+            alert_to,
+            nav_prefix="sim_alert",
+            use_full_rerun=use_full_rerun,
+        )
+
     else:
 
         st.caption("Aucune alerte enregistrée.")
@@ -410,22 +430,15 @@ def _render_journal(selected: list[str], latest_ts) -> None:
         reverse=True,
     )
 
-    decision_page_items, dec_page, dec_pages, dec_total = _journal_page_slice(
-        decision_rows, "sim_journal_decision_page", JOURNAL_DECISIONS_PAGE_SIZE
+    decision_page_items, dec_page, dec_pages, dec_total, dec_from, dec_to = (
+        _journal_page_slice(
+            decision_rows, "sim_journal_decision_page", JOURNAL_DECISIONS_PAGE_SIZE
+        )
     )
 
     st.markdown("**Actions appliquées (historique)**")
 
     if dec_total:
-
-        _render_journal_pagination(
-            "sim_journal_decision_page",
-            dec_page,
-            dec_pages,
-            dec_total,
-            nav_prefix="sim_decision",
-            use_full_rerun=use_full_rerun,
-        )
 
         df = pd.DataFrame(decision_page_items)
 
@@ -463,6 +476,17 @@ def _render_journal(selected: list[str], latest_ts) -> None:
             )
 
         st.dataframe(show, use_container_width=True, hide_index=True)
+
+        _render_journal_pagination(
+            "sim_journal_decision_page",
+            dec_page,
+            dec_pages,
+            dec_total,
+            dec_from,
+            dec_to,
+            nav_prefix="sim_decision",
+            use_full_rerun=use_full_rerun,
+        )
 
     else:
 
