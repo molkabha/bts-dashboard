@@ -20,6 +20,19 @@ def test_nb_score_criticite_matches_export_formula():
     assert abs(float(crit.iloc[1]) - 0.1118) < 0.001
 
 
+def test_tt_ari_045_matches_nb_export():
+    crit = nb_score_criticite_from_components(0.045617, 0.066877, 0.398125)
+
+    assert abs(float(crit) - 0.0542) < 0.001
+    assert nb_categorie_from_criticite(float(crit)) == "ATTENTION"
+
+
+def test_nb_categorie_threshold_constants():
+    assert nb_categorie_from_criticite(NB_CATEGORIE_EFFICACE_MAX) == "EFFICACE"
+    assert nb_categorie_from_criticite(NB_CATEGORIE_EFFICACE_MAX + 0.001) == "ATTENTION"
+    assert nb_categorie_from_criticite(NB_CATEGORIE_CRITIQUE_MIN) == "CRITIQUE"
+
+
 def test_nb_categorie_thresholds():
     assert nb_categorie_from_criticite(0.04) == "EFFICACE"
     assert nb_categorie_from_criticite(0.08) == "ATTENTION"
