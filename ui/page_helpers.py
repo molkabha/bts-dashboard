@@ -817,7 +817,15 @@ def mode_explanation(row: pd.Series) -> str:
 
         return "Optimisation energie selon creneau ou contexte calendaire."
 
-    return "Fonctionnement nominal — aucune action requise."
+    if mode == "NORMAL" and not row_has_no_named_action(row):
+
+        action_label = resolve_row_action(row, prefer_rl=False, default="")
+
+        if action_label and action_label not in ("Aucune action", "Maintien", "—"):
+
+            return f"Fonctionnement nominal — optimisation possible : {action_label} (ecart {ecart:+.1f} %)."
+
+    return "Fonctionnement nominal."
 
 
 def render_executive_report_export(kpis: dict) -> None:
