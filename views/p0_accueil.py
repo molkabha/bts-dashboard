@@ -10,11 +10,9 @@ from config.theme import MODE_COLORS, PLOTLY_DARK, PLOTLY_LIGHT
 
 from security.middleware import security_middleware
 
-from services.data_service import compute_filtered_kpis, load_nb2_network_stats
+from services.data_service import compute_filtered_kpis, count_nb_stations_en_alerte
 
 from ui.components import header, kpi_card, section
-
-from ui.data_validation import column_has_values, nb2_seuil_or_warn
 
 from ui.page_helpers import (
     get_station_map_data,
@@ -58,33 +56,7 @@ def page_accueil():
 
     if is_admin():
 
-        nb2_stats = load_nb2_network_stats()
-
-        seuil = nb2_seuil_or_warn(nb2_stats)
-
-        alert_stations: int | None = None
-
-        if seuil is not None and column_has_values(df, "anomalie_score_ensemble"):
-
-            scores = pd.to_numeric(df["anomalie_score_ensemble"], errors="coerce")
-
-            valid = scores.dropna()
-
-            if not valid.empty:
-
-                if "station_id" in df.columns:
-
-                    alert_stations = int(
-                        df.assign(_s=scores)
-                        .groupby("station_id")["_s"]
-                        .max()
-                        .gt(seuil)
-                        .sum()
-                    )
-
-                else:
-
-                    alert_stations = int((valid > seuil).sum())
+        alert_stations = count_nb_stations_en_alerte(df)
 
         with c1:
 
@@ -115,12 +87,12 @@ def page_accueil():
 
         with c4:
 
-            if alert_stations is None or seuil is None:
+            if alert_stations is None:
 
                 kpi_card(
                     "Stations en alerte",
                     "—",
-                    "Seuil NB2 ou scores anomalie manquants",
+                    "Export NB `streamlit_score_stations.parquet` requis",
                     "orange",
                 )
 
@@ -129,7 +101,7 @@ def page_accueil():
                 kpi_card(
                     "Stations en alerte",
                     str(alert_stations),
-                    f"Score max > {seuil:.2f}",
+                    "NB : ATTENTION + CRITIQUE",
                     "orange",
                 )
 
@@ -194,7 +166,14 @@ def page_accueil():
 
     with c2:
 
-        with section("Top 5 stations critiques"):
+        with section("Top 5 — criticité NB"):
+
+            st.caption(
+                "Scores issus de l'export notebook (`streamlit_score_stations.parquet`) : "
+                "**score_criticite** = 50 % pct_anomalie + 30 % score_moy + 2,86 % nb_votes ; "
+                "catégories **EFFICACE / ATTENTION / CRITIQUE**. "
+                "Le KPI « Alerte » compte les stations ATTENTION + CRITIQUE (même source)."
+            )
 
             scores_df = get_station_map_data(df)
 
@@ -240,6 +219,8 @@ def page_accueil():
                         "technologie",
                         "mode_actuel",
                         "conso_moy",
+                        "pct_anomalie_ensemble",
+                        "score_moy_ensemble",
                         "score_criticite",
                         "categorie",
                         "score_qos_moy",

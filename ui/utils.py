@@ -10,6 +10,7 @@ import streamlit as st
 
 from services.data_service import (
     apply_admin_dimension_filters,
+    apply_station_criticite_filter,
     apply_time_filters,
     filter_valid_station_rows,
     get_user_stations,
@@ -151,6 +152,8 @@ def apply_current_admin_filters(df: pd.DataFrame) -> pd.DataFrame:
         out = apply_admin_dimension_filters(out, filters)
 
         out = apply_time_filters(out, filters)
+
+        out = apply_station_criticite_filter(out, filters)
 
     if "station_id" in out.columns:
 

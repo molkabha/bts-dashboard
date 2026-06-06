@@ -25,6 +25,8 @@ import streamlit as st
 from config.settings import ROOT, settings
 
 from services.nb_metrics import (
+    NB_STATION_SCORE_ARTIFACT,
+    compute_nb_station_scores_from_df,
     harmonize_nb3_economies,
     merge_business_columns,
     nb3_export_economie_kwh,
@@ -328,7 +330,7 @@ ARTIFACT_REGISTRY: dict[str, dict[str, str]] = {
 COLUMN_ALIASES = {
     "economie_estimee_kwh": ["economie_kwh_estimee"],
     "score_qos": ["score_qos_moy"],
-    "anomalie_score_ensemble": ["score_anom_moy", "score_moy_ensemble"],
+    "anomalie_score_ensemble": ["score_anom_max", "score_anom_moy", "score_moy_ensemble"],
     "consommation_kwh": ["conso_moy"],
     "latitude": ["lat", "gps_lat", "station_lat", "latitude_station"],
     "longitude": ["lon", "lng", "long", "gps_lon", "gps_lng", "station_lon"],
@@ -1080,7 +1082,7 @@ def apply_station_criticite_filter(
     df: pd.DataFrame, filters: dict | None = None
 ) -> pd.DataFrame:
 
-    if df.empty:
+    if df.empty or "station_id" not in df.columns:
 
         return df
 
@@ -1090,11 +1092,26 @@ def apply_station_criticite_filter(
 
     categories = filters.get("criticites")
 
-    if categories and "categorie" in df.columns:
+    if not categories:
 
-        return df[df["categorie"].astype(str).isin(categories)]
+        return df
 
-    return df
+    scores = resolve_nb_station_scores(df)
+
+    if scores.empty or "categorie" not in scores.columns:
+
+        return df
+
+    allowed = scores.loc[
+        scores["categorie"].astype(str).isin([str(c) for c in categories]),
+        "station_id",
+    ].astype(str)
+
+    if allowed.empty:
+
+        return df.iloc[0:0]
+
+    return df[df["station_id"].astype(str).isin(set(allowed))]
 
 
 _DB_LOCK = threading.Lock()
@@ -2328,6 +2345,21 @@ def resolve_qos_seuil() -> tuple[float | None, str | None]:
     return (None, None)
 
 
+def resolve_nb3_seuils_decision() -> dict:
+
+    rapport = read_json(artifact_path("rapport_optimisation.json"))
+
+    if isinstance(rapport, dict):
+
+        seuils = rapport.get("seuils_decision")
+
+        if isinstance(seuils, dict) and seuils:
+
+            return {str(k): v for k, v in seuils.items()}
+
+    return {}
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_nb2_network_stats() -> dict:
 
@@ -2653,6 +2685,136 @@ def _merge_gps_by_priority(frames: list[pd.DataFrame]) -> pd.DataFrame:
     return pd.DataFrame([entry["row"] for entry in best.values()])
 
 
+def _has_temporal_filter(gf: dict | None = None) -> bool:
+
+    filters = dict(gf or st.session_state.get("global_filters") or {})
+
+    if filters.get("months") or filters.get("hours"):
+
+        return True
+
+    date_range = filters.get("date_range")
+
+    if not date_range:
+
+        return False
+
+    dmin, dmax = get_dataset_date_bounds(dataset_cache_key())
+
+    if not dmin or not dmax:
+
+        return True
+
+    start, end = date_range
+
+    return (
+        pd.Timestamp(start).date() != pd.Timestamp(dmin).date()
+        or pd.Timestamp(end).date() != pd.Timestamp(dmax).date()
+    )
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_nb_station_scores_artifact() -> pd.DataFrame:
+
+    for filename in (NB_STATION_SCORE_ARTIFACT, "score_stations.parquet"):
+
+        df = read_parquet_fast(artifact_path(filename))
+
+        if isinstance(df, pd.DataFrame) and not df.empty and "station_id" in df.columns:
+
+            return df
+
+    return pd.DataFrame()
+
+
+def resolve_nb_station_scores(df: pd.DataFrame) -> pd.DataFrame:
+
+    if df.empty or "station_id" not in df.columns:
+
+        return pd.DataFrame()
+
+    station_ids = df["station_id"].astype(str).unique()
+
+    if _has_temporal_filter():
+
+        seuil, _ = resolve_nb2_seuil_ensemble()
+
+        computed = compute_nb_station_scores_from_df(df, seuil_anom=seuil)
+
+    else:
+
+        computed = pd.DataFrame()
+
+    export = load_nb_station_scores_artifact()
+
+    if not export.empty:
+
+        export = export[export["station_id"].astype(str).isin(station_ids)].copy()
+
+    if not computed.empty:
+
+        base = computed
+
+        if not export.empty:
+
+            export = export[
+                ~export["station_id"].astype(str).isin(base["station_id"].astype(str))
+            ]
+
+            if not export.empty:
+
+                base = pd.concat([base, export], ignore_index=True)
+
+    elif not export.empty:
+
+        base = export
+
+    else:
+
+        seuil, _ = resolve_nb2_seuil_ensemble()
+
+        base = compute_nb_station_scores_from_df(df, seuil_anom=seuil)
+
+    return base.reset_index(drop=True) if isinstance(base, pd.DataFrame) else pd.DataFrame()
+
+
+NB_ALERT_CATEGORIES = frozenset({"ATTENTION", "CRITIQUE"})
+
+
+def count_nb_stations_en_alerte(df: pd.DataFrame) -> int | None:
+
+    scores = resolve_nb_station_scores(df)
+
+    if scores.empty or "categorie" not in scores.columns:
+
+        return None
+
+    return int(scores["categorie"].astype(str).str.upper().isin(NB_ALERT_CATEGORIES).sum())
+
+
+def top_criticite_stations(df: pd.DataFrame, limit: int = 5) -> pd.DataFrame:
+
+    scores = resolve_nb_station_scores(df)
+
+    if scores.empty:
+
+        return pd.DataFrame()
+
+    sort_col = (
+        "score_criticite"
+        if "score_criticite" in scores.columns
+        else "pct_anomalie_ensemble"
+        if "pct_anomalie_ensemble" in scores.columns
+        else None
+    )
+
+    if sort_col is None:
+
+        return scores.head(limit)
+
+    return scores.sort_values(sort_col, ascending=False).head(limit)
+
+
 def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
 
     from utils.geo_tunisia import (
@@ -2662,6 +2824,21 @@ def load_station_map_data(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     summary = station_summary_from_df(df) if not df.empty else pd.DataFrame()
+
+    nb_scores = resolve_nb_station_scores(df)
+
+    if not nb_scores.empty:
+
+        summary = summary.drop(
+            columns=[
+                c
+                for c in nb_scores.columns
+                if c in summary.columns and c != "station_id"
+            ],
+            errors="ignore",
+        )
+
+        summary = _merge_station_map_frames(summary, nb_scores)
 
     summary = summary.drop(columns=["latitude", "longitude"], errors="ignore")
 
@@ -3027,8 +3204,6 @@ def compute_filtered_kpis(df: pd.DataFrame) -> dict:
 
             economie_periode_label = "Période filtrée (export NB3)"
 
-            economie_periode_label = "Période filtrée (export NB3)"
-
         modes = _latest_per_station_modes(work)
 
         pct_mode_eco = float(modes.eq("ECO").mean() * 100) if not modes.empty else 0.0
@@ -3126,7 +3301,6 @@ def station_summary_from_df(df: pd.DataFrame) -> pd.DataFrame:
     agg = {
         "consommation_kwh": "mean",
         "score_qos": "mean",
-        "anomalie_score_ensemble": "mean",
         "gouvernorat": "first",
         "technologie": "first",
         "type_zone": "first",
@@ -3155,7 +3329,6 @@ def station_summary_from_df(df: pd.DataFrame) -> pd.DataFrame:
         out = df[["station_id"]].drop_duplicates().reset_index(drop=True)
 
     rename_map = {
-        "anomalie_score_ensemble": "score_anom_moy",
         "score_qos": "score_qos_moy",
         "consommation_kwh": "conso_moy",
     }
@@ -3163,32 +3336,6 @@ def station_summary_from_df(df: pd.DataFrame) -> pd.DataFrame:
     out = out.rename(
         columns={old: new for old, new in rename_map.items() if old in out.columns}
     )
-
-    has_anom = "score_anom_moy" in out.columns
-
-    has_qos = "score_qos_moy" in out.columns
-
-    if has_anom and has_qos:
-
-        anomaly_score = pd.to_numeric(out["score_anom_moy"], errors="coerce")
-
-        qos_score = pd.to_numeric(out["score_qos_moy"], errors="coerce")
-
-        qos_penalty = (1 - qos_score).clip(0, 1)
-
-        both = anomaly_score.notna() & qos_score.notna()
-
-        out["score_criticite"] = pd.NA
-
-        out.loc[both, "score_criticite"] = (
-            (anomaly_score.clip(0, 1) * 0.65 + qos_penalty * 0.35).loc[both].clip(0, 1)
-        )
-
-        crit = pd.to_numeric(out["score_criticite"], errors="coerce")
-
-        out["categorie"] = pd.cut(
-            crit, bins=[-0.01, 0.2, 0.4, 1.0], labels=["Faible", "Moyenne", "Critique"]
-        ).astype(str)
 
     return out
 

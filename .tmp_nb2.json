@@ -1,0 +1,58 @@
+{
+  "Isolation Forest": {
+    "n_anomalies": "101611",
+    "pct_anomalies": "6.44",
+    "pct_train": "6.43",
+    "pct_test": "6.47",
+    "instabilite": "0.05",
+    "accord_metier_%": "94.3"
+  },
+  "LOF": {
+    "n_anomalies": "110161",
+    "pct_anomalies": "6.99",
+    "pct_train": "6.86",
+    "pct_test": "7.23",
+    "instabilite": "0.36",
+    "accord_metier_%": "90.4"
+  },
+  "One-Class SVM": {
+    "n_anomalies": "104712",
+    "pct_anomalies": "6.64",
+    "pct_train": "6.63",
+    "pct_test": "6.67",
+    "instabilite": "0.04",
+    "accord_metier_%": "94.1"
+  },
+  "DBSCAN": {
+    "n_anomalies": "46874",
+    "pct_anomalies": "2.97",
+    "pct_train": "2.97",
+    "pct_test": "2.97",
+    "instabilite": "0.0",
+    "accord_metier_%": "97.3"
+  },
+  "Elliptic Envelope": {
+    "n_anomalies": "104814",
+    "pct_anomalies": "6.65",
+    "pct_train": "6.59",
+    "pct_test": "6.76",
+    "instabilite": "0.16",
+    "accord_metier_%": "95.9"
+  },
+  "GMM": {
+    "n_anomalies": "98251",
+    "pct_anomalies": "6.23",
+    "pct_train": "6.23",
+    "pct_test": "6.23",
+    "instabilite": "0.01",
+    "accord_metier_%": "94.8"
+  },
+  "Autoencoder": {
+    "n_anomalies": "95176",
+    "pct_anomalies": "6.04",
+    "pct_train": "5.99",
+    "pct_test": "6.13",
+    "instabilite": "0.14",
+    "accord_metier_%": "91.5"
+  }
+}

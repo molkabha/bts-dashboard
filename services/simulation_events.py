@@ -6,22 +6,44 @@ import pandas as pd
 
 from config.settings import settings
 
-from services.data_service import resolve_nb2_seuil_ensemble, resolve_qos_seuil
+from services.data_service import resolve_nb2_seuil_ensemble, resolve_nb3_seuils_decision, resolve_qos_seuil
 
 from services.nb_metrics import effective_economie_kwh
 
 from ui.formatting import is_no_named_action, resolve_row_action
 
 
+def _nb3_seuils() -> dict:
+
+    seuils = resolve_nb3_seuils_decision()
+
+    qos_seuil, _ = resolve_qos_seuil()
+
+    merged = {
+        "eco_score": 0.25,
+        "critique_score": 0.6,
+        "critique_ecart": 30.0,
+        "qos": qos_seuil if qos_seuil is not None else float(settings.QOS_SEUIL_DEFAULT),
+    }
+
+    for key, value in seuils.items():
+
+        try:
+
+            if value not in (None, ""):
+
+                merged[str(key)] = float(value)
+
+        except (TypeError, ValueError):
+
+            continue
+
+    return merged
+
+
 def _qos_seuil() -> float:
 
-    seuil, _ = resolve_qos_seuil()
-
-    if seuil is not None:
-
-        return seuil
-
-    return float(settings.QOS_SEUIL_DEFAULT)
+    return float(_nb3_seuils().get("qos", settings.QOS_SEUIL_DEFAULT))
 
 
 def _anomaly_seuil(scale: float = 1.0) -> float | None:
@@ -61,6 +83,12 @@ def classify_tick_rows(
     seuil = _anomaly_seuil(anomaly_sensitivity)
 
     qos_seuil = _qos_seuil()
+
+    nb3_seuils = _nb3_seuils()
+
+    critique_ecart = float(nb3_seuils.get("critique_ecart", 30.0))
+
+    critique_score = float(nb3_seuils.get("critique_score", 0.6))
 
     alerts: list[dict[str, Any]] = []
 
@@ -111,9 +139,9 @@ def classify_tick_rows(
 
             alerts.append(item)
 
-        elif abs(ecart) >= 30 and qos >= qos_seuil:
+        elif abs(ecart) >= critique_ecart and qos >= qos_seuil:
 
-            severity = "CRITIQUE" if abs(ecart) >= 50 else "ATTENTION"
+            severity = "CRITIQUE" if mode == "CRITIQUE" else "ATTENTION"
 
             direction = "au-dessus" if ecart > 0 else "en-dessous"
 
@@ -139,7 +167,11 @@ def classify_tick_rows(
             and (not has_named_action)
         ):
 
-            severity = "CRITIQUE" if score >= seuil * 2.4 else "ATTENTION"
+            severity = (
+                "CRITIQUE"
+                if mode == "CRITIQUE" or score >= critique_score
+                else "ATTENTION"
+            )
 
             item = {
                 "timestamp": ts,

@@ -691,7 +691,26 @@ def render_nb3_rl_agents(nb3: dict, template: str, *, show_chart: bool = False) 
 
     import html as html_mod
 
-    rl_data = nb3.get("rl_resultats_tous_agents", {})
+    from services.data_service import load_nb3_network_kpi
+
+    rl_data = nb3.get("rl_resultats_tous_agents") or {}
+
+    if not rl_data:
+
+        kpi = load_nb3_network_kpi() or {}
+
+        comp = kpi.get("rl_agents_comparaison") or nb3.get("rl_agents_comparaison") or {}
+
+        if isinstance(comp, dict) and comp:
+
+            rl_data = {
+                str(agent): {
+                    "economie_pct": stats.get("economie_pct", stats.get("eco_pct")),
+                    "n_violations": stats.get("n_violations", stats.get("n_viols")),
+                }
+                for agent, stats in comp.items()
+                if isinstance(stats, dict)
+            }
 
     if not rl_data:
 
@@ -834,7 +853,7 @@ def render_executive_report_export(kpis: dict, df: pd.DataFrame | None = None) -
 
     import streamlit as st
 
-    from services.data_service import load_nb2_network_stats, top_anomaly_stations_from_df
+    from services.data_service import load_nb2_network_stats, top_criticite_stations
 
     from ui.components import section
 
@@ -851,7 +870,7 @@ def render_executive_report_export(kpis: dict, df: pd.DataFrame | None = None) -
 
         source = df if isinstance(df, pd.DataFrame) and not df.empty else load_dashboard_df()
 
-        top = top_anomaly_stations_from_df(source, limit=5)
+        top = top_criticite_stations(source, limit=5)
 
         nb2_stats = load_nb2_network_stats()
 
@@ -859,35 +878,59 @@ def render_executive_report_export(kpis: dict, df: pd.DataFrame | None = None) -
 
         anomaly_items = []
 
-        has_scores = column_has_values(source, "anomalie_score_ensemble")
+        pdf_ready = not top.empty and "station_id" in top.columns
 
-        pdf_ready = seuil is not None and has_scores
-
-        if seuil is not None and not has_scores:
+        if seuil is not None and not column_has_values(source, "anomalie_score_ensemble"):
 
             st.warning(MSG_ANOM_COL)
 
-        if pdf_ready and (not top.empty):
+        if pdf_ready:
 
-            for _, row in top.iterrows():
+            for _, nb_row in top.iterrows():
 
-                raw = row.get("anomalie_score_ensemble")
+                station_id = str(nb_row.get("station_id", ""))
 
-                if pd.isna(raw):
+                categorie = str(nb_row.get("categorie", "")).upper()
 
-                    continue
+                score_moy = nb_row.get("score_moy_ensemble")
 
-                score = float(raw)
+                pct_anom = nb_row.get("pct_anomalie_ensemble")
+
+                crit = nb_row.get("score_criticite")
+
+                detail_parts = []
+
+                if pd.notna(crit):
+
+                    detail_parts.append(f"criticite {float(crit):.3f}")
+
+                if pd.notna(score_moy):
+
+                    detail_parts.append(f"score moy {float(score_moy):.3f}")
+
+                if pd.notna(pct_anom):
+
+                    detail_parts.append(f"pct anom {float(pct_anom):.1%}")
+
+                detail = " — ".join(detail_parts) if detail_parts else categorie or "NB"
+
+                if categorie == "CRITIQUE":
+
+                    severity = "CRITIQUE"
+
+                elif categorie == "ATTENTION":
+
+                    severity = "ATTENTION"
+
+                else:
+
+                    severity = "FAIBLE"
 
                 anomaly_items.append(
                     {
-                        "station_id": str(row.get("station_id", "")),
-                        "detail": f"Score {score:.2f}",
-                        "severity": (
-                            "CRITIQUE"
-                            if score > seuil * 2.4
-                            else "ATTENTION" if score > seuil else "FAIBLE"
-                        ),
+                        "station_id": station_id,
+                        "detail": detail,
+                        "severity": severity,
                     }
                 )
 

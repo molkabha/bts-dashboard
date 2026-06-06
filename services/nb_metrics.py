@@ -291,3 +291,131 @@ def conso_optimisee_kwh_series(df: pd.DataFrame) -> pd.Series:
     eco = effective_economie_kwh(harmonized)
 
     return np.maximum(conso - eco, 0.0)
+
+
+NB_STATION_SCORE_ARTIFACT = "streamlit_score_stations.parquet"
+
+NB_SCORE_CRITICITE_WEIGHTS = (0.5, 0.3, 0.0286)
+
+NB_CATEGORIE_EFFICACE_MAX = 0.05
+
+NB_CATEGORIE_CRITIQUE_MIN = 0.15
+
+
+def nb_categorie_from_criticite(score: float | pd.Series) -> str | pd.Series:
+
+    crit = pd.to_numeric(score, errors="coerce")
+
+    if isinstance(score, pd.Series):
+
+        out = pd.Series("ATTENTION", index=crit.index, dtype=object)
+
+        out.loc[crit.le(NB_CATEGORIE_EFFICACE_MAX)] = "EFFICACE"
+
+        out.loc[crit.ge(NB_CATEGORIE_CRITIQUE_MIN)] = "CRITIQUE"
+
+        return out
+
+    if pd.isna(crit):
+
+        return "ATTENTION"
+
+    val = float(crit)
+
+    if val <= NB_CATEGORIE_EFFICACE_MAX:
+
+        return "EFFICACE"
+
+    if val >= NB_CATEGORIE_CRITIQUE_MIN:
+
+        return "CRITIQUE"
+
+    return "ATTENTION"
+
+
+def nb_score_criticite_from_components(
+    pct_anomalie: pd.Series | float,
+    score_moy: pd.Series | float,
+    nb_votes_moy: pd.Series | float,
+) -> pd.Series | float:
+
+    w_pct, w_score, w_votes = NB_SCORE_CRITICITE_WEIGHTS
+
+    crit = (
+        pd.to_numeric(pct_anomalie, errors="coerce") * w_pct
+        + pd.to_numeric(score_moy, errors="coerce") * w_score
+        + pd.to_numeric(nb_votes_moy, errors="coerce") * w_votes
+    )
+
+    if isinstance(pct_anomalie, pd.Series):
+
+        return crit.clip(lower=0)
+
+    return float(max(0.0, crit))
+
+
+def compute_nb_station_scores_from_df(
+    df: pd.DataFrame, *, seuil_anom: float | None
+) -> pd.DataFrame:
+
+    if df.empty or "station_id" not in df.columns:
+
+        return pd.DataFrame()
+
+    work = df.copy()
+
+    score_col = "anomalie_score_ensemble"
+
+    if score_col not in work.columns:
+
+        return pd.DataFrame()
+
+    work["_score"] = pd.to_numeric(work[score_col], errors="coerce")
+
+    if seuil_anom is not None:
+
+        work["_pct_anom"] = work["_score"].gt(float(seuil_anom)).astype(float)
+
+    else:
+
+        work["_pct_anom"] = pd.NA
+
+    if "nb_votes_anomalie" in work.columns:
+
+        work["_votes"] = pd.to_numeric(work["nb_votes_anomalie"], errors="coerce")
+
+    else:
+
+        work["_votes"] = pd.NA
+
+    agg: dict[str, tuple[str, str]] = {
+        "score_moy_ensemble": ("_score", "mean"),
+        "pct_anomalie_ensemble": ("_pct_anom", "mean"),
+        "nb_votes_moy": ("_votes", "mean"),
+    }
+
+    for col in ("gouvernorat", "technologie", "type_zone"):
+
+        if col in work.columns:
+
+            agg[col] = (col, "first")
+
+    if "score_qos" in work.columns:
+
+        agg["score_qos_moy"] = ("score_qos", "mean")
+
+    if "consommation_kwh" in work.columns:
+
+        agg["conso_moy"] = ("consommation_kwh", "mean")
+
+    out = work.groupby("station_id", as_index=False).agg(**agg)
+
+    out["score_criticite"] = nb_score_criticite_from_components(
+        out["pct_anomalie_ensemble"],
+        out["score_moy_ensemble"],
+        out["nb_votes_moy"],
+    )
+
+    out["categorie"] = nb_categorie_from_criticite(out["score_criticite"])
+
+    return out

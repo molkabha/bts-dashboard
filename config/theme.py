@@ -81,6 +81,7 @@ MODE_COLORS = {
     "ATTENTION": "#eab308",
     "NORMAL": "#16a34a",
     "ECO": "#0891b2",
+    "EFFICACE": "#059669",
 }
 
 MODE_ORDER = ["CRITIQUE", "ATTENTION", "NORMAL", "ECO"]
