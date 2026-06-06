@@ -42,6 +42,13 @@ except ImportError:
 
 NB3_STUB_CLASSES = ("MoteurDecisionEnergie", "StrategieOptimisation")
 
+_LAST_PIPELINE_LOAD_ERROR: str | None = None
+
+
+def pipeline_load_error() -> str | None:
+
+    return _LAST_PIPELINE_LOAD_ERROR
+
 
 def _register_nb3_stubs() -> None:
 
@@ -52,60 +59,153 @@ def _register_nb3_stubs() -> None:
         setattr(sys.modules["__main__"], name, getattr(rt, name))
 
 
+def _joblib_load(path: Path) -> Any:
+
+    import joblib
+
+    _register_nb3_stubs()
+
+    return joblib.load(path)
+
+
+def _load_joblib_file(name: str) -> Any | None:
+
+    path = artifact_path(name)
+
+    if not path.is_file() or path.stat().st_size < 64:
+
+        return None
+
+    try:
+
+        return _joblib_load(path)
+
+    except Exception as exc:
+
+        global _LAST_PIPELINE_LOAD_ERROR
+
+        _LAST_PIPELINE_LOAD_ERROR = f"{name}: {exc.__class__.__name__}: {exc}"
+
+        return None
+
+
 @lru_cache(maxsize=16)
 def _load_joblib(name: str) -> Any | None:
 
     try:
 
-        import joblib
+        import joblib  # noqa: F401
 
     except ImportError:
 
-        return None
+        global _LAST_PIPELINE_LOAD_ERROR
 
-    path = artifact_path(name)
-
-    if not path.exists():
+        _LAST_PIPELINE_LOAD_ERROR = "joblib non installe"
 
         return None
 
-    try:
+    return _load_joblib_file(name)
 
-        return joblib.load(path)
 
-    except Exception:
+def _normalize_pipeline_bundle(obj: Any) -> dict[str, Any] | None:
+
+    if not isinstance(obj, dict):
 
         return None
+
+    bundle = dict(obj)
+
+    if bundle.get("modele_anom") is None and bundle.get("modeles_anomalie") is not None:
+
+        bundle["modele_anom"] = bundle["modeles_anomalie"]
+
+    if bundle.get("modele_lgbm") is None and bundle.get("best_model") is not None:
+
+        bundle["modele_lgbm"] = bundle["best_model"]
+
+    if bundle.get("modele_lgbm") is not None and isinstance(bundle.get("config"), dict):
+
+        return bundle
+
+    return None
+
+
+def _assemble_pipeline_bundle() -> dict[str, Any] | None:
+
+    bundle: dict[str, Any] = {}
+
+    config = _load_joblib_file("config.joblib")
+
+    if isinstance(config, dict):
+
+        bundle["config"] = config
+
+    model = _load_joblib_file("best_model.joblib") or _load_joblib_file(
+        "modele_lgbm.joblib"
+    )
+
+    if model is not None:
+
+        bundle["modele_lgbm"] = model
+
+    encodeurs = _load_joblib_file("encodeurs.joblib")
+
+    if encodeurs is not None:
+
+        bundle["encodeurs"] = encodeurs
+
+    quantiles = _load_joblib_file("quantile_models.joblib")
+
+    if quantiles is not None:
+
+        bundle["quantiles"] = quantiles
+
+    anom = _load_joblib_file("modeles_anomalie.joblib")
+
+    if isinstance(anom, dict):
+
+        bundle["modele_anom"] = anom
+
+    if not bundle.get("modele_lgbm") or not isinstance(bundle.get("config"), dict):
+
+        return None
+
+    return bundle
 
 
 @lru_cache(maxsize=1)
 def load_pipeline_bundle() -> dict[str, Any] | None:
 
+    global _LAST_PIPELINE_LOAD_ERROR
+
+    _LAST_PIPELINE_LOAD_ERROR = None
+
     _register_nb3_stubs()
 
-    try:
+    primary = _load_joblib_file("pipeline_inference.joblib")
 
-        import joblib
+    if primary is not None:
 
-    except ImportError:
+        normalized = _normalize_pipeline_bundle(primary)
 
-        return None
+        if normalized is not None:
 
-    path = artifact_path("pipeline_inference.joblib")
+            return normalized
 
-    if not path.exists():
+    assembled = _assemble_pipeline_bundle()
 
-        return None
+    if assembled is not None:
 
-    try:
+        return assembled
 
-        obj = joblib.load(path)
+    if _LAST_PIPELINE_LOAD_ERROR is None:
 
-        return obj if isinstance(obj, dict) else None
+        _LAST_PIPELINE_LOAD_ERROR = (
+            "pipeline_inference.joblib absent ou incomplet "
+            "(config.joblib + best_model.joblib requis)."
+        )
 
-    except Exception:
-
-        return None
+    return None
 
 
 @lru_cache(maxsize=1)
@@ -157,6 +257,10 @@ def _feature_templates() -> pd.DataFrame:
 
 
 def clear_nb_inference_cache() -> None:
+
+    global _LAST_PIPELINE_LOAD_ERROR
+
+    _LAST_PIPELINE_LOAD_ERROR = None
 
     load_pipeline_bundle.cache_clear()
 

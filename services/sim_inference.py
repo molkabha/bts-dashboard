@@ -6,7 +6,12 @@ import pandas as pd
 
 from services.data_service import artifact_is_ready, artifact_path
 
-from services.nb_inference import clear_nb_inference_cache, load_pipeline_bundle, run_nb_pipeline
+from services.nb_inference import (
+    clear_nb_inference_cache,
+    load_pipeline_bundle,
+    pipeline_load_error,
+    run_nb_pipeline,
+)
 
 _PIPELINE_PRIMARY = "pipeline_inference.joblib"
 
@@ -42,6 +47,8 @@ def ensure_pipeline_ready() -> str | None:
 
     try:
 
+        clear_inference_cache()
+
         if not _pipeline_available():
 
             return pipeline_unavailable_message()
@@ -50,9 +57,11 @@ def ensure_pipeline_ready() -> str | None:
 
         if not bundle:
 
+            detail = pipeline_load_error() or "cause inconnue"
+
             return (
-                "pipeline_inference.joblib est present mais illisible. "
-                "Relancez l'app ou verifiez la compatibilite des artefacts NB."
+                "Impossible de charger les artefacts NB1/NB2/NB3. "
+                f"Detail : {detail}"
             )
 
         return None
