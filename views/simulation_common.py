@@ -619,7 +619,7 @@ def bootstrap_simulation(selected_stations: list[str]) -> bool:
 
         return False
 
-    pipeline_err = ensure_pipeline_ready()
+    pipeline_err = ensure_pipeline_ready(force=True)
 
     if pipeline_err:
 
@@ -678,7 +678,7 @@ def run_full_day_simulation(selected_stations: list[str]) -> bool:
 
         return False
 
-    pipeline_err = ensure_pipeline_ready()
+    pipeline_err = ensure_pipeline_ready(force=True)
 
     if pipeline_err:
 

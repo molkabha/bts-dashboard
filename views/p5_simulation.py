@@ -12,8 +12,6 @@ from security.middleware import security_middleware
 
 from services.calendar_tn import calendar_label
 
-from services.data_service import init_db
-
 from services.nb_metrics import effective_economie_kwh
 
 from services.simulation_events import persist_alert_ack
@@ -181,6 +179,42 @@ def _ops_table(latest: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+def _alert_button_key(prefix: str, alert_ref: str) -> str:
+
+    safe = alert_ref.replace("|", "_").replace(" ", "_").replace(":", "_")
+
+    return f"{prefix}_{safe}"[:120]
+
+
+def _ack_sim_alert(ref: str, station_id: str, verdict: str) -> None:
+
+    user = st.session_state.get("username") or st.session_state.get("user", "")
+
+    persist_alert_ack(user, station_id, ref, verdict)
+
+    acked = st.session_state.get("sim_ack_refs", set())
+
+    if not isinstance(acked, set):
+
+        acked = set(acked)
+
+    acked.add(ref)
+
+    st.session_state["sim_ack_refs"] = acked
+
+
+try:
+
+    _journal_run = st.fragment
+
+except AttributeError:
+
+    def _journal_run(fn):
+
+        return fn
+
+
+@_journal_run
 def _render_journal(selected: list[str], latest_ts) -> None:
 
     alerts = st.session_state.get("sim_alerts", [])
@@ -189,7 +223,13 @@ def _render_journal(selected: list[str], latest_ts) -> None:
 
     acked = st.session_state.get("sim_ack_refs", set())
 
+    if not isinstance(acked, set):
+
+        acked = set(acked)
+
     pending = [a for a in alerts if a.get("alert_ref") not in acked]
+
+    use_full_rerun = not hasattr(st, "fragment")
 
     if pending:
 
@@ -203,49 +243,39 @@ def _render_journal(selected: list[str], latest_ts) -> None:
 
             st.warning(f"**{item.get('station_id')}** — {item.get('message', '')}")
 
-            ref = item.get("alert_ref", "")
+            ref = str(item.get("alert_ref", ""))
+
+            station_id = str(item.get("station_id", ""))
 
             x1, x2 = st.columns(2)
 
             with x1:
 
-                if st.button("Traité", key=f"aok_{ref}", use_container_width=True):
+                if st.button(
+                    "Traité",
+                    key=_alert_button_key("aok", ref),
+                    use_container_width=True,
+                ):
 
-                    user = st.session_state.get("username") or st.session_state.get(
-                        "user", ""
-                    )
+                    _ack_sim_alert(ref, station_id, "acquitte")
 
-                    init_db()
+                    if use_full_rerun:
 
-                    persist_alert_ack(
-                        user, str(item.get("station_id")), ref, "acquitte"
-                    )
-
-                    acked.add(ref)
-
-                    st.session_state["sim_ack_refs"] = acked
-
-                    st.rerun()
+                        st.rerun()
 
             with x2:
 
-                if st.button("Ignorer", key=f"afp_{ref}", use_container_width=True):
+                if st.button(
+                    "Ignorer",
+                    key=_alert_button_key("afp", ref),
+                    use_container_width=True,
+                ):
 
-                    user = st.session_state.get("username") or st.session_state.get(
-                        "user", ""
-                    )
+                    _ack_sim_alert(ref, station_id, "faux_positif")
 
-                    init_db()
+                    if use_full_rerun:
 
-                    persist_alert_ack(
-                        user, str(item.get("station_id")), ref, "faux_positif"
-                    )
-
-                    acked.add(ref)
-
-                    st.session_state["sim_ack_refs"] = acked
-
-                    st.rerun()
+                        st.rerun()
 
     else:
 

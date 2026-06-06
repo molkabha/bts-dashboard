@@ -52,7 +52,7 @@ PAGE_FUNCTIONS = {
 
 ENGINEER_PAGE_INDICES = {0, 1, 2, 3, 6, 14}
 
-NO_DATASET_PRELOAD = {12}
+NO_DATASET_PRELOAD = {6, 12}
 
 
 def _default_home_page(_role: str) -> int:

@@ -43,32 +43,78 @@ def pipeline_unavailable_message() -> str:
     )
 
 
-def ensure_pipeline_ready() -> str | None:
+def ensure_pipeline_ready(*, force: bool = False) -> str | None:
 
     try:
 
-        clear_inference_cache()
+        import streamlit as st
+
+        if not force and st.session_state.get("sim_pipeline_ok"):
+
+            return None
+
+        if not force:
+
+            cached_err = st.session_state.get("sim_pipeline_error")
+
+            if cached_err:
+
+                return str(cached_err)
+
+    except Exception:
+
+        st = None
+
+    try:
+
+        if force:
+
+            clear_inference_cache()
 
         if not _pipeline_available():
 
-            return pipeline_unavailable_message()
+            err = pipeline_unavailable_message()
 
-        bundle = load_pipeline_bundle()
-
-        if not bundle:
+        elif not load_pipeline_bundle():
 
             detail = pipeline_load_error() or "cause inconnue"
 
-            return (
+            err = (
                 "Impossible de charger les artefacts NB1/NB2/NB3. "
                 f"Detail : {detail}"
             )
 
-        return None
+        else:
+
+            err = None
+
+        if st is not None:
+
+            if err is None:
+
+                st.session_state["sim_pipeline_ok"] = True
+
+                st.session_state.pop("sim_pipeline_error", None)
+
+            else:
+
+                st.session_state.pop("sim_pipeline_ok", None)
+
+                st.session_state["sim_pipeline_error"] = err
+
+        return err
 
     except Exception as exc:
 
-        return f"Erreur chargement pipeline NB1/NB2/NB3 : {exc}"
+        err = f"Erreur chargement pipeline NB1/NB2/NB3 : {exc}"
+
+        if st is not None:
+
+            st.session_state.pop("sim_pipeline_ok", None)
+
+            st.session_state["sim_pipeline_error"] = err
+
+        return err
 
 
 def clear_inference_cache() -> None:
@@ -76,6 +122,18 @@ def clear_inference_cache() -> None:
     _pipeline_available.cache_clear()
 
     clear_nb_inference_cache()
+
+    try:
+
+        import streamlit as st
+
+        st.session_state.pop("sim_pipeline_ok", None)
+
+        st.session_state.pop("sim_pipeline_error", None)
+
+    except Exception:
+
+        pass
 
 
 def enrich_with_pipeline(df: pd.DataFrame) -> pd.DataFrame:
