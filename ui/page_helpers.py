@@ -828,30 +828,30 @@ def mode_explanation(row: pd.Series) -> str:
     return "Fonctionnement nominal."
 
 
-def render_executive_report_export(kpis: dict) -> None:
+def render_executive_report_export(kpis: dict, df: pd.DataFrame | None = None) -> None:
 
     from datetime import datetime
 
     import streamlit as st
 
-    from services.data_service import load_nb2_network_stats, load_top_anomalies
+    from services.data_service import load_nb2_network_stats, top_anomaly_stations_from_df
 
     from ui.components import section
-
-    from ui.utils import apply_current_admin_filters
 
     from utils.pdf_export import generate_report_pdf
 
     from ui.data_validation import (
         MSG_ANOM_COL,
+        column_has_values,
         format_nb2_seuil_alert,
         nb2_seuil_or_warn,
-        require_column_or_warn,
     )
 
     with section("Rapport PDF"):
 
-        top = apply_current_admin_filters(load_top_anomalies(limit=300)).head(5)
+        source = df if isinstance(df, pd.DataFrame) and not df.empty else load_dashboard_df()
+
+        top = top_anomaly_stations_from_df(source, limit=5)
 
         nb2_stats = load_nb2_network_stats()
 
@@ -859,9 +859,13 @@ def render_executive_report_export(kpis: dict) -> None:
 
         anomaly_items = []
 
-        pdf_ready = seuil is not None and require_column_or_warn(
-            top, "anomalie_score_ensemble", MSG_ANOM_COL
-        )
+        has_scores = column_has_values(source, "anomalie_score_ensemble")
+
+        pdf_ready = seuil is not None and has_scores
+
+        if seuil is not None and not has_scores:
+
+            st.warning(MSG_ANOM_COL)
 
         if pdf_ready and (not top.empty):
 

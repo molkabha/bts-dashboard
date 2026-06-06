@@ -14,7 +14,7 @@ from services.data_service import compute_filtered_kpis, load_nb2_network_stats
 
 from ui.components import header, kpi_card, section
 
-from ui.data_validation import MSG_ANOM_COL, nb2_seuil_or_warn, require_column_or_warn
+from ui.data_validation import column_has_values, nb2_seuil_or_warn
 
 from ui.page_helpers import (
     get_station_map_data,
@@ -64,9 +64,7 @@ def page_accueil():
 
         alert_stations: int | None = None
 
-        if seuil is not None and require_column_or_warn(
-            df, "anomalie_score_ensemble", MSG_ANOM_COL
-        ):
+        if seuil is not None and column_has_values(df, "anomalie_score_ensemble"):
 
             scores = pd.to_numeric(df["anomalie_score_ensemble"], errors="coerce")
 
@@ -274,4 +272,4 @@ def page_accueil():
 
     if is_admin():
 
-        render_executive_report_export(kpis)
+        render_executive_report_export(kpis, df)

@@ -1881,6 +1881,35 @@ def enrich_dashboard_data(
     return out
 
 
+def top_anomaly_stations_from_df(df: pd.DataFrame, limit: int = 5) -> pd.DataFrame:
+
+    if df.empty or "station_id" not in df.columns:
+
+        return pd.DataFrame()
+
+    if "anomalie_score_ensemble" not in df.columns:
+
+        return pd.DataFrame()
+
+    work = df[["station_id", "anomalie_score_ensemble"]].copy()
+
+    work["anomalie_score_ensemble"] = pd.to_numeric(
+        work["anomalie_score_ensemble"], errors="coerce"
+    )
+
+    work = work.dropna(subset=["anomalie_score_ensemble"])
+
+    if work.empty:
+
+        return pd.DataFrame()
+
+    return (
+        work.groupby("station_id", as_index=False)["anomalie_score_ensemble"]
+        .max()
+        .nlargest(limit, "anomalie_score_ensemble")
+    )
+
+
 def load_top_anomalies(limit: int = 300) -> pd.DataFrame:
 
     path = artifact_path(settings.ANOMALY_DATASET)
