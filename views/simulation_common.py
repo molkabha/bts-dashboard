@@ -82,6 +82,8 @@ SIM_AUTO_INTERVAL_DEFAULT_S = 30
 
 def ensure_sim_engine() -> None:
 
+    from services.sim_inference import ensure_pipeline_ready
+
     try:
 
         sim_engine()
@@ -89,6 +91,16 @@ def ensure_sim_engine() -> None:
     except Exception:
 
         pass
+
+    err = ensure_pipeline_ready()
+
+    if err:
+
+        st.session_state["sim_pipeline_error"] = err
+
+    else:
+
+        st.session_state.pop("sim_pipeline_error", None)
 
 
 def maybe_autorefresh() -> None:
@@ -528,6 +540,11 @@ def advance_scenario(
     return (pd.concat(frames, ignore_index=True), len(frames))
 
 
+def _set_sim_error(exc: Exception) -> None:
+
+    st.session_state["sim_bootstrap_error"] = str(exc)
+
+
 def advance_simulation(
     selected_stations: list[str],
     sim_base_date: date,
@@ -548,15 +565,25 @@ def advance_simulation(
 
         return False
 
-    processed, n = advance_scenario(
-        selected_stations,
-        sim_base_date,
-        start_hour,
-        tick,
-        steps,
-        num_days,
-        engine=sim_engine(),
-    )
+    try:
+
+        processed, n = advance_scenario(
+            selected_stations,
+            sim_base_date,
+            start_hour,
+            tick,
+            steps,
+            num_days,
+            engine=sim_engine(),
+        )
+
+    except Exception as exc:
+
+        st.session_state["sim_running"] = False
+
+        _set_sim_error(exc)
+
+        return False
 
     if processed.empty:
 
@@ -584,9 +611,19 @@ def reset_simulation() -> None:
 
 def bootstrap_simulation(selected_stations: list[str]) -> bool:
 
+    from services.sim_inference import ensure_pipeline_ready
+
     if not selected_stations:
 
         st.session_state["sim_bootstrap_error"] = "Selectionnez au moins une station."
+
+        return False
+
+    pipeline_err = ensure_pipeline_ready()
+
+    if pipeline_err:
+
+        st.session_state["sim_bootstrap_error"] = pipeline_err
 
         return False
 
@@ -596,9 +633,17 @@ def bootstrap_simulation(selected_stations: list[str]) -> bool:
 
     engine = sim_engine()
 
-    processed, n = advance_scenario(
-        selected_stations, sim_base_date, start_hour, 0, 1, num_days, engine=engine
-    )
+    try:
+
+        processed, n = advance_scenario(
+            selected_stations, sim_base_date, start_hour, 0, 1, num_days, engine=engine
+        )
+
+    except Exception as exc:
+
+        _set_sim_error(exc)
+
+        return False
 
     if processed.empty:
 
@@ -625,9 +670,19 @@ def bootstrap_simulation(selected_stations: list[str]) -> bool:
 
 def run_full_day_simulation(selected_stations: list[str]) -> bool:
 
+    from services.sim_inference import ensure_pipeline_ready
+
     if not selected_stations:
 
         st.session_state["sim_bootstrap_error"] = "Selectionnez au moins une station."
+
+        return False
+
+    pipeline_err = ensure_pipeline_ready()
+
+    if pipeline_err:
+
+        st.session_state["sim_bootstrap_error"] = pipeline_err
 
         return False
 
@@ -669,9 +724,7 @@ def run_full_day_simulation(selected_stations: list[str]) -> bool:
 
     except Exception as exc:
 
-        st.session_state["sim_bootstrap_error"] = (
-            f"Simulation interrompue : {exc}"
-        )
+        _set_sim_error(exc)
 
         return False
 

@@ -18,8 +18,6 @@ from services.data_service import (
 
 from services.calendar_tn import calendar_context, scenario_timestamps
 
-from services.nb_inference import apply_offline_nb23
-
 from services.nb_metrics import compute_ecart_pct, harmonize_nb3_economies
 
 from services.sim_inference import clear_inference_cache, enrich_with_pipeline
@@ -507,10 +505,6 @@ def hourly_snapshot(
 
     out = enrich_with_pipeline(out)
 
-    if "mode_operation" not in out.columns or out["mode_operation"].isna().all():
-
-        out = apply_offline_nb23(out)
-
     return harmonize_nb3_economies(out)
 
 
@@ -562,9 +556,5 @@ def generate_period(
     out = pd.concat(frames, ignore_index=True)
 
     out = _enrich_period_rows(out)
-
-    if "mode_operation" not in out.columns or out["mode_operation"].isna().all():
-
-        out = apply_offline_nb23(out)
 
     return harmonize_nb3_economies(out)

@@ -385,7 +385,9 @@ def page_simulation():
 
     sim.process_tick(selected)
 
-    err = st.session_state.get("sim_bootstrap_error")
+    err = st.session_state.get("sim_bootstrap_error") or st.session_state.get(
+        "sim_pipeline_error"
+    )
 
     if err:
 

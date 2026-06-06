@@ -4,21 +4,62 @@ from functools import lru_cache
 
 import pandas as pd
 
-from services.data_service import resolve_cached_artifact
+from services.data_service import artifact_is_ready, artifact_path
 
-from services.nb_inference import (
-    apply_offline_nb23,
-    clear_nb_inference_cache,
-    run_nb_pipeline,
-)
+from services.nb_inference import clear_nb_inference_cache, load_pipeline_bundle, run_nb_pipeline
 
-_ML_ARTIFACTS = ("pipeline_inference.joblib", "best_model.joblib", "config.joblib")
+_PIPELINE_PRIMARY = "pipeline_inference.joblib"
+
+_PIPELINE_FALLBACK = ("best_model.joblib", "config.joblib")
+
+
+class PipelineUnavailableError(RuntimeError):
+    """Raised when NB1/NB2/NB3 Hub artefacts cannot run live inference."""
 
 
 @lru_cache(maxsize=1)
 def _pipeline_available() -> bool:
 
-    return any((resolve_cached_artifact(name) is not None for name in _ML_ARTIFACTS))
+    primary = artifact_path(_PIPELINE_PRIMARY)
+
+    if artifact_is_ready(primary):
+
+        return True
+
+    return any(artifact_is_ready(artifact_path(name)) for name in _PIPELINE_FALLBACK)
+
+
+def pipeline_unavailable_message() -> str:
+
+    return (
+        "Artefacts NB1/NB2/NB3 indisponibles. Verifiez USE_HF_HUB=True, HF_REPO_ID, "
+        "HF_TOKEN (si repo prive) et la presence de pipeline_inference.joblib sur le Hub. "
+        "La Simulation n'utilise pas le mode offline."
+    )
+
+
+def ensure_pipeline_ready() -> str | None:
+
+    try:
+
+        if not _pipeline_available():
+
+            return pipeline_unavailable_message()
+
+        bundle = load_pipeline_bundle()
+
+        if not bundle:
+
+            return (
+                "pipeline_inference.joblib est present mais illisible. "
+                "Relancez l'app ou verifiez la compatibilite des artefacts NB."
+            )
+
+        return None
+
+    except Exception as exc:
+
+        return f"Erreur chargement pipeline NB1/NB2/NB3 : {exc}"
 
 
 def clear_inference_cache() -> None:
@@ -36,18 +77,26 @@ def enrich_with_pipeline(df: pd.DataFrame) -> pd.DataFrame:
 
     if not _pipeline_available():
 
-        return apply_offline_nb23(df)
+        raise PipelineUnavailableError(pipeline_unavailable_message())
 
-    try:
+    enriched = run_nb_pipeline(df)
 
-        enriched = run_nb_pipeline(df)
+    if enriched.empty or "mode_operation" not in enriched.columns:
 
-        if enriched.empty or "mode_operation" not in enriched.columns:
+        raise PipelineUnavailableError(
+            "Le pipeline NB1+NB2+NB3 n'a produit aucune decision (mode_operation absent)."
+        )
 
-            return apply_offline_nb23(df)
+    pipeline = enriched.get("inference_pipeline")
 
-        return enriched
+    if pipeline is not None:
 
-    except Exception:
+        modes = pipeline.astype(str).str.lower()
 
-        return apply_offline_nb23(df)
+        if modes.str.contains("offline", na=False).any():
+
+            raise PipelineUnavailableError(
+                "Inference offline detectee alors que le pipeline Hub est requis."
+            )
+
+    return enriched
