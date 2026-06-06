@@ -109,7 +109,7 @@ class RapportPDF(FPDF):
         self.cell(
             0,
             10,
-            f"Page {self.page_no()}/{ nb}  - Confidentiel Tunisie Telecom",
+            f"Page {self.page_no()}/{{nb}}  - Confidentiel Tunisie Telecom",
             align="C",
         )
 
