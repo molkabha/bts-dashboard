@@ -48,15 +48,7 @@ def redirect_engineer_home() -> None:
 
 def session_outputs() -> dict:
 
-    outputs = st.session_state.get("data")
-
-    if outputs is None:
-
-        outputs = load_outputs()
-
-        st.session_state["data"] = outputs
-
-    return outputs
+    return load_outputs()
 
 
 def clear_dashboard_data_cache() -> None:

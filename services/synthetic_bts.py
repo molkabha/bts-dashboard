@@ -58,6 +58,16 @@ def clear_synthetic_cache() -> None:
 
 def clear_sim_engine_cache() -> None:
 
+    if _sim_engine_bundle is not None:
+
+        try:
+
+            _sim_engine_bundle.clear()
+
+        except Exception:
+
+            pass
+
     try:
 
         import streamlit as st
@@ -67,6 +77,7 @@ def clear_sim_engine_cache() -> None:
             "_sim_engine_ref",
             "_sim_engine_profiles",
             "_sim_engine_catalog",
+            "data",
         ):
 
             st.session_state.pop(key, None)
@@ -74,6 +85,57 @@ def clear_sim_engine_cache() -> None:
     except Exception:
 
         pass
+
+
+def _sim_reference_frame(
+    cache_key: str, role: str, assigned: tuple[str, ...]
+) -> pd.DataFrame:
+
+    if not cache_key:
+
+        return pd.DataFrame()
+
+    df = load_enriched_base_dataset(cache_key)
+
+    if df.empty:
+
+        return df
+
+    if role != "admin" and "station_id" in df.columns:
+
+        allowed = {str(s) for s in assigned}
+
+        if allowed:
+
+            df = df[df["station_id"].astype(str).isin(allowed)]
+
+        else:
+
+            return pd.DataFrame()
+
+    return _subset_ref_columns(df)
+
+
+try:
+
+    import streamlit as _st
+
+    @_st.cache_data(ttl=300, show_spinner=False)
+    def _sim_engine_bundle(
+        cache_key: str, role: str, assigned: tuple[str, ...]
+    ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+
+        ref = _sim_reference_frame(cache_key, role, assigned)
+
+        if ref.empty:
+
+            return ref, pd.DataFrame(), pd.DataFrame(columns=META_COLS)
+
+        return ref, _profile_lookup(ref), _station_catalog(ref)
+
+except Exception:
+
+    _sim_engine_bundle = None
 
 
 def _ref_columns() -> list[str]:
@@ -120,88 +182,71 @@ def _subset_ref_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 def _load_sim_reference() -> pd.DataFrame:
 
-    cache_key = dataset_cache_key()
+    role = "admin"
 
-    if not cache_key:
-
-        return pd.DataFrame()
-
-    df = load_enriched_base_dataset(cache_key)
-
-    if df.empty:
-
-        return df
+    assigned: tuple[str, ...] = ()
 
     try:
 
         import streamlit as st
 
-        role = st.session_state.get("role", "")
+        role = str(st.session_state.get("role", "") or "")
 
-        if role != "admin" and "station_id" in df.columns:
+        user = st.session_state.get("username") or st.session_state.get("user")
 
-            assigned = {str(s) for s in engineer_assigned_stations()}
+        if role != "admin" and user:
 
-            if assigned:
-
-                df = df[df["station_id"].astype(str).isin(assigned)]
+            assigned = tuple(sorted(str(s) for s in engineer_assigned_stations(user)))
 
     except Exception:
 
         pass
 
-    return _subset_ref_columns(df)
+    return _sim_reference_frame(dataset_cache_key(), role, assigned)
+
+
+def _sim_engine_context() -> tuple[str, str, tuple[str, ...]]:
+
+    role = "admin"
+
+    assigned: tuple[str, ...] = ()
+
+    try:
+
+        import streamlit as st
+
+        role = str(st.session_state.get("role", "") or "")
+
+        user = st.session_state.get("username") or st.session_state.get("user")
+
+        if role != "admin" and user:
+
+            assigned = tuple(sorted(str(s) for s in engineer_assigned_stations(user)))
+
+    except Exception:
+
+        pass
+
+    return dataset_cache_key(), role, assigned
 
 
 def sim_engine() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
 
-    try:
+    cache_key, role, assigned = _sim_engine_context()
 
-        import streamlit as st
+    if _sim_engine_bundle is not None:
 
-        ck = dataset_cache_key()
+        try:
 
-        if st.session_state.get("_sim_engine_key") == ck and isinstance(
-            st.session_state.get("_sim_engine_ref"), pd.DataFrame
-        ):
+            return _sim_engine_bundle(cache_key, role, assigned)
 
-            ref = st.session_state["_sim_engine_ref"]
+        except Exception:
 
-            profiles = st.session_state.get("_sim_engine_profiles", pd.DataFrame())
+            pass
 
-            catalog = st.session_state.get("_sim_engine_catalog", pd.DataFrame())
+    ref = _sim_reference_frame(cache_key, role, assigned)
 
-            if not ref.empty:
-
-                return (ref, profiles, catalog)
-
-    except Exception:
-
-        pass
-
-    ref = _load_sim_reference()
-
-    profiles = _profile_lookup(ref)
-
-    catalog = _station_catalog(ref)
-
-    try:
-
-        import streamlit as st
-
-        st.session_state["_sim_engine_key"] = dataset_cache_key()
-
-        st.session_state["_sim_engine_ref"] = ref
-
-        st.session_state["_sim_engine_profiles"] = profiles
-
-        st.session_state["_sim_engine_catalog"] = catalog
-
-    except Exception:
-
-        pass
-
-    return (ref, profiles, catalog)
+    return ref, _profile_lookup(ref), _station_catalog(ref)
 
 
 def _profile_keys(ref: pd.DataFrame) -> list[str]:

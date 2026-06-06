@@ -1428,13 +1428,7 @@ def all_dataset_station_ids() -> list[str]:
 
         return clean_station_id_list(stations)
 
-    outputs = st.session_state.get("data")
-
-    if outputs is None:
-
-        outputs = load_outputs()
-
-        st.session_state["data"] = outputs
+    outputs = load_outputs()
 
     df = outputs.get("scores")
 

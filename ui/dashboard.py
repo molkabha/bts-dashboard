@@ -24,8 +24,6 @@ from ui.auth import login_page, force_password_change_page
 
 from ui.components import sidebar_global, page_footer
 
-from ui.page_helpers import load_dashboard_df
-
 from views.p0_accueil import page_accueil
 
 from views.p1_vue_reseau import page_vue_reseau
@@ -86,11 +84,13 @@ def main():
 
         return
 
-    if "data" not in st.session_state:
+    if not st.session_state.get("_outputs_warmed"):
 
         with st.spinner("Chargement des artefacts NB1/NB2/NB3…"):
 
-            st.session_state["data"] = load_outputs()
+            load_outputs()
+
+        st.session_state["_outputs_warmed"] = True
 
     role = st.session_state.get("role")
 
@@ -145,14 +145,6 @@ def main():
     st.session_state["global_filters"] = filters
 
     page_fn = PAGE_FUNCTIONS.get(page_index, PAGE_FUNCTIONS[_default_home_page(role)])
-
-    if page_index in NO_DATASET_PRELOAD:
-
-        st.session_state.pop("_dashboard_df", None)
-
-    else:
-
-        st.session_state["_dashboard_df"] = load_dashboard_df()
 
     page_fn()
 
