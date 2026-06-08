@@ -168,13 +168,6 @@ def page_accueil():
 
         with section("Top 5 — criticité NB"):
 
-            st.caption(
-                "Scores issus de l'export notebook (`streamlit_score_stations.parquet`) : "
-                "**score_criticite** = 50 % pct_anomalie + 30 % score_moy + 2,86 % nb_votes ; "
-                "catégories **EFFICACE / ATTENTION / CRITIQUE**. "
-                "Le KPI « Alerte » compte les stations ATTENTION + CRITIQUE (même source)."
-            )
-
             scores_df = get_station_map_data(df)
 
             if scores_df.empty:
