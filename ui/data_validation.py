@@ -110,16 +110,22 @@ def nb2_seuil_or_warn(nb2_stats: dict | None = None) -> float | None:
         return None
 
 
-def qos_seuil_or_warn() -> float | None:
+def qos_seuil_or_warn() -> float:
 
+    from config.settings import settings
     from services.data_service import resolve_qos_seuil
 
     seuil, _source = resolve_qos_seuil()
 
-    if seuil is None:
+    if seuil is not None:
 
-        st.warning(MSG_QOS_SEUIL)
+        return seuil
 
-        return None
+    default = float(settings.QOS_SEUIL_DEFAULT)
 
-    return seuil
+    st.info(
+        f"Seuil QoS par défaut ({default:.0%}) — "
+        "export NB3 `rapport_optimisation.json` ou `kpi_reseau.json` absent."
+    )
+
+    return default

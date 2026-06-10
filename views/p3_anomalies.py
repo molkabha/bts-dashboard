@@ -445,9 +445,7 @@ def page_anomalies():
 
         qos_seuil = qos_seuil_or_warn()
 
-        if qos_seuil is None or not require_column_or_warn(
-            df, "score_qos", MSG_QOS_COL
-        ):
+        if not require_column_or_warn(df, "score_qos", MSG_QOS_COL):
 
             return
 
