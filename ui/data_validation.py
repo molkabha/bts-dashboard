@@ -121,11 +121,4 @@ def qos_seuil_or_warn() -> float:
 
         return seuil
 
-    default = float(settings.QOS_SEUIL_DEFAULT)
-
-    st.info(
-        f"Seuil QoS par défaut ({default:.0%}) — "
-        "export NB3 `rapport_optimisation.json` ou `kpi_reseau.json` absent."
-    )
-
-    return default
+    return float(settings.QOS_SEUIL_DEFAULT)
